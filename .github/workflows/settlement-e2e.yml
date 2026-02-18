@@ -107,9 +107,13 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $baseUrl = "http://localhost:${{ env.PORT }}"
-          ./scripts/run_settlement_reopen_reject_flow.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl
-          ./scripts/run_invoice_reuse_flow.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl -StrictFirstNew:$true
-          ./scripts/run_outbound_insufficient_stock.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl
+          $regLogPath = "/tmp/regression-e2e.log"
+          if (Test-Path $regLogPath) { Remove-Item $regLogPath -Force }
+          ./scripts/run_settlement_reopen_reject_flow.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl 2>&1 | Tee-Object -FilePath $regLogPath -Append
+          ./scripts/run_invoice_reuse_flow.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl -StrictFirstNew:$true 2>&1 | Tee-Object -FilePath $regLogPath -Append
+          ./scripts/run_outbound_insufficient_stock.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl 2>&1 | Tee-Object -FilePath $regLogPath -Append
+          ./scripts/run_outbound_detail_flow.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl 2>&1 | Tee-Object -FilePath $regLogPath -Append
+          ./scripts/run_inbound_detail_flow.ps1 -StartServerIfDown:$false -BaseUrl $baseUrl 2>&1 | Tee-Object -FilePath $regLogPath -Append
 
       - name: Print server log
         if: always()
@@ -123,6 +127,7 @@ jobs:
           path: |
             /tmp/wms-api.log
             /tmp/settlement-e2e.log
+            /tmp/regression-e2e.log
           if-no-files-found: warn
 
       - name: Stop API server

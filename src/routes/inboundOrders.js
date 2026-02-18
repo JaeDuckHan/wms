@@ -28,6 +28,19 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
+function toMysqlDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const mi = String(date.getUTCMinutes()).padStart(2, "0");
+  const ss = String(date.getUTCSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
 router.get("/", async (_req, res) => {
   try {
     const [rows] = await getPool().query(
@@ -82,7 +95,7 @@ router.post("/", validate(inboundOrderCreateSchema), async (req, res) => {
     const [result] = await getPool().query(
       `INSERT INTO inbound_orders (inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at]
+      [inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, toMysqlDateTime(received_at)]
     );
 
     const [rows] = await getPool().query(
@@ -135,7 +148,7 @@ router.put("/:id", validate(inboundOrderUpdateSchema), async (req, res) => {
         status,
         memo || null,
         created_by,
-        received_at || null,
+        toMysqlDateTime(received_at),
         req.params.id
       ]
     );

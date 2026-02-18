@@ -10,7 +10,9 @@
     "test:e2e:settlement": "powershell -ExecutionPolicy Bypass -File ./scripts/run_settlement_invoice_flow.ps1",
     "test:e2e:reopen-reject": "powershell -ExecutionPolicy Bypass -File ./scripts/run_settlement_reopen_reject_flow.ps1",
     "test:e2e:invoice-reuse": "powershell -ExecutionPolicy Bypass -File ./scripts/run_invoice_reuse_flow.ps1",
-    "test:e2e:insufficient-stock": "powershell -ExecutionPolicy Bypass -File ./scripts/run_outbound_insufficient_stock.ps1"
+    "test:e2e:insufficient-stock": "powershell -ExecutionPolicy Bypass -File ./scripts/run_outbound_insufficient_stock.ps1",
+    "test:e2e:outbound-detail": "powershell -ExecutionPolicy Bypass -File ./scripts/run_outbound_detail_flow.ps1",
+    "test:e2e:inbound-detail": "powershell -ExecutionPolicy Bypass -File ./scripts/run_inbound_detail_flow.ps1"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

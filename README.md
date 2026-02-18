@@ -51,6 +51,8 @@ npm run test:e2e:settlement
 npm run test:e2e:reopen-reject
 npm run test:e2e:invoice-reuse
 npm run test:e2e:insufficient-stock
+npm run test:e2e:outbound-detail
+npm run test:e2e:inbound-detail
 ```
 
 Details and parameter options:
@@ -62,6 +64,8 @@ Details and parameter options:
 - `scripts/run_settlement_reopen_reject_flow.ps1`
 - `scripts/run_invoice_reuse_flow.ps1`
 - `scripts/run_outbound_insufficient_stock.ps1`
+- `scripts/run_outbound_detail_flow.ps1`
+- `scripts/run_inbound_detail_flow.ps1`
 
 CI configuration (optional overrides):
 
@@ -79,9 +83,10 @@ CI configuration (optional overrides):
 2. In run summary, download artifact `settlement-e2e-logs`.
 3. Inspect server boot/runtime log: `/tmp/wms-api.log`.
 4. Inspect flow retry log: `/tmp/settlement-e2e.log` (`ATTEMPT`, `E2E_RESULT` lines).
-5. Reproduce full flow locally: `npm run test:e2e:settlement`.
-6. Reproduce regressions locally: `npm run test:e2e:reopen-reject`, `npm run test:e2e:invoice-reuse`, `npm run test:e2e:insufficient-stock`.
-7. If DB/init issue is suspected, rerun schema/seed then execute scripts with `-StartServerIfDown:$false -BaseUrl http://localhost:3100`.
+5. Inspect regression log bundle: `/tmp/regression-e2e.log`.
+6. Reproduce full flow locally: `npm run test:e2e:settlement`.
+7. Reproduce regressions locally: `npm run test:e2e:reopen-reject`, `npm run test:e2e:invoice-reuse`, `npm run test:e2e:insufficient-stock`, `npm run test:e2e:outbound-detail`, `npm run test:e2e:inbound-detail`.
+8. If DB/init issue is suspected, rerun schema/seed then execute scripts with `-StartServerIfDown:$false -BaseUrl http://localhost:3100`.
 
 ## Auth (JWT)
 
@@ -171,6 +176,12 @@ Current demo setup validates password with plain text in `users.password_hash` (
 - `POST /outbound-items`
 - `PUT /outbound-items/:id`
 - `DELETE /outbound-items/:id` (soft delete)
+
+`outbound-boxes`
+- `GET /outbound-orders/:id/boxes`
+- `POST /outbound-orders/:id/boxes`
+- `PUT /outbound-orders/:id/boxes/:boxId`
+- `DELETE /outbound-orders/:id/boxes/:boxId` (soft delete)
 
 `stocks`
 - `GET /stock-balances`

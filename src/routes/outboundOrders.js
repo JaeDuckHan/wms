@@ -38,6 +38,19 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
+function toMysqlDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const mi = String(date.getUTCMinutes()).padStart(2, "0");
+  const ss = String(date.getUTCSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
 router.get("/", async (_req, res) => {
   try {
     const [rows] = await getPool().query(
@@ -97,8 +110,8 @@ router.post("/", validate(outboundOrderSchema), async (req, res) => {
         order_no,
         tracking_no,
         status,
-        packed_at,
-        shipped_at,
+        toMysqlDateTime(packed_at),
+        toMysqlDateTime(shipped_at),
         created_by
       ]
     );
@@ -150,8 +163,8 @@ router.put("/:id", validate(outboundOrderSchema), async (req, res) => {
         order_no || null,
         tracking_no || null,
         status,
-        packed_at || null,
-        shipped_at || null,
+        toMysqlDateTime(packed_at),
+        toMysqlDateTime(shipped_at),
         created_by,
         req.params.id
       ]
