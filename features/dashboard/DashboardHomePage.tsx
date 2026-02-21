@@ -2,6 +2,9 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
+import { GenerateSnapshotsButton } from "@/components/dashboard/GenerateSnapshotsButton";
+import { DemoModeBanner, DemoModeToggle } from "@/components/dashboard/DemoModeToggle";
+import { useDemoMode } from "@/features/dashboard/useDemoMode";
 
 const items = [
   {
@@ -22,14 +25,23 @@ const items = [
 ];
 
 export function DashboardHomePage() {
+  const { demoMode, ready, toggleDemoMode } = useDemoMode();
+
   return (
     <section>
       <PageHeader
         breadcrumbs={[{ label: "Dashboard" }]}
         title="Dashboard"
         subtitle="Demo-ready storage dashboard modules."
+        actions={
+          <div className="flex items-center gap-2">
+            {ready ? <DemoModeToggle demoMode={demoMode} onToggle={toggleDemoMode} /> : null}
+            {demoMode ? <GenerateSnapshotsButton /> : null}
+          </div>
+        }
       />
       <DashboardTabs />
+      {ready ? <DemoModeBanner demoMode={demoMode} /> : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         {items.map((item) => (

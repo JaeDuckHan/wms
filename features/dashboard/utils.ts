@@ -63,6 +63,25 @@ export function toCsv<Row extends Record<string, unknown>>(rows: Row[], columns:
   return [header, ...lines].join("\n");
 }
 
+function escapeTsvField(value: unknown) {
+  const text = String(value ?? "");
+  return text.replace(/\t/g, " ").replace(/\r?\n/g, " ");
+}
+
+export function toTsv<Row extends Record<string, unknown>>(rows: Row[], columns: CsvColumn<Row>[]) {
+  const header = columns.map((column) => escapeTsvField(column.label)).join("\t");
+  const lines = rows.map((row) =>
+    columns
+      .map((column) => {
+        const raw = row[column.key as keyof Row];
+        const value = column.format ? column.format(raw, row) : raw;
+        return escapeTsvField(value);
+      })
+      .join("\t")
+  );
+  return [header, ...lines].join("\n");
+}
+
 export function downloadCsv(filename: string, csvString: string) {
   const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -71,6 +90,24 @@ export function downloadCsv(filename: string, csvString: string) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+export async function copyToClipboard(text: string) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  }
 }
 
 export function compareNumber(a: number | null | undefined, b: number | null | undefined, direction: SortDirection) {

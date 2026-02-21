@@ -155,3 +155,7 @@ export function getStorageCapacity(query: { date?: string; warehouseId?: number 
 export function generateStorageSnapshots(query: { date?: string; warehouseId?: number; clientId?: number }) {
   return requestDashboardPost<GenerateSnapshotsResponse>("storage/snapshots/generate", query);
 }
+
+export async function generateSnapshotsForDate(date: string) {
+  return generateStorageSnapshots({ date });
+}

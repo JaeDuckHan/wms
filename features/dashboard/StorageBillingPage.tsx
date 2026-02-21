@@ -1,8 +1,8 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownUp, Copy, Download } from "lucide-react";
+import { ArrowDownUp, Copy, Download, ImageDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,23 +12,36 @@ import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterBar } from "@/components/dashboard/FilterBar";
-import { FilterBarSkeleton, SummaryCardsSkeleton, TableSkeleton } from "@/components/dashboard/DashboardSkeleton";
+import { CardsSkeleton, FilterBarSkeleton, TableSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { GenerateSnapshotsButton } from "@/components/dashboard/GenerateSnapshotsButton";
-import { isMonthInput } from "@/components/dashboard/filterUtils";
+import { DemoModeBanner, DemoModeToggle } from "@/components/dashboard/DemoModeToggle";
+import {
+  stickyHeaderClass,
+  stickyIntersectionClass,
+  stickyLeftClass,
+  stickyTableClass,
+  StickyTableContainer,
+} from "@/components/dashboard/StickyTable";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getStorageBillingPreview, type StorageBillingResponse } from "@/features/dashboard/api";
+import { captureElementToPng } from "@/features/dashboard/capture";
+import { normalizeInt, normalizeMonth } from "@/features/dashboard/input";
+import { useDashboardToast } from "@/features/dashboard/toast";
+import { useDemoMode } from "@/features/dashboard/useDemoMode";
 import {
   compareNumber,
+  copyToClipboard,
   downloadCsv,
   formatCbm,
   formatMoney,
   readFiltersFromSearchParams,
   safeNumber,
   toCsv,
+  toTsv,
+  type CsvColumn,
   type SortDirection,
   writeFiltersToUrl,
 } from "@/features/dashboard/utils";
-import { useToast } from "@/components/ui/toast";
 
 function thisMonth() {
   return new Date().toISOString().slice(0, 7);
@@ -40,11 +53,31 @@ function isNonNegativeNumber(value: string) {
 
 type BillingSortKey = "days_count" | "avg_cbm" | "avg_pallet" | "amount_total";
 
+type BillingFilters = {
+  month: string;
+  warehouseId: string;
+  clientId: string;
+  rateCbm: string;
+  ratePallet: string;
+};
+
+const billingColumns = [
+  { key: "warehouse_id", label: "warehouse_id" },
+  { key: "client_id", label: "client_id" },
+  { key: "days_count", label: "days_count" },
+  { key: "avg_cbm", label: "avg_cbm" },
+  { key: "avg_pallet", label: "avg_pallet" },
+  { key: "amount_total", label: "amount_total" },
+] satisfies CsvColumn<Record<string, unknown>>[];
+
 export function StorageBillingPage() {
-  const { pushToast } = useToast();
+  const { toastError, toastSuccess } = useDashboardToast();
+  const { demoMode, ready: demoReady, toggleDemoMode } = useDemoMode();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const captureRef = useRef<HTMLDivElement | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   const defaultFilters = useMemo(
     () => ({
@@ -60,6 +93,9 @@ export function StorageBillingPage() {
     () => readFiltersFromSearchParams(searchParams, defaultFilters),
     [defaultFilters, searchParams]
   );
+  const hasExplicitFilterQuery = useMemo(() => {
+    return ["month", "warehouseId", "clientId", "rateCbm", "ratePallet"].some((key) => !!searchParams.get(key));
+  }, [searchParams]);
 
   const [month, setMonth] = useState(initialFilters.month);
   const [warehouseId, setWarehouseId] = useState(initialFilters.warehouseId);
@@ -73,40 +109,82 @@ export function StorageBillingPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<StorageBillingResponse | null>(null);
 
-  const validationError = useMemo(() => {
-    if (!isMonthInput(month)) return "month must use YYYY-MM format.";
-    if (warehouseId && !/^\d+$/.test(warehouseId)) return "warehouseId must be a positive integer.";
-    if (clientId && !/^\d+$/.test(clientId)) return "clientId must be a positive integer.";
-    if (!isNonNegativeNumber(rateCbm)) return "rateCbm must be a number >= 0.";
-    if (!isNonNegativeNumber(ratePallet)) return "ratePallet must be a number >= 0.";
-    return null;
-  }, [month, warehouseId, clientId, rateCbm, ratePallet]);
+  const buildFilters = useCallback(
+    (next?: Partial<BillingFilters>) => ({
+      month: next?.month ?? month,
+      warehouseId: next?.warehouseId ?? warehouseId,
+      clientId: next?.clientId ?? clientId,
+      rateCbm: next?.rateCbm ?? rateCbm,
+      ratePallet: next?.ratePallet ?? ratePallet,
+    }),
+    [clientId, month, rateCbm, ratePallet, warehouseId]
+  );
 
-  const load = useCallback(async () => {
-    if (validationError) return;
+  const getValidationError = useCallback((filters: BillingFilters) => {
+    if (!normalizeMonth(filters.month)) return "month must use YYYY-MM format.";
+    if (filters.warehouseId && !normalizeInt(filters.warehouseId)) return "warehouseId must be a positive integer.";
+    if (filters.clientId && !normalizeInt(filters.clientId)) return "clientId must be a positive integer.";
+    if (!isNonNegativeNumber(filters.rateCbm)) return "rateCbm must be a number >= 0.";
+    if (!isNonNegativeNumber(filters.ratePallet)) return "ratePallet must be a number >= 0.";
+    return null;
+  }, []);
+
+  const validationError = useMemo(() => {
+    return getValidationError(buildFilters());
+  }, [buildFilters, getValidationError]);
+
+  const loadWithFilters = useCallback(async (filters: BillingFilters) => {
+    const normalizedMonth = normalizeMonth(filters.month);
+    if (!normalizedMonth) return;
     setLoading(true);
     setError(null);
     try {
       const result = await getStorageBillingPreview({
-        month,
-        warehouseId: warehouseId ? Number(warehouseId) : undefined,
-        clientId: clientId ? Number(clientId) : undefined,
-        rateCbm: rateCbm ? Number(rateCbm) : undefined,
-        ratePallet: ratePallet ? Number(ratePallet) : undefined,
+        month: normalizedMonth,
+        warehouseId: filters.warehouseId ? Number(normalizeInt(filters.warehouseId)) : undefined,
+        clientId: filters.clientId ? Number(normalizeInt(filters.clientId)) : undefined,
+        rateCbm: filters.rateCbm ? Number(filters.rateCbm) : undefined,
+        ratePallet: filters.ratePallet ? Number(filters.ratePallet) : undefined,
       });
       setData(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load billing preview.");
+      const message = e instanceof Error ? e.message : "Failed to load billing preview.";
+      setError(message);
+      toastError(message);
     } finally {
       setLoading(false);
     }
-  }, [clientId, month, rateCbm, ratePallet, validationError, warehouseId]);
+  }, [toastError]);
+
+  const load = useCallback(async () => {
+    const filters = buildFilters();
+    if (getValidationError(filters)) return;
+    await loadWithFilters(filters);
+  }, [buildFilters, getValidationError, loadWithFilters]);
 
   useEffect(() => {
+    if (!demoReady || bootstrapped) return;
+    if (demoMode && !hasExplicitFilterQuery) {
+      const preset = {
+        month: thisMonth(),
+        warehouseId: "",
+        clientId: "",
+        rateCbm: "",
+        ratePallet: "",
+      };
+      setMonth(preset.month);
+      setWarehouseId("");
+      setClientId("");
+      setRateCbm("");
+      setRatePallet("");
+      writeFiltersToUrl(router, pathname, preset);
+      void loadWithFilters(preset);
+      setBootstrapped(true);
+      return;
+    }
     void load();
-    // Intentionally load once for the initial URL-driven state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setBootstrapped(true);
+  }, [bootstrapped, demoMode, demoReady, hasExplicitFilterQuery, load, loadWithFilters, pathname, router]);
 
   const tableRows = useMemo(() => {
     if (!data?.lines?.length) return [];
@@ -125,18 +203,46 @@ export function StorageBillingPage() {
   }, [data?.lines, search, sortDirection, sortKey]);
 
   const reset = () => {
-    setMonth(defaultFilters.month);
-    setWarehouseId(defaultFilters.warehouseId);
-    setClientId(defaultFilters.clientId);
-    setRateCbm(defaultFilters.rateCbm);
-    setRatePallet(defaultFilters.ratePallet);
+    const next = {
+      month: defaultFilters.month,
+      warehouseId: defaultFilters.warehouseId,
+      clientId: defaultFilters.clientId,
+      rateCbm: defaultFilters.rateCbm,
+      ratePallet: defaultFilters.ratePallet,
+    };
+    setMonth(next.month);
+    setWarehouseId(next.warehouseId);
+    setClientId(next.clientId);
+    setRateCbm(next.rateCbm);
+    setRatePallet(next.ratePallet);
     setSearch("");
     writeFiltersToUrl(router, pathname, {});
+    void loadWithFilters(next);
   };
 
   const applyFilters = () => {
-    writeFiltersToUrl(router, pathname, { month, rateCbm, ratePallet, warehouseId, clientId });
-    void load();
+    const next = buildFilters();
+    if (getValidationError(next)) return;
+    const normalizedMonth = normalizeMonth(next.month);
+    const normalizedWarehouse = normalizeInt(next.warehouseId);
+    const normalizedClient = normalizeInt(next.clientId);
+    setMonth(normalizedMonth);
+    setWarehouseId(normalizedWarehouse);
+    setClientId(normalizedClient);
+    writeFiltersToUrl(router, pathname, {
+      month: normalizedMonth,
+      rateCbm: next.rateCbm,
+      ratePallet: next.ratePallet,
+      warehouseId: normalizedWarehouse,
+      clientId: normalizedClient,
+    });
+    void loadWithFilters({
+      month: normalizedMonth,
+      warehouseId: normalizedWarehouse,
+      clientId: normalizedClient,
+      rateCbm: next.rateCbm,
+      ratePallet: next.ratePallet,
+    });
   };
 
   const toggleSort = (next: BillingSortKey) => {
@@ -152,32 +258,65 @@ export function StorageBillingPage() {
     if (!data) return;
     try {
       await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-      pushToast({ title: "Copied JSON", variant: "success" });
+      toastSuccess("Copied JSON");
     } catch {
-      pushToast({ title: "Copy failed", variant: "error" });
+      toastError("Copy failed");
     }
   };
 
   const exportCsv = () => {
-    const csv = toCsv(
-      tableRows.map((row) => ({
+    const rows = tableRows.map((row) => ({
+      warehouse_id: safeNumber(row.warehouse_id),
+      client_id: safeNumber(row.client_id),
+      days_count: safeNumber(row.days_count),
+      avg_cbm: safeNumber(row.avg_cbm),
+      avg_pallet: safeNumber(row.avg_pallet),
+      amount_total: safeNumber(row.amount_total),
+    }));
+    const csv = toCsv(rows, billingColumns);
+    downloadCsv(`storage-billing-${month}.csv`, csv);
+    toastSuccess("CSV downloaded");
+  };
+
+  const copyTable = async () => {
+    if (!tableRows.length) return;
+    try {
+      const rows = tableRows.map((row) => ({
         warehouse_id: safeNumber(row.warehouse_id),
         client_id: safeNumber(row.client_id),
         days_count: safeNumber(row.days_count),
         avg_cbm: safeNumber(row.avg_cbm),
         avg_pallet: safeNumber(row.avg_pallet),
         amount_total: safeNumber(row.amount_total),
-      })),
-      [
-        { key: "warehouse_id", label: "warehouse_id" },
-        { key: "client_id", label: "client_id" },
-        { key: "days_count", label: "days_count" },
-        { key: "avg_cbm", label: "avg_cbm" },
-        { key: "avg_pallet", label: "avg_pallet" },
-        { key: "amount_total", label: "amount_total" },
-      ]
-    );
-    downloadCsv(`storage-billing-${month}.csv`, csv);
+      }));
+      await copyToClipboard(toTsv(rows, billingColumns));
+      toastSuccess("Copied to clipboard");
+    } catch {
+      toastError("Copy failed");
+    }
+  };
+
+  const savePng = async () => {
+    if (!captureRef.current) return;
+    try {
+      await captureElementToPng(captureRef.current, `billing_${month || thisMonth()}.png`);
+      toastSuccess("PNG saved");
+    } catch {
+      toastError("PNG save failed");
+    }
+  };
+
+  const applyThisMonthPreset = () => {
+    const next = {
+      month: thisMonth(),
+      warehouseId,
+      clientId,
+      rateCbm,
+      ratePallet,
+    };
+    setMonth(next.month);
+    writeFiltersToUrl(router, pathname, next);
+    void loadWithFilters(next);
   };
 
   return (
@@ -187,7 +326,13 @@ export function StorageBillingPage() {
         title="Storage Billing Preview"
         description="Monthly storage billing simulation."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {demoReady ? <DemoModeToggle demoMode={demoMode} onToggle={toggleDemoMode} /> : null}
+            {demoMode ? <GenerateSnapshotsButton /> : null}
+            <Button type="button" variant="secondary" onClick={() => void savePng()} disabled={loading}>
+              <ImageDown className="h-4 w-4" />
+              Save PNG
+            </Button>
             <Button type="button" variant="secondary" onClick={() => void copyJson()} disabled={!data}>
               <Copy className="h-4 w-4" />
               Copy JSON
@@ -196,6 +341,7 @@ export function StorageBillingPage() {
         }
       />
       <DashboardTabs />
+      {demoReady ? <DemoModeBanner demoMode={demoMode} /> : null}
 
       {loading && !data ? <FilterBarSkeleton /> : null}
       <FilterBar
@@ -224,6 +370,9 @@ export function StorageBillingPage() {
           onChange={(e) => setRatePallet(e.target.value)}
           inputMode="decimal"
         />
+        <Button type="button" variant="secondary" onClick={applyThisMonthPreset} disabled={loading}>
+          This month
+        </Button>
       </FilterBar>
 
       {error && (
@@ -232,9 +381,10 @@ export function StorageBillingPage() {
         </div>
       )}
 
-      {loading ? <SummaryCardsSkeleton /> : null}
+      {loading ? <CardsSkeleton count={3} /> : null}
       {!loading && (
-        <div className="mb-4 grid gap-4 md:grid-cols-3">
+        <div ref={captureRef} className="mb-4 space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle>Amount Total</CardTitle>
@@ -253,6 +403,14 @@ export function StorageBillingPage() {
             </CardHeader>
             <CardContent className="text-2xl font-semibold">{formatMoney(data?.summary.amount_pallet ?? 0)}</CardContent>
           </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <CardTitle>Billing Lines</CardTitle>
+              <p className="text-sm text-slate-500">Monthly line-item preview by warehouse and client.</p>
+            </CardHeader>
+          </Card>
         </div>
       )}
 
@@ -270,11 +428,15 @@ export function StorageBillingPage() {
               <Download className="h-4 w-4" />
               CSV export
             </Button>
+            <Button type="button" variant="secondary" onClick={() => void copyTable()} disabled={!tableRows.length}>
+              <Copy className="h-4 w-4" />
+              Copy table
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <TableSkeleton rows={8} />
+            <TableSkeleton rows={8} cols={6} />
           ) : !tableRows.length ? (
             <EmptyState
               title="No billing lines"
@@ -287,31 +449,35 @@ export function StorageBillingPage() {
               }
             />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <StickyTableContainer>
+              <Table className={stickyTableClass}>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>warehouse_id</TableHead>
-                    <TableHead>client_id</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} ${stickyLeftClass} ${stickyIntersectionClass} left-0 w-32`}>
+                      warehouse_id
+                    </TableHead>
+                    <TableHead className={`${stickyHeaderClass} ${stickyLeftClass} ${stickyIntersectionClass} left-[8rem] w-32`}>
+                      client_id
+                    </TableHead>
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("days_count")}>
                         days_count
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("avg_cbm")}>
                         avg_cbm
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("avg_pallet")}>
                         avg_pallet
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("amount_total")}>
                         amount_total
                         <ArrowDownUp className="h-3.5 w-3.5" />
@@ -322,8 +488,8 @@ export function StorageBillingPage() {
                 <TableBody>
                   {tableRows.map((row) => (
                     <TableRow key={`${row.warehouse_id}-${row.client_id}`}>
-                      <TableCell>{row.warehouse_id}</TableCell>
-                      <TableCell>{row.client_id}</TableCell>
+                      <TableCell className={`${stickyLeftClass} left-0 w-32`}>{row.warehouse_id}</TableCell>
+                      <TableCell className={`${stickyLeftClass} left-[8rem] w-32`}>{row.client_id}</TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex items-center gap-2">
                           <span>{safeNumber(row.days_count).toLocaleString()}</span>
@@ -337,11 +503,12 @@ export function StorageBillingPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </StickyTableContainer>
           )}
         </CardContent>
       </Card>
     </section>
   );
 }
+
 

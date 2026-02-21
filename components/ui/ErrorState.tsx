@@ -19,7 +19,7 @@ export function ErrorState({
           {message && <p className="mt-1 text-xs text-red-600">{message}</p>}
         </div>
         {onRetry && (
-          <Button variant="secondary" size="sm" onClick={onRetry}>
+          <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
             Retry
           </Button>
         )}

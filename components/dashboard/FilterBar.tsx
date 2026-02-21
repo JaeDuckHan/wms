@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { normalizeDateInput, normalizeMonthInput } from "@/components/dashboard/filterUtils";
+import { normalizeDate, normalizeInt, normalizeMonth } from "@/features/dashboard/input";
 
 export type FilterBarValues = {
   [key: string]: string | undefined;
@@ -62,14 +62,21 @@ export function FilterBar({
   };
 
   const keysToSync = queryKeys ?? Object.keys(values);
+  const canSubmit = !loading && !validationError;
+
+  const submitFilters = () => {
+    if (!canSubmit) return;
+    syncQuery(values, keysToSync);
+    onSubmit();
+  };
 
   return (
-    <form
+    <div
       className="rounded-xl border bg-white p-4"
-      onSubmit={(e) => {
+      onKeyDown={(e) => {
+        if (e.key !== "Enter") return;
         e.preventDefault();
-        syncQuery(values, keysToSync);
-        onSubmit();
+        submitFilters();
       }}
     >
       <div className="grid gap-3 md:grid-cols-6">
@@ -78,12 +85,14 @@ export function FilterBar({
             <Input
               placeholder="from YYYY-MM-DD"
               value={values.from ?? ""}
-              onChange={(e) => onChange({ ...values, from: normalizeDateInput(e.target.value) })}
+              onChange={(e) => onChange({ ...values, from: e.target.value.replace(/[^\d-]/g, "").slice(0, 10) })}
+              onBlur={() => onChange({ ...values, from: normalizeDate(values.from ?? "") })}
             />
             <Input
               placeholder="to YYYY-MM-DD"
               value={values.to ?? ""}
-              onChange={(e) => onChange({ ...values, to: normalizeDateInput(e.target.value) })}
+              onChange={(e) => onChange({ ...values, to: e.target.value.replace(/[^\d-]/g, "").slice(0, 10) })}
+              onBlur={() => onChange({ ...values, to: normalizeDate(values.to ?? "") })}
             />
           </>
         )}
@@ -91,14 +100,16 @@ export function FilterBar({
           <Input
             placeholder="date YYYY-MM-DD"
             value={values.date ?? ""}
-            onChange={(e) => onChange({ ...values, date: normalizeDateInput(e.target.value) })}
+            onChange={(e) => onChange({ ...values, date: e.target.value.replace(/[^\d-]/g, "").slice(0, 10) })}
+            onBlur={() => onChange({ ...values, date: normalizeDate(values.date ?? "") })}
           />
         )}
         {mode === "month" && (
           <Input
             placeholder="month YYYY-MM"
             value={values.month ?? ""}
-            onChange={(e) => onChange({ ...values, month: normalizeMonthInput(e.target.value) })}
+            onChange={(e) => onChange({ ...values, month: e.target.value.replace(/[^\d-]/g, "").slice(0, 7) })}
+            onBlur={() => onChange({ ...values, month: normalizeMonth(values.month ?? "") })}
           />
         )}
 
@@ -106,18 +117,18 @@ export function FilterBar({
           <Input
             placeholder="warehouseId"
             value={values.warehouseId ?? ""}
-            onChange={(e) => onChange({ ...values, warehouseId: e.target.value.replace(/\D/g, "") })}
+            onChange={(e) => onChange({ ...values, warehouseId: normalizeInt(e.target.value) })}
           />
         )}
         {!hideClient && (
           <Input
             placeholder="clientId"
             value={values.clientId ?? ""}
-            onChange={(e) => onChange({ ...values, clientId: e.target.value.replace(/\D/g, "") })}
+            onChange={(e) => onChange({ ...values, clientId: normalizeInt(e.target.value) })}
           />
         )}
         {children}
-        <Button type="submit" disabled={loading || !!validationError}>
+        <Button type="button" disabled={!canSubmit} onClick={submitFilters}>
           {loading ? "Loading..." : "Load"}
         </Button>
         <Button
@@ -133,6 +144,6 @@ export function FilterBar({
       </div>
       <div className="mt-2 text-xs text-slate-500">Press Enter to submit.</div>
       {validationError && <p className="mt-2 text-sm text-red-600">{validationError}</p>}
-    </form>
+    </div>
   );
 }

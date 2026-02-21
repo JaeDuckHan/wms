@@ -1,8 +1,8 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownUp, Download } from "lucide-react";
+import { ArrowDownUp, Copy, Download, ImageDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,19 +11,34 @@ import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterBar } from "@/components/dashboard/FilterBar";
-import { FilterBarSkeleton, SummaryCardsSkeleton, TableSkeleton } from "@/components/dashboard/DashboardSkeleton";
+import { CardsSkeleton, FilterBarSkeleton, TableSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { GenerateSnapshotsButton } from "@/components/dashboard/GenerateSnapshotsButton";
-import { isDateInput } from "@/components/dashboard/filterUtils";
+import { DemoModeBanner, DemoModeToggle } from "@/components/dashboard/DemoModeToggle";
+import { Badge } from "@/components/ui/badge";
+import {
+  stickyHeaderClass,
+  stickyIntersectionClass,
+  stickyLeftClass,
+  stickyTableClass,
+  StickyTableContainer,
+} from "@/components/dashboard/StickyTable";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getStorageTrend, type GroupBy, type StorageTrendResponse } from "@/features/dashboard/api";
+import { generateSnapshotsForDate, getStorageTrend, type GroupBy, type StorageTrendResponse } from "@/features/dashboard/api";
+import { captureElementToPng } from "@/features/dashboard/capture";
+import { normalizeDate, normalizeInt } from "@/features/dashboard/input";
+import { useDashboardToast } from "@/features/dashboard/toast";
+import { useDemoMode } from "@/features/dashboard/useDemoMode";
 import {
   compareNumber,
+  copyToClipboard,
   downloadCsv,
   formatCbm,
   formatPct,
   readFiltersFromSearchParams,
   safeNumber,
   toCsv,
+  toTsv,
+  type CsvColumn,
   type SortDirection,
   writeFiltersToUrl,
 } from "@/features/dashboard/utils";
@@ -84,10 +99,37 @@ function TrendLineChart({ points }: { points: Array<{ x: string; y: number }> })
 
 type TrendSortKey = "total_cbm" | "total_pallet" | "total_sku" | "delta_pct";
 
+type TrendFilters = {
+  from: string;
+  to: string;
+  groupBy: GroupBy;
+  warehouseId: string;
+  clientId: string;
+};
+
+const trendColumns = [
+  { key: "period", label: "period" },
+  { key: "total_cbm", label: "total_cbm" },
+  { key: "total_pallet", label: "total_pallet" },
+  { key: "total_sku", label: "total_sku" },
+  { key: "delta_pct", label: "delta_pct" },
+] satisfies CsvColumn<Record<string, unknown>>[];
+
+function dateByOffset(offset: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
+
 export function StorageTrendPage() {
+  const { toastError, toastSuccess } = useDashboardToast();
+  const { demoMode, ready: demoReady, toggleDemoMode } = useDemoMode();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [generatingSnapshots, setGeneratingSnapshots] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
+  const captureRef = useRef<HTMLDivElement | null>(null);
 
   const defaultFilters = useMemo(
     () => ({
@@ -99,10 +141,10 @@ export function StorageTrendPage() {
     }),
     []
   );
-  const initialFilters = useMemo(
-    () => readFiltersFromSearchParams(searchParams, defaultFilters),
-    [defaultFilters, searchParams]
-  );
+  const initialFilters = useMemo(() => readFiltersFromSearchParams(searchParams, defaultFilters), [defaultFilters, searchParams]);
+  const hasExplicitFilterQuery = useMemo(() => {
+    return ["from", "to", "groupBy", "warehouseId", "clientId"].some((key) => !!searchParams.get(key));
+  }, [searchParams]);
 
   const [from, setFrom] = useState(initialFilters.from);
   const [to, setTo] = useState(initialFilters.to);
@@ -116,39 +158,85 @@ export function StorageTrendPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<StorageTrendResponse | null>(null);
 
-  const validationError = useMemo(() => {
-    if (!isDateInput(from) || !isDateInput(to)) return "from/to must use YYYY-MM-DD format.";
-    if (from > to) return "from cannot be later than to.";
-    if (warehouseId && !/^\d+$/.test(warehouseId)) return "warehouseId must be a positive integer.";
-    if (clientId && !/^\d+$/.test(clientId)) return "clientId must be a positive integer.";
-    return null;
-  }, [from, to, warehouseId, clientId]);
+  const buildFilters = useCallback(
+    (next?: Partial<TrendFilters>) => ({
+      from: next?.from ?? from,
+      to: next?.to ?? to,
+      groupBy: next?.groupBy ?? groupBy,
+      warehouseId: next?.warehouseId ?? warehouseId,
+      clientId: next?.clientId ?? clientId,
+    }),
+    [clientId, from, groupBy, to, warehouseId]
+  );
 
-  const load = useCallback(async () => {
-    if (validationError) return;
+  const getValidationError = useCallback((filters: TrendFilters) => {
+    const fromText = normalizeDate(filters.from);
+    const toText = normalizeDate(filters.to);
+    if (!fromText || !toText) return "from/to must use YYYY-MM-DD format.";
+    if (fromText > toText) return "from cannot be later than to.";
+    if (filters.warehouseId && !normalizeInt(filters.warehouseId)) return "warehouseId must be a positive integer.";
+    if (filters.clientId && !normalizeInt(filters.clientId)) return "clientId must be a positive integer.";
+    return null;
+  }, []);
+
+  const validationError = useMemo(() => {
+    return getValidationError(buildFilters());
+  }, [buildFilters, getValidationError]);
+
+  const loadWithFilters = useCallback(async (filters: TrendFilters) => {
+    const fromText = normalizeDate(filters.from);
+    const toText = normalizeDate(filters.to);
+    if (!fromText || !toText) return;
+
     setLoading(true);
     setError(null);
     try {
       const result = await getStorageTrend({
-        from,
-        to,
-        groupBy,
-        warehouseId: warehouseId ? Number(warehouseId) : undefined,
-        clientId: clientId ? Number(clientId) : undefined,
+        from: fromText,
+        to: toText,
+        groupBy: filters.groupBy,
+        warehouseId: filters.warehouseId ? Number(normalizeInt(filters.warehouseId)) : undefined,
+        clientId: filters.clientId ? Number(normalizeInt(filters.clientId)) : undefined,
       });
       setData(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load trend.");
+      const message = e instanceof Error ? e.message : "Failed to load trend.";
+      setError(message);
+      toastError(message);
     } finally {
       setLoading(false);
     }
-  }, [clientId, from, groupBy, to, validationError, warehouseId]);
+  }, [toastError]);
+
+  const load = useCallback(async () => {
+    const filters = buildFilters();
+    if (getValidationError(filters)) return;
+    await loadWithFilters(filters);
+  }, [buildFilters, getValidationError, loadWithFilters]);
 
   useEffect(() => {
+    if (!demoReady || bootstrapped) return;
+    if (demoMode && !hasExplicitFilterQuery) {
+      const preset = {
+        from: dateByOffset(6),
+        to: dateByOffset(0),
+        groupBy: "day" as GroupBy,
+        warehouseId: "",
+        clientId: "",
+      };
+      setFrom(preset.from);
+      setTo(preset.to);
+      setGroupBy(preset.groupBy);
+      setWarehouseId("");
+      setClientId("");
+      writeFiltersToUrl(router, pathname, preset);
+      void loadWithFilters(preset);
+      setBootstrapped(true);
+      return;
+    }
     void load();
-    // Intentionally load once for the initial URL-driven state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setBootstrapped(true);
+  }, [bootstrapped, demoMode, demoReady, hasExplicitFilterQuery, load, loadWithFilters, pathname, router]);
 
   const filledSeries = useMemo(() => {
     if (!data?.series?.length) return [];
@@ -195,6 +283,15 @@ export function StorageTrendPage() {
     );
   }, [filledSeries]);
 
+  const trendDelta = useMemo(() => {
+    if (!filledSeries.length) return { deltaAbs: null as number | null, deltaPct: null as number | null };
+    const first = safeNumber(filledSeries[0]?.total_cbm);
+    const last = safeNumber(filledSeries[filledSeries.length - 1]?.total_cbm);
+    const deltaAbs = last - first;
+    const deltaPct = first > 0 ? (deltaAbs / first) * 100 : null;
+    return { deltaAbs, deltaPct };
+  }, [filledSeries]);
+
   const tableRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = keyword
@@ -216,38 +313,117 @@ export function StorageTrendPage() {
   };
 
   const reset = () => {
-    setFrom(defaultFilters.from);
-    setTo(defaultFilters.to);
-    setGroupBy(defaultFilters.groupBy as GroupBy);
-    setWarehouseId(defaultFilters.warehouseId);
-    setClientId(defaultFilters.clientId);
+    const next = {
+      from: defaultFilters.from,
+      to: defaultFilters.to,
+      groupBy: defaultFilters.groupBy as GroupBy,
+      warehouseId: defaultFilters.warehouseId,
+      clientId: defaultFilters.clientId,
+    };
+    setFrom(next.from);
+    setTo(next.to);
+    setGroupBy(next.groupBy);
+    setWarehouseId(next.warehouseId);
+    setClientId(next.clientId);
     setSearch("");
     writeFiltersToUrl(router, pathname, {});
+    void loadWithFilters(next);
   };
 
   const applyFilters = () => {
-    writeFiltersToUrl(router, pathname, { from, to, groupBy, warehouseId, clientId });
-    void load();
+    const next = buildFilters();
+    if (getValidationError(next)) return;
+    const nextFrom = normalizeDate(next.from);
+    const nextTo = normalizeDate(next.to);
+    const nextWarehouse = normalizeInt(next.warehouseId);
+    const nextClient = normalizeInt(next.clientId);
+    setFrom(nextFrom);
+    setTo(nextTo);
+    setWarehouseId(nextWarehouse);
+    setClientId(nextClient);
+    writeFiltersToUrl(router, pathname, {
+      from: nextFrom,
+      to: nextTo,
+      groupBy: next.groupBy,
+      warehouseId: nextWarehouse,
+      clientId: nextClient,
+    });
+    void loadWithFilters({
+      from: nextFrom,
+      to: nextTo,
+      groupBy: next.groupBy,
+      warehouseId: nextWarehouse,
+      clientId: nextClient,
+    });
   };
 
   const exportCsv = () => {
-    const csv = toCsv(
-      tableRows.map((row) => ({
+    const rows = tableRows.map((row) => ({
+      period: row.period,
+      total_cbm: safeNumber(row.total_cbm),
+      total_pallet: safeNumber(row.total_pallet),
+      total_sku: safeNumber(row.total_sku),
+      delta_pct: row.delta_pct ?? "",
+    }));
+    const csv = toCsv(rows, trendColumns);
+    downloadCsv(`storage-trend-${from}-${to}.csv`, csv);
+    toastSuccess("CSV downloaded");
+  };
+
+  const copyTable = async () => {
+    if (!tableRows.length) return;
+    try {
+      const rows = tableRows.map((row) => ({
         period: row.period,
         total_cbm: safeNumber(row.total_cbm),
         total_pallet: safeNumber(row.total_pallet),
         total_sku: safeNumber(row.total_sku),
         delta_pct: row.delta_pct ?? "",
-      })),
-      [
-        { key: "period", label: "period" },
-        { key: "total_cbm", label: "total_cbm" },
-        { key: "total_pallet", label: "total_pallet" },
-        { key: "total_sku", label: "total_sku" },
-        { key: "delta_pct", label: "delta_pct" },
-      ]
-    );
-    downloadCsv(`storage-trend-${from}-${to}.csv`, csv);
+      }));
+      await copyToClipboard(toTsv(rows, trendColumns));
+      toastSuccess("Copied to clipboard");
+    } catch {
+      toastError("Copy failed");
+    }
+  };
+
+  const savePng = async () => {
+    if (!captureRef.current) return;
+    try {
+      await captureElementToPng(captureRef.current, `trend_${from || "from"}_to_${to || "to"}.png`);
+      toastSuccess("PNG saved");
+    } catch {
+      toastError("PNG save failed");
+    }
+  };
+
+  const generateLast7Days = async () => {
+    setGeneratingSnapshots(true);
+    try {
+      for (let i = 0; i <= 6; i += 1) {
+        await generateSnapshotsForDate(dateByOffset(i));
+      }
+      toastSuccess("Generated demo snapshots for last 7 days");
+      await load();
+    } catch (error) {
+      toastError(error instanceof Error ? error.message : "Failed to generate snapshots");
+    } finally {
+      setGeneratingSnapshots(false);
+    }
+  };
+
+  const applyLast7DaysPreset = () => {
+    const next = {
+      from: dateByOffset(6),
+      to: dateByOffset(0),
+      groupBy,
+      warehouseId,
+      clientId,
+    };
+    setFrom(next.from);
+    setTo(next.to);
+    writeFiltersToUrl(router, pathname, next);
+    void loadWithFilters(next);
   };
 
   return (
@@ -256,8 +432,23 @@ export function StorageTrendPage() {
         breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Storage Trend" }]}
         title="Storage Trend"
         description="Trend of storage usage by period."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {demoReady ? <DemoModeToggle demoMode={demoMode} onToggle={toggleDemoMode} /> : null}
+            {demoMode && process.env.NODE_ENV !== "production" ? (
+              <Button type="button" variant="secondary" onClick={() => void generateLast7Days()} disabled={generatingSnapshots}>
+                {generatingSnapshots ? "Generating..." : "Generate demo snapshots (last 7 days)"}
+              </Button>
+            ) : null}
+            <Button type="button" variant="secondary" onClick={() => void savePng()} disabled={loading}>
+              <ImageDown className="h-4 w-4" />
+              Save PNG
+            </Button>
+          </div>
+        }
       />
       <DashboardTabs />
+      {demoReady ? <DemoModeBanner demoMode={demoMode} /> : null}
 
       {loading && !data ? <FilterBarSkeleton /> : null}
       <FilterBar
@@ -284,6 +475,9 @@ export function StorageTrendPage() {
           <option value="week">week</option>
           <option value="month">month</option>
         </select>
+        <Button type="button" variant="secondary" onClick={applyLast7DaysPreset} disabled={loading}>
+          Last 7 days
+        </Button>
       </FilterBar>
 
       {error && (
@@ -292,14 +486,32 @@ export function StorageTrendPage() {
         </div>
       )}
 
-      {loading ? <SummaryCardsSkeleton /> : null}
+      {loading ? <CardsSkeleton count={3} /> : null}
       {!loading && (
-        <div className="mb-4 grid gap-4 md:grid-cols-3">
+        <div ref={captureRef} className="mb-4 space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle>Total CBM</CardTitle>
             </CardHeader>
-            <CardContent className="text-2xl font-semibold">{formatCbm(displayTotals.total_cbm)}</CardContent>
+            <CardContent>
+              <p className="text-2xl font-semibold">{formatCbm(displayTotals.total_cbm)}</p>
+              <div className="mt-2">
+                {trendDelta.deltaAbs == null ? (
+                  <Badge variant="default">-</Badge>
+                ) : trendDelta.deltaAbs > 0 ? (
+                  <Badge variant="success">
+                    ▲ {formatCbm(trendDelta.deltaAbs)} ({formatPct(trendDelta.deltaPct)})
+                  </Badge>
+                ) : trendDelta.deltaAbs < 0 ? (
+                  <Badge variant="danger">
+                    ▼ {formatCbm(Math.abs(trendDelta.deltaAbs))} ({formatPct(trendDelta.deltaPct)})
+                  </Badge>
+                ) : (
+                  <Badge variant="default">- {formatCbm(0)} ({formatPct(0)})</Badge>
+                )}
+              </div>
+            </CardContent>
           </Card>
           <Card>
             <CardHeader>
@@ -313,32 +525,33 @@ export function StorageTrendPage() {
             </CardHeader>
             <CardContent className="text-2xl font-semibold">{safeNumber(displayTotals.total_sku).toLocaleString()}</CardContent>
           </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>CBM Trend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <TableSkeleton rows={4} cols={4} />
+              ) : filledSeries.length ? (
+                <TrendLineChart points={filledSeries.map((item) => ({ x: item.period, y: safeNumber(item.total_cbm) }))} />
+              ) : (
+                <EmptyState
+                  title="No trend data yet"
+                  description="Try widening the date range or generate recent snapshots for demo data."
+                  actions={
+                    <GenerateSnapshotsButton
+                      warehouseId={warehouseId ? Number(warehouseId) : undefined}
+                      clientId={clientId ? Number(clientId) : undefined}
+                    />
+                  }
+                />
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
-
-      <Card className="mb-4">
-        <CardHeader>
-          <CardTitle>CBM Trend</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <TableSkeleton rows={4} />
-          ) : filledSeries.length ? (
-            <TrendLineChart points={filledSeries.map((item) => ({ x: item.period, y: safeNumber(item.total_cbm) }))} />
-          ) : (
-            <EmptyState
-              title="No trend data yet"
-              description="Try widening the date range or generate recent snapshots for demo data."
-              actions={
-                <GenerateSnapshotsButton
-                  warehouseId={warehouseId ? Number(warehouseId) : undefined}
-                  clientId={clientId ? Number(clientId) : undefined}
-                />
-              }
-            />
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -354,11 +567,15 @@ export function StorageTrendPage() {
               <Download className="h-4 w-4" />
               CSV export
             </Button>
+            <Button type="button" variant="secondary" onClick={() => void copyTable()} disabled={!tableRows.length}>
+              <Copy className="h-4 w-4" />
+              Copy table
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <TableSkeleton rows={8} />
+            <TableSkeleton rows={8} cols={5} />
           ) : !tableRows.length ? (
             <EmptyState
               title="No rows"
@@ -371,30 +588,30 @@ export function StorageTrendPage() {
               }
             />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <StickyTableContainer>
+              <Table className={stickyTableClass}>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} ${stickyLeftClass} ${stickyIntersectionClass} left-0 w-40`}>Period</TableHead>
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("total_cbm")}>
                         CBM
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("total_pallet")}>
                         Pallet
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("total_sku")}>
                         SKU
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("delta_pct")}>
                         Delta
                         <ArrowDownUp className="h-3.5 w-3.5" />
@@ -405,7 +622,7 @@ export function StorageTrendPage() {
                 <TableBody>
                   {tableRows.map((row) => (
                     <TableRow key={row.period}>
-                      <TableCell>{row.period}</TableCell>
+                      <TableCell className={`${stickyLeftClass} left-0 w-40`}>{row.period}</TableCell>
                       <TableCell className="text-right">{formatCbm(row.total_cbm)}</TableCell>
                       <TableCell className="text-right">{formatCbm(row.total_pallet)}</TableCell>
                       <TableCell className="text-right">{safeNumber(row.total_sku).toLocaleString()}</TableCell>
@@ -414,11 +631,12 @@ export function StorageTrendPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </StickyTableContainer>
           )}
         </CardContent>
       </Card>
     </section>
   );
 }
+
 
