@@ -3,6 +3,7 @@ import type { InventoryQuery, StockBalanceRow, StockTransactionRow } from "@/fea
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3010";
+const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
 const ENABLE_DEV_FALLBACK = process.env.NODE_ENV !== "production";
 
 type RequestOptions = { token?: string };
@@ -135,7 +136,12 @@ function includesQ(...values: Array<string | number | null | undefined>) {
   };
 }
 
+function shouldUseFallback(token?: string) {
+  return USE_MOCK || ENABLE_DEV_FALLBACK || token === "mock-token";
+}
+
 export async function getStockBalances(query?: InventoryQuery, options?: RequestOptions): Promise<StockBalanceRow[]> {
+  const token = await resolveToken(options?.token);
   try {
     const [balances, clients, products, lots] = await Promise.all([
       requestJson<RawBalance[]>("/stock-balances", undefined, options),
@@ -161,7 +167,7 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
 
     return mapped.filter((row) => includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q));
   } catch (error) {
-    if (ENABLE_DEV_FALLBACK) {
+    if (shouldUseFallback(token)) {
       return mockBalances.filter((row) =>
         includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
       );
@@ -174,6 +180,7 @@ export async function getStockTransactions(
   query?: InventoryQuery,
   options?: RequestOptions
 ): Promise<StockTransactionRow[]> {
+  const token = await resolveToken(options?.token);
   const params = new URLSearchParams();
   if (query?.txn_type) params.set("txn_type", query.txn_type);
   const path = `/stock-transactions${params.toString() ? `?${params.toString()}` : ""}`;
@@ -209,7 +216,7 @@ export async function getStockTransactions(
       includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
     );
   } catch (error) {
-    if (ENABLE_DEV_FALLBACK) {
+    if (shouldUseFallback(token)) {
       const fallbackRows =
         query?.txn_type && query.txn_type.length > 0
           ? mockTransactions.filter((row) => row.txn_type === query.txn_type)

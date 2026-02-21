@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { createClient, listClients, toggleClientStatus, updateClient } from "@/features/settings/clients/api";
 import type { Client, ClientStatus } from "@/features/settings/clients/types";
 
@@ -25,6 +26,9 @@ type FormState = {
   memo: string;
   status: ClientStatus;
 };
+
+type StatusFilter = "all" | ClientStatus;
+type SortKey = "created_desc" | "created_asc" | "code_asc" | "name_asc";
 
 const initialForm: FormState = {
   client_code: "",
@@ -36,15 +40,29 @@ const initialForm: FormState = {
 export function ClientsSettingsPage() {
   const { pushToast } = useToast();
   const [rows, setRows] = useState<Client[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingRows, setLoadingRows] = useState(false);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("created_desc");
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const loadRows = async () => {
-    const data = await listClients();
-    setRows(data);
+    setLoadingRows(true);
+    setLoadError(null);
+    try {
+      const data = await listClients();
+      setRows(data);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Failed to load clients.");
+    } finally {
+      setLoadingRows(false);
+    }
   };
 
   useEffect(() => {
@@ -53,17 +71,28 @@ export function ClientsSettingsPage() {
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    const searched = rows.filter(
       (item) =>
+        (statusFilter === "all" || item.status === statusFilter) &&
+        (
         item.client_code.toLowerCase().includes(q) ||
         item.name.toLowerCase().includes(q)
+        )
     );
-  }, [rows, search]);
+    const sorted = [...searched];
+    sorted.sort((a, b) => {
+      if (sortKey === "created_desc") return b.created_at.localeCompare(a.created_at);
+      if (sortKey === "created_asc") return a.created_at.localeCompare(b.created_at);
+      if (sortKey === "code_asc") return a.client_code.localeCompare(b.client_code);
+      return a.name.localeCompare(b.name);
+    });
+    return sorted;
+  }, [rows, search, statusFilter, sortKey]);
 
   const openCreate = () => {
     setEditingId(null);
     setForm(initialForm);
+    setFieldError(null);
     setOpen(true);
   };
 
@@ -75,15 +104,18 @@ export function ClientsSettingsPage() {
       memo: row.memo,
       status: row.status,
     });
+    setFieldError(null);
     setOpen(true);
   };
 
   const submit = async () => {
     if (!form.client_code.trim() || !form.name.trim()) {
+      setFieldError("Client code and name are required.");
       pushToast({ title: "Missing required fields", description: "Client code and name are required.", variant: "error" });
       return;
     }
 
+    setFieldError(null);
     setSaving(true);
     try {
       if (editingId) {
@@ -96,6 +128,7 @@ export function ClientsSettingsPage() {
       await loadRows();
       setOpen(false);
     } catch (error) {
+      setFieldError(error instanceof Error ? error.message : "Please try again.");
       pushToast({
         title: "Save failed",
         description: error instanceof Error ? error.message : "Please try again.",
@@ -107,12 +140,23 @@ export function ClientsSettingsPage() {
   };
 
   const toggleStatus = async (row: Client) => {
-    await toggleClientStatus(row.id);
-    await loadRows();
-    pushToast({
-      title: row.status === "active" ? "Client deactivated" : "Client reactivated",
-      variant: "info",
-    });
+    setTogglingId(row.id);
+    try {
+      await toggleClientStatus(row.id);
+      await loadRows();
+      pushToast({
+        title: row.status === "active" ? "Client deactivated" : "Client reactivated",
+        variant: "info",
+      });
+    } catch (error) {
+      pushToast({
+        title: "Action failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error",
+      });
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   return (
@@ -126,19 +170,41 @@ export function ClientsSettingsPage() {
       <SettingsTabs />
 
       <div className="rounded-xl border bg-white p-6">
-        <div className="mb-4">
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
           <Input
             placeholder="Search by client name or code"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
+          <select
+            className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <select
+            className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+          >
+            <option value="created_desc">Newest</option>
+            <option value="created_asc">Oldest</option>
+            <option value="code_asc">Client Code</option>
+            <option value="name_asc">Name</option>
+          </select>
         </div>
 
-        <DataTable
-          rows={filteredRows}
-          emptyText="No clients found."
-          rowClassName="cursor-pointer hover:bg-slate-50"
-          columns={[
+        {loadError ? (
+          <ErrorState title="Failed to load clients." message={loadError} onRetry={() => void loadRows()} />
+        ) : (
+          <DataTable
+            rows={filteredRows}
+            emptyText={loadingRows ? "Loading clients..." : "No clients found."}
+            rowClassName="cursor-pointer hover:bg-slate-50"
+            columns={[
             { key: "client_code", label: "Client Code", render: (row) => <span className="font-medium">{row.client_code}</span> },
             { key: "name", label: "Name", render: (row) => row.name },
             { key: "status", label: "Status", render: (row) => <ActiveStatusBadge status={row.status} /> },
@@ -152,15 +218,16 @@ export function ClientsSettingsPage() {
               label: "Actions",
               render: (row) => (
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
-                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)}>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id}>Edit</Button>
+                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id}>
                     {row.status === "active" ? "Deactivate" : "Activate"}
                   </Button>
                 </div>
               ),
             },
           ]}
-        />
+          />
+        )}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -172,7 +239,12 @@ export function ClientsSettingsPage() {
           <div className="space-y-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">Client Code</label>
-              <Input value={form.client_code} onChange={(e) => setForm((prev) => ({ ...prev, client_code: e.target.value }))} />
+              <Input
+                value={form.client_code}
+                onChange={(e) => setForm((prev) => ({ ...prev, client_code: e.target.value.toUpperCase() }))}
+                placeholder="e.g. ACME"
+              />
+              <p className="text-xs text-slate-500">Use 2-30 chars: A-Z, 0-9, underscore or hyphen.</p>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">Name</label>
@@ -193,10 +265,13 @@ export function ClientsSettingsPage() {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
+            {fieldError && <p className="text-xs text-red-600">{fieldError}</p>}
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => void submit()} disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+            <Button onClick={() => void submit()} disabled={saving || !form.client_code.trim() || !form.name.trim()}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

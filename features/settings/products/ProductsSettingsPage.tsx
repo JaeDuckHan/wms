@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { listClients } from "@/features/settings/clients/api";
 import { buildBarcodeFull, createProduct, listProducts, toggleProductStatus, updateProduct } from "@/features/settings/products/api";
 import type { Product, ProductStatus } from "@/features/settings/products/types";
@@ -27,6 +28,9 @@ type FormState = {
   status: ProductStatus;
 };
 
+type StatusFilter = "all" | ProductStatus;
+type SortKey = "created_desc" | "created_asc" | "client_asc" | "name_asc";
+
 const initialForm: FormState = {
   client_code: "",
   barcode_raw: "",
@@ -37,17 +41,31 @@ const initialForm: FormState = {
 export function ProductsSettingsPage() {
   const { pushToast } = useToast();
   const [rows, setRows] = useState<Product[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingRows, setLoadingRows] = useState(false);
   const [clientCodes, setClientCodes] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("created_desc");
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const loadRows = async () => {
-    const [products, clients] = await Promise.all([listProducts(), listClients()]);
-    setRows(products);
-    setClientCodes(clients.map((item) => item.client_code));
+    setLoadingRows(true);
+    setLoadError(null);
+    try {
+      const [products, clients] = await Promise.all([listProducts(), listClients()]);
+      setRows(products);
+      setClientCodes(clients.map((item) => item.client_code));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Failed to load products.");
+    } finally {
+      setLoadingRows(false);
+    }
   };
 
   useEffect(() => {
@@ -61,18 +79,29 @@ export function ProductsSettingsPage() {
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    const searched = rows.filter(
       (item) =>
+        (statusFilter === "all" || item.status === statusFilter) &&
+        (
         item.client_code.toLowerCase().includes(q) ||
         item.barcode_raw.toLowerCase().includes(q) ||
         item.name.toLowerCase().includes(q)
+        )
     );
-  }, [rows, search]);
+    const sorted = [...searched];
+    sorted.sort((a, b) => {
+      if (sortKey === "created_desc") return b.created_at.localeCompare(a.created_at);
+      if (sortKey === "created_asc") return a.created_at.localeCompare(b.created_at);
+      if (sortKey === "client_asc") return a.client_code.localeCompare(b.client_code);
+      return a.name.localeCompare(b.name);
+    });
+    return sorted;
+  }, [rows, search, statusFilter, sortKey]);
 
   const openCreate = () => {
     setEditingId(null);
     setForm(initialForm);
+    setFieldError(null);
     setOpen(true);
   };
 
@@ -84,11 +113,13 @@ export function ProductsSettingsPage() {
       name: row.name,
       status: row.status,
     });
+    setFieldError(null);
     setOpen(true);
   };
 
   const submit = async () => {
     if (!form.client_code.trim() || !form.barcode_raw.trim() || !form.name.trim()) {
+      setFieldError("Client code, barcode raw and name are required.");
       pushToast({
         title: "Missing required fields",
         description: "Client code, barcode raw and name are required.",
@@ -97,6 +128,7 @@ export function ProductsSettingsPage() {
       return;
     }
 
+    setFieldError(null);
     setSaving(true);
     try {
       if (editingId) {
@@ -109,6 +141,7 @@ export function ProductsSettingsPage() {
       await loadRows();
       setOpen(false);
     } catch (error) {
+      setFieldError(error instanceof Error ? error.message : "Please try again.");
       pushToast({
         title: "Save failed",
         description: error instanceof Error ? error.message : "Please try again.",
@@ -120,12 +153,23 @@ export function ProductsSettingsPage() {
   };
 
   const toggleStatus = async (row: Product) => {
-    await toggleProductStatus(row.id);
-    await loadRows();
-    pushToast({
-      title: row.status === "active" ? "Product archived" : "Product reactivated",
-      variant: "info",
-    });
+    setTogglingId(row.id);
+    try {
+      await toggleProductStatus(row.id);
+      await loadRows();
+      pushToast({
+        title: row.status === "active" ? "Product archived" : "Product reactivated",
+        variant: "info",
+      });
+    } catch (error) {
+      pushToast({
+        title: "Action failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error",
+      });
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   return (
@@ -139,19 +183,41 @@ export function ProductsSettingsPage() {
       <SettingsTabs />
 
       <div className="rounded-xl border bg-white p-6">
-        <div className="mb-4">
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
           <Input
             placeholder="Search by product name, barcode, or client code"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
+          <select
+            className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <select
+            className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+          >
+            <option value="created_desc">Newest</option>
+            <option value="created_asc">Oldest</option>
+            <option value="client_asc">Client Code</option>
+            <option value="name_asc">Name</option>
+          </select>
         </div>
 
-        <DataTable
-          rows={filteredRows}
-          emptyText="No products found."
-          rowClassName="cursor-pointer hover:bg-slate-50"
-          columns={[
+        {loadError ? (
+          <ErrorState title="Failed to load products." message={loadError} onRetry={() => void loadRows()} />
+        ) : (
+          <DataTable
+            rows={filteredRows}
+            emptyText={loadingRows ? "Loading products..." : "No products found."}
+            rowClassName="cursor-pointer hover:bg-slate-50"
+            columns={[
             { key: "client_code", label: "Client Code", render: (row) => <span className="font-medium">{row.client_code}</span> },
             { key: "barcode_raw", label: "Barcode Raw", render: (row) => row.barcode_raw },
             { key: "barcode_full", label: "Barcode Full", render: (row) => row.barcode_full },
@@ -162,15 +228,16 @@ export function ProductsSettingsPage() {
               label: "Actions",
               render: (row) => (
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
-                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)}>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id}>Edit</Button>
+                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id}>
                     {row.status === "active" ? "Archive" : "Activate"}
                   </Button>
                 </div>
               ),
             },
           ]}
-        />
+          />
+        )}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -185,7 +252,7 @@ export function ProductsSettingsPage() {
               <Input
                 list="client-code-options"
                 value={form.client_code}
-                onChange={(e) => setForm((prev) => ({ ...prev, client_code: e.target.value }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, client_code: e.target.value.toUpperCase() }))}
               />
               <datalist id="client-code-options">
                 {clientCodes.map((code) => (
@@ -195,7 +262,11 @@ export function ProductsSettingsPage() {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">Barcode Raw</label>
-              <Input value={form.barcode_raw} onChange={(e) => setForm((prev) => ({ ...prev, barcode_raw: e.target.value }))} />
+              <Input
+                value={form.barcode_raw}
+                onChange={(e) => setForm((prev) => ({ ...prev, barcode_raw: e.target.value.trim() }))}
+                placeholder="e.g. 8800001000001"
+              />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">Name</label>
@@ -216,10 +287,13 @@ export function ProductsSettingsPage() {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
+            {fieldError && <p className="text-xs text-red-600">{fieldError}</p>}
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => void submit()} disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+            <Button onClick={() => void submit()} disabled={saving || !form.client_code.trim() || !form.barcode_raw.trim() || !form.name.trim()}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

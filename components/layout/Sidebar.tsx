@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Boxes, Download, House, LogOut, Send, Settings } from "lucide-react";
+import { Boxes, Download, FileText, House, LogOut, Send, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
@@ -11,6 +11,7 @@ const items = [
   { href: "/inbounds", label: "Inbounds", icon: Download },
   { href: "/outbounds", label: "Outbounds", icon: Send },
   { href: "/inventory", label: "Inventory", icon: Boxes },
+  { href: "/billing", label: "Billing", icon: FileText },
   { href: "/dashboard", label: "Dashboard", icon: House },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

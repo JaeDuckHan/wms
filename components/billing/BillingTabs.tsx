@@ -5,15 +5,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { href: "/settings/clients", label: "Clients" },
-  { href: "/settings/products", label: "Products" },
-  { href: "/settings/warehouses", label: "Warehouses" },
-  { href: "/settings/service-rates", label: "Service Rates" },
-  { href: "/settings/contract-rates", label: "Contract Rates" },
-  { href: "/settings/exchange-rates", label: "Exchange Rates" },
+  { href: "/billing", label: "Invoices" },
+  { href: "/billing/events", label: "Billing Events" },
 ];
 
-export function SettingsTabs() {
+export function BillingTabs() {
   const pathname = usePathname();
 
   return (
