@@ -10,7 +10,7 @@ import type {
 import { ApiError } from "@/features/outbound/api";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3010";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
 const LATENCY_MS = 120;
 

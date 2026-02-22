@@ -2,7 +2,7 @@ import { ApiError } from "@/features/outbound/api";
 import type { InventoryQuery, StockBalanceRow, StockTransactionRow } from "@/features/inventory/types";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3010";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
 const ENABLE_DEV_FALLBACK = process.env.NODE_ENV !== "production";
 

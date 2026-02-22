@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3010";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
 
 async function forward(request: NextRequest, params: { path: string[] }) {
   const token = (await cookies()).get(AUTH_COOKIE_KEY)?.value;
