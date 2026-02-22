@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/badge";
+import { TranslatedText } from "@/components/i18n/TranslatedText";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 import { getInboundOrders } from "@/features/inbound/api";
 import type { InboundListStatus, InboundStatus } from "@/features/inbound/types";
@@ -25,7 +26,11 @@ function statusBadge(status: InboundStatus) {
     cancelled: { label: "Cancelled", variant: "default" },
   };
   const current = map[status];
-  return <Badge variant={current.variant}>{current.label}</Badge>;
+  return (
+    <Badge variant={current.variant}>
+      <TranslatedText text={current.label} />
+    </Badge>
+  );
 }
 
 export default async function InboundsPage({
@@ -54,7 +59,9 @@ export default async function InboundsPage({
           if (item.value !== "all") params.set("status", item.value);
           return (
             <Link key={item.value} href={`/inbounds?${params.toString()}`}>
-              <Badge variant={active ? "info" : "default"}>{item.label}</Badge>
+              <Badge variant={active ? "info" : "default"}>
+                <TranslatedText text={item.label} />
+              </Badge>
             </Link>
           );
         })}

@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { TranslatedText } from "@/components/i18n/TranslatedText";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 import { getStockBalances, getStockTransactions } from "@/features/inventory/api";
 import type { InventoryTab } from "@/features/inventory/types";
@@ -92,7 +93,9 @@ export default async function InventoryPage({
       />
 
       <div className="mb-5 rounded-xl border bg-white px-4 py-3">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">View</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+          <TranslatedText text="View" />
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           {tabs.map((item) => {
             const params = new URLSearchParams();
@@ -102,7 +105,9 @@ export default async function InventoryPage({
             const active = currentTab === item.value;
             return (
               <Link key={item.value} href={`/inventory?${params.toString()}`}>
-                <Badge variant={active ? "info" : "default"}>{item.label}</Badge>
+                <Badge variant={active ? "info" : "default"}>
+                  <TranslatedText text={item.label} />
+                </Badge>
               </Link>
             );
           })}
@@ -110,7 +115,9 @@ export default async function InventoryPage({
 
         {currentTab === "transactions" && (
           <>
-            <p className="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">Transaction Type</p>
+            <p className="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <TranslatedText text="Transaction Type" />
+            </p>
             <div className="flex flex-wrap items-center gap-2">
               {txnTypeFilter.map((item) => {
                 const params = new URLSearchParams();
@@ -120,7 +127,9 @@ export default async function InventoryPage({
                 const active = (txn_type ?? "") === item.value;
                 return (
                   <Link key={item.label} href={`/inventory?${params.toString()}`}>
-                    <Badge variant={active ? "info" : "default"}>{item.label}</Badge>
+                    <Badge variant={active ? "info" : "default"}>
+                      <TranslatedText text={item.label} />
+                    </Badge>
                   </Link>
                 );
               })}

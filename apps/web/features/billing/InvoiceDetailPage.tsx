@@ -8,6 +8,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/toast";
 import { getMe } from "@/features/auth/api";
 import { BillingTabs } from "@/components/billing/BillingTabs";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import {
   duplicateBillingInvoiceAdmin,
   exportBillingInvoicePdf,
@@ -20,6 +22,8 @@ import {
 
 export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const [invoice, setInvoice] = useState<BillingInvoice | null>(null);
   const [items, setItems] = useState<BillingInvoiceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +39,7 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
       setInvoice(data.invoice);
       setItems(data.items);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load invoice.");
+      setError(e instanceof Error ? e.message : t("Failed to load invoice."));
     } finally {
       setLoading(false);
     }
@@ -51,9 +55,9 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const runExport = async () => {
     try {
       const result = await exportBillingInvoicePdf(invoiceId);
-      pushToast({ title: "Export stub", description: result.message, variant: "info" });
+      pushToast({ title: t("Export stub"), description: result.message, variant: "info" });
     } catch (e) {
-      pushToast({ title: "Export failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Export failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
@@ -61,10 +65,10 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
     setActing(true);
     try {
       await issueBillingInvoice(invoiceId);
-      pushToast({ title: "Invoice issued", variant: "success" });
+      pushToast({ title: t("Invoice issued"), variant: "success" });
       await load();
     } catch (e) {
-      pushToast({ title: "Issue failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Issue failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     } finally {
       setActing(false);
     }
@@ -74,10 +78,10 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
     setActing(true);
     try {
       await markBillingInvoicePaid(invoiceId);
-      pushToast({ title: "Invoice marked paid", variant: "success" });
+      pushToast({ title: t("Invoice marked paid"), variant: "success" });
       await load();
     } catch (e) {
-      pushToast({ title: "Mark paid failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Mark paid failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     } finally {
       setActing(false);
     }
@@ -87,32 +91,32 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
     setActing(true);
     try {
       const duplicated = await duplicateBillingInvoiceAdmin(invoiceId);
-      pushToast({ title: `Duplicated as ${duplicated.invoice_no}`, variant: "success" });
+      pushToast({ title: `${t("Duplicated as")} ${duplicated.invoice_no}`, variant: "success" });
     } catch (e) {
-      pushToast({ title: "Duplicate failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Duplicate failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     } finally {
       setActing(false);
     }
   };
 
   if (error) {
-    return <ErrorState title="Failed to load invoice" message={error} onRetry={() => void load()} />;
+    return <ErrorState title={t("Failed to load invoice")} message={error} onRetry={() => void load()} />;
   }
 
   return (
     <section>
       <PageHeader
         breadcrumbs={[{ label: "Billing" }, { label: "Invoices" }, { label: invoice?.invoice_no ?? String(invoiceId) }]}
-        title={invoice?.invoice_no ?? "Invoice Detail"}
-        subtitle={invoice ? `Client ${invoice.client_code} | ${invoice.invoice_month}` : "Loading..."}
+        title={invoice?.invoice_no ?? t("Invoice Detail")}
+        subtitle={invoice ? `${t("Client")} ${invoice.client_code} | ${invoice.invoice_month}` : t("Loading...")}
         rightSlot={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => void runExport()}>Export PDF (Stub)</Button>
+            <Button variant="secondary" onClick={() => void runExport()}>{t("Export PDF (Stub)")}</Button>
             {invoice?.status === "draft" && <Button onClick={() => void runIssue()} disabled={acting}>Issue</Button>}
             {invoice?.status === "issued" && <Button onClick={() => void runMarkPaid()} disabled={acting}>Mark Paid</Button>}
             {isAdmin && invoice?.status !== "draft" && (
               <Button variant="secondary" onClick={() => void runDuplicateAdmin()} disabled={acting}>
-                Duplicate (Admin)
+                {t("Duplicate (Admin)")}
               </Button>
             )}
           </div>
@@ -122,17 +126,17 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
 
       {invoice && (
         <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-4">
-          <div><p className="text-xs text-slate-500">FX Rate</p><p className="font-semibold">{Number(invoice.fx_rate_thbkrw).toFixed(4)}</p></div>
-          <div><p className="text-xs text-slate-500">Subtotal</p><p className="font-semibold">{Number(invoice.subtotal_krw).toLocaleString()} KRW (TRUNC100)</p></div>
-          <div><p className="text-xs text-slate-500">VAT 7%</p><p className="font-semibold">{Number(invoice.vat_krw).toLocaleString()} KRW (TRUNC100)</p></div>
-          <div><p className="text-xs text-slate-500">Total</p><p className="font-semibold">{Number(invoice.total_krw).toLocaleString()} KRW (TRUNC100)</p></div>
+          <div><p className="text-xs text-slate-500">{t("FX Rate")}</p><p className="font-semibold">{Number(invoice.fx_rate_thbkrw).toFixed(4)}</p></div>
+          <div><p className="text-xs text-slate-500">{t("Subtotal")}</p><p className="font-semibold">{Number(invoice.subtotal_krw).toLocaleString()} KRW (TRUNC100)</p></div>
+          <div><p className="text-xs text-slate-500">{t("VAT 7%")}</p><p className="font-semibold">{Number(invoice.vat_krw).toLocaleString()} KRW (TRUNC100)</p></div>
+          <div><p className="text-xs text-slate-500">{t("Total")}</p><p className="font-semibold">{Number(invoice.total_krw).toLocaleString()} KRW (TRUNC100)</p></div>
         </div>
       )}
 
       <div className="rounded-xl border bg-white p-6">
         <DataTable
           rows={items}
-          emptyText={loading ? "Loading..." : "No items"}
+          emptyText={loading ? t("Loading...") : t("No items")}
           columns={[
             { key: "service_code", label: "Code", render: (row) => row.service_code },
             { key: "description", label: "Description", render: (row) => row.description },

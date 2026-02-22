@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { X } from "lucide-react";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type ToastVariant = "success" | "error" | "info";
@@ -27,6 +29,8 @@ function toastClasses(variant: ToastVariant = "info") {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
 
   const pushToast = useCallback((toast: Omit<ToastItem, "id">) => {
     const id = crypto.randomUUID();
@@ -56,14 +60,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold">{toast.title}</p>
-                {toast.description && <p className="mt-0.5 text-xs">{toast.description}</p>}
+                <p className="text-sm font-semibold">{t(toast.title)}</p>
+                {toast.description && <p className="mt-0.5 text-xs">{t(toast.description)}</p>}
               </div>
               <button
                 type="button"
                 onClick={() => removeToast(toast.id)}
                 className="rounded p-0.5 hover:bg-black/5"
-                aria-label="Close toast"
+                aria-label={t("Close toast")}
               >
                 <X className="h-3.5 w-3.5" />
               </button>

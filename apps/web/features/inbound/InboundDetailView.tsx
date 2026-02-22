@@ -13,6 +13,8 @@ import type { InboundAction, InboundOrder, InboundStatus } from "@/features/inbo
 import { ApiError } from "@/features/outbound/api";
 import { transitionInboundStatus } from "@/features/inbound/api";
 import { useToast } from "@/components/ui/toast";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 
 const tabs = ["overview", "items", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
@@ -35,7 +37,7 @@ function actionLabel(action: InboundAction) {
   return "Receive";
 }
 
-function statusBadge(status: InboundStatus) {
+function statusBadge(status: InboundStatus, t: (text: string) => string) {
   const map: Record<InboundStatus, { label: string; variant: "default" | "info" | "warning" | "success" }> = {
     draft: { label: "Draft", variant: "default" },
     submitted: { label: "Submitted", variant: "info" },
@@ -45,7 +47,7 @@ function statusBadge(status: InboundStatus) {
     cancelled: { label: "Cancelled", variant: "default" },
   };
   const current = map[status];
-  return <Badge variant={current.variant}>{current.label}</Badge>;
+  return <Badge variant={current.variant}>{t(current.label)}</Badge>;
 }
 
 export function InboundDetailView({ order: initialOrder, initialTab }: { order: InboundOrder; initialTab?: string }) {
@@ -53,6 +55,8 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
 
   const [order, setOrder] = useState(initialOrder);
   const [tab, setTab] = useState<TabValue>(normalizeTab(initialTab));
@@ -74,13 +78,13 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
       const updated = await transitionInboundStatus(order.inbound_no, currentAction);
       setOrder(updated);
       pushToast({
-        title: `${actionLabel(currentAction)} completed`,
-        description: `Inbound status changed to ${updated.status}.`,
+        title: `${t(actionLabel(currentAction))} ${t("completed")}`,
+        description: `${t("Inbound status changed to")} ${t(updated.status)}.`,
         variant: "success",
       });
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Action failed";
-      pushToast({ title: "Action failed", description: message, variant: "error" });
+      const message = error instanceof ApiError ? error.message : t("Action failed");
+      pushToast({ title: t("Action failed"), description: message, variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -109,13 +113,13 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
       <PageHeader
         breadcrumbs={[{ label: "Operations" }, { label: "Inbounds", href: "/inbounds" }, { label: order.inbound_no }]}
         title={order.inbound_no}
-        subtitle={`${order.client} | Date ${order.inbound_date}`}
+        subtitle={`${order.client} | ${t("Date")} ${order.inbound_date}`}
         rightSlot={
           <div className="flex items-center gap-2">
-            {statusBadge(order.status)}
+            {statusBadge(order.status, t)}
             {currentAction && (
               <Button onClick={runStatusAction} disabled={loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : actionLabel(currentAction)}
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t(actionLabel(currentAction))}
               </Button>
             )}
           </div>
@@ -124,22 +128,22 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
 
       <Tabs value={tab} onValueChange={setTabWithQuery}>
         <TabsList className="mb-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="items">Items</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="overview">{t("Overview")}</TabsTrigger>
+          <TabsTrigger value="items">{t("Items")}</TabsTrigger>
+          <TabsTrigger value="timeline">{t("Timeline")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="grid gap-6 md:grid-cols-3">
           <Card>
-            <CardHeader><CardTitle>Client</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t("Client")}</CardTitle></CardHeader>
             <CardContent><p className="text-sm font-medium">{order.client}</p></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Warehouse</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t("Warehouse")}</CardTitle></CardHeader>
             <CardContent><p className="text-sm">{order.warehouse}</p></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Summary</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t("Summary")}</CardTitle></CardHeader>
             <CardContent className="space-y-2">
               <p className="text-sm">{order.summary}</p>
               <p className="text-sm text-slate-500">{order.memo}</p>
@@ -148,12 +152,12 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
         </TabsContent>
 
         <TabsContent value="items">
-          <DataTable rows={order.items} columns={itemColumns} emptyText="No inbound items." />
+          <DataTable rows={order.items} columns={itemColumns} emptyText={t("No inbound items.")} />
         </TabsContent>
 
         <TabsContent value="timeline">
           {order.timeline.length === 0 ? (
-            <div className="rounded-xl border bg-white px-6 py-8 text-center text-sm text-slate-500">No timeline logs.</div>
+            <div className="rounded-xl border bg-white px-6 py-8 text-center text-sm text-slate-500">{t("No timeline logs.")}</div>
           ) : (
             <div className="rounded-xl border bg-white px-6 py-2">
               {order.timeline.map((log, idx) => (

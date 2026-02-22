@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -11,6 +13,8 @@ const tabs = [
 
 export function BillingTabs() {
   const pathname = usePathname();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
 
   return (
     <div className="mb-6 rounded-xl border bg-white p-1">
@@ -26,7 +30,7 @@ export function BillingTabs() {
                 active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
               )}
             >
-              {tab.label}
+              {t(tab.label)}
             </Link>
           );
         })}

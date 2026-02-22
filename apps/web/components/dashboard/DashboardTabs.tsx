@@ -9,10 +9,10 @@ export function DashboardTabs() {
   const { t } = useI18n();
   const pathname = usePathname();
   const tabs = [
-    { href: "/dashboard", label: t("tabs.overview") },
-    { href: "/dashboard/storage-trend", label: t("tabs.storageTrend") },
-    { href: "/dashboard/storage-billing", label: t("tabs.storageBilling") },
-    { href: "/dashboard/capacity", label: t("tabs.capacity") },
+    { href: "/dashboard", label: "tabs.overview" },
+    { href: "/dashboard/storage-trend", label: "tabs.storageTrend" },
+    { href: "/dashboard/storage-billing", label: "tabs.storageBilling" },
+    { href: "/dashboard/capacity", label: "tabs.capacity" },
   ];
 
   return (
@@ -29,7 +29,7 @@ export function DashboardTabs() {
                 active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
               )}
             >
-              {tab.label}
+              {t(tab.label)}
             </Link>
           );
         })}

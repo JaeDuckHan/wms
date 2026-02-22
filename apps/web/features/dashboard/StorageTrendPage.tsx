@@ -473,9 +473,9 @@ export function StorageTrendPage() {
           value={groupBy}
           onChange={(e) => setGroupBy(e.target.value as GroupBy)}
         >
-          <option value="day">day</option>
-          <option value="week">week</option>
-          <option value="month">month</option>
+          <option value="day">{t("day")}</option>
+          <option value="week">{t("week")}</option>
+          <option value="month">{t("month")}</option>
         </select>
         <Button type="button" variant="secondary" onClick={applyLast7DaysPreset} disabled={loading}>
           {t("trend.last7days")}
@@ -484,7 +484,7 @@ export function StorageTrendPage() {
 
       {error && (
         <div className="mb-4">
-          <ErrorState title="Failed to load storage trend" message={error} onRetry={() => void load()} />
+          <ErrorState title={t("Failed to load storage trend")} message={error} onRetry={() => void load()} />
         </div>
       )}
 

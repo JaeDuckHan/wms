@@ -8,6 +8,8 @@ import { DataTable } from "@/components/ui/DataTable";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import {
   createClientContractRate,
   deleteClientContractRate,
@@ -26,6 +28,8 @@ const blank: Omit<ClientContractRate, "id"> = {
 
 export function ClientContractRatesSettingsPage() {
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const [rows, setRows] = useState<ClientContractRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +42,7 @@ export function ClientContractRatesSettingsPage() {
     try {
       setRows(await listClientContractRates());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load contract rates.");
+      setError(e instanceof Error ? e.message : t("Failed to load contract rates."));
     } finally {
       setLoading(false);
     }
@@ -60,7 +64,7 @@ export function ClientContractRatesSettingsPage() {
 
   const save = async () => {
     if (!form.service_code.trim()) {
-      pushToast({ title: "Service code is required.", variant: "error" });
+      pushToast({ title: t("Service code is required."), variant: "error" });
       return;
     }
 
@@ -70,22 +74,22 @@ export function ClientContractRatesSettingsPage() {
       } else {
         await createClientContractRate(form);
       }
-      pushToast({ title: "Saved", variant: "success" });
+      pushToast({ title: t("Saved"), variant: "success" });
       await reload();
       startCreate();
     } catch (e) {
-      pushToast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Save failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
   const remove = async (id: number) => {
     try {
       await deleteClientContractRate(id);
-      pushToast({ title: "Deleted", variant: "info" });
+      pushToast({ title: t("Deleted"), variant: "info" });
       await reload();
       if (editingId === id) startCreate();
     } catch (e) {
-      pushToast({ title: "Delete failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Delete failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
@@ -101,11 +105,11 @@ export function ClientContractRatesSettingsPage() {
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
           {error ? (
-            <ErrorState title="Failed to load contract rates" message={error} onRetry={() => void reload()} />
+            <ErrorState title={t("Failed to load contract rates")} message={error} onRetry={() => void reload()} />
           ) : (
             <DataTable
               rows={rows}
-              emptyText={loading ? "Loading..." : "No contract rates"}
+              emptyText={loading ? t("Loading...") : t("No contract rates")}
               columns={[
                 { key: "client_id", label: "Client ID", render: (row) => row.client_id },
                 { key: "service_code", label: "Service", render: (row) => <span className="font-medium">{row.service_code}</span> },
@@ -128,18 +132,18 @@ export function ClientContractRatesSettingsPage() {
 
         <div className="rounded-xl border bg-white p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">{editingId ? "Edit contract rate" : "New contract rate"}</h3>
+            <h3 className="text-sm font-semibold">{editingId ? t("Edit contract rate") : t("New contract rate")}</h3>
             {editingId && <Button size="sm" variant="ghost" onClick={startCreate}>Reset</Button>}
           </div>
           <Input type="number" placeholder="Client ID" value={form.client_id} onChange={(e) => setForm((p) => ({ ...p, client_id: Number(e.target.value || 0) }))} />
-          <Input placeholder="Service code" value={form.service_code} onChange={(e) => setForm((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))} />
-          <Input type="number" placeholder="Custom rate" value={form.custom_rate} onChange={(e) => setForm((p) => ({ ...p, custom_rate: Number(e.target.value || 0) }))} />
+          <Input placeholder={t("Service code")} value={form.service_code} onChange={(e) => setForm((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))} />
+          <Input type="number" placeholder={t("Custom rate")} value={form.custom_rate} onChange={(e) => setForm((p) => ({ ...p, custom_rate: Number(e.target.value || 0) }))} />
           <select className="h-9 rounded-md border px-3 text-sm" value={form.currency} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value as ClientContractRate["currency"] }))}>
             <option value="KRW">KRW</option>
             <option value="THB">THB</option>
           </select>
           <Input type="date" value={form.effective_date} onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))} />
-          <Button onClick={() => void save()}>Save</Button>
+          <Button onClick={() => void save()}>{t("Save")}</Button>
         </div>
       </div>
     </section>

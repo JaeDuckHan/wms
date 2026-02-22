@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { getMe } from "@/features/auth/api";
 import { BillingTabs } from "@/components/billing/BillingTabs";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import {
   billingEventsCsvUrl,
   listBillingEvents,
@@ -22,6 +24,8 @@ function thisMonth() {
 
 export function BillingEventsPage() {
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const [rows, setRows] = useState<BillingEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +54,7 @@ export function BillingEventsPage() {
       setRows(data);
       setSelectedIds([]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load billing events.");
+      setError(e instanceof Error ? e.message : t("Failed to load billing events."));
     } finally {
       setLoading(false);
     }
@@ -77,15 +81,15 @@ export function BillingEventsPage() {
 
   const onBulkMarkPending = async () => {
     if (!selectedIds.length) {
-      pushToast({ title: "Select at least one event.", variant: "info" });
+      pushToast({ title: t("Select at least one event."), variant: "info" });
       return;
     }
     try {
       const result = await markBillingEventsPending(selectedIds);
-      pushToast({ title: `Updated ${result.updated} events`, variant: "success" });
+      pushToast({ title: `${t("Updated")} ${result.updated} ${t("events")}`, variant: "success" });
       await reload();
     } catch (e) {
-      pushToast({ title: "Bulk update failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Bulk update failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
@@ -103,18 +107,18 @@ export function BillingEventsPage() {
           <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           <Input placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All status</option>
-            <option value="PENDING">PENDING</option>
-            <option value="INVOICED">INVOICED</option>
+            <option value="">{t("All status")}</option>
+            <option value="PENDING">{t("PENDING")}</option>
+            <option value="INVOICED">{t("INVOICED")}</option>
           </select>
           <Input placeholder="Service code" value={serviceCode} onChange={(e) => setServiceCode(e.target.value.toUpperCase())} />
-          <Button variant="secondary" onClick={() => void reload()}>Filter</Button>
+          <Button variant="secondary" onClick={() => void reload()}>{t("Filter")}</Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <a href={csvHref} className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50">Export CSV</a>
+          <a href={csvHref} className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50">{t("Export CSV")}</a>
           {isAdmin && (
             <Button variant="secondary" onClick={() => void onBulkMarkPending()}>
-              Mark as Pending (Admin)
+              {t("Mark as Pending (Admin)")}
             </Button>
           )}
         </div>
@@ -122,11 +126,11 @@ export function BillingEventsPage() {
 
       <div className="rounded-xl border bg-white p-6">
         {error ? (
-          <ErrorState title="Failed to load billing events" message={error} onRetry={() => void reload()} />
+          <ErrorState title={t("Failed to load billing events")} message={error} onRetry={() => void reload()} />
         ) : (
           <DataTable
             rows={rows}
-            emptyText={loading ? "Loading..." : "No billing events"}
+            emptyText={loading ? t("Loading...") : t("No billing events")}
             columns={[
               {
                 key: "select",

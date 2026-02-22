@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterBar } from "@/components/dashboard/FilterBar";
+import { TranslatedText } from "@/components/i18n/TranslatedText";
 import { CardsSkeleton, FilterBarSkeleton, TableSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { GenerateSnapshotsButton } from "@/components/dashboard/GenerateSnapshotsButton";
 import { DemoModeBanner, DemoModeToggle } from "@/components/dashboard/DemoModeToggle";
@@ -83,7 +84,7 @@ function UsageProgress({
   if (safeNumber(capacityCbm) <= 0) {
     return (
       <div className="flex items-center justify-end gap-2">
-        <span className="text-xs text-slate-500">capacity not set</span>
+        <span className="text-xs text-slate-500"><TranslatedText text="capacity not set" /></span>
         {deltaBadge}
       </div>
     );
@@ -383,7 +384,7 @@ export function CapacityPage() {
         </CardHeader>
         <CardContent>
           {!alertRows.length ? (
-            <p className="text-sm text-amber-800">All warehouses are currently in ok status.</p>
+            <p className="text-sm text-amber-800">{t("All warehouses are currently in ok status.")}</p>
           ) : (
             <div className="space-y-2">
               {alertRows.map((row) => (
@@ -394,7 +395,7 @@ export function CapacityPage() {
                   <div className="flex items-center gap-2">
                     <StatusCell status={row.status} />
                     <span>
-                      Warehouse {row.warehouse_id} · {formatCbm(row.used_cbm)} / {row.capacity_cbm == null ? "-" : formatCbm(row.capacity_cbm)} CBM
+                      {t("Warehouse")} {row.warehouse_id} · {formatCbm(row.used_cbm)} / {row.capacity_cbm == null ? "-" : formatCbm(row.capacity_cbm)} CBM
                       {row.capacity_cbm == null ? "" : ` (${formatPct(row.usage_pct_cbm)})`}
                     </span>
                   </div>
@@ -455,7 +456,7 @@ export function CapacityPage() {
 
       {error && (
         <div className="mb-4">
-          <ErrorState title="Failed to load capacity" message={error} onRetry={() => void load()} />
+          <ErrorState title={t("Failed to load capacity")} message={error} onRetry={() => void load()} />
         </div>
       )}
 
@@ -464,7 +465,7 @@ export function CapacityPage() {
           <CardTitle>Warehouses</CardTitle>
           <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
             <Input
-              placeholder="Search warehouse_id"
+              placeholder={t("Search warehouse_id")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="md:w-56"

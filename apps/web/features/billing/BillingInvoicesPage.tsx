@@ -9,6 +9,8 @@ import { DataTable } from "@/components/ui/DataTable";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { BillingTabs } from "@/components/billing/BillingTabs";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import {
   generateBillingInvoice,
   issueBillingInvoice,
@@ -28,6 +30,8 @@ function thisMonth() {
 
 export function BillingInvoicesPage() {
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const [rows, setRows] = useState<BillingInvoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +48,7 @@ export function BillingInvoicesPage() {
     try {
       setRows(await listBillingInvoices({ client_id: clientId, invoice_month: invoiceMonth, status: status || undefined }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load invoices.");
+      setError(e instanceof Error ? e.message : t("Failed to load invoices."));
     } finally {
       setLoading(false);
     }
@@ -63,22 +67,22 @@ export function BillingInvoicesPage() {
         regenerate_draft: regenerateDraft,
       });
       if (result.reused) {
-        pushToast({ title: "Draft already exists", variant: "info" });
+        pushToast({ title: t("Draft already exists"), variant: "info" });
       } else {
-        pushToast({ title: "Invoice generated", variant: "success" });
+        pushToast({ title: t("Invoice generated"), variant: "success" });
       }
       await reload();
     } catch (e) {
-      pushToast({ title: "Generate failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Generate failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
   const onSeed = async () => {
     try {
       await seedBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
-      pushToast({ title: "Sample events created", variant: "success" });
+      pushToast({ title: t("Sample events created"), variant: "success" });
     } catch (e) {
-      pushToast({ title: "Seed failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Seed failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
@@ -86,10 +90,10 @@ export function BillingInvoicesPage() {
     setActingId(id);
     try {
       await issueBillingInvoice(id);
-      pushToast({ title: "Invoice issued", variant: "success" });
+      pushToast({ title: t("Invoice issued"), variant: "success" });
       await reload();
     } catch (e) {
-      pushToast({ title: "Issue failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Issue failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     } finally {
       setActingId(null);
     }
@@ -99,10 +103,10 @@ export function BillingInvoicesPage() {
     setActingId(id);
     try {
       await markBillingInvoicePaid(id);
-      pushToast({ title: "Invoice marked paid", variant: "success" });
+      pushToast({ title: t("Invoice marked paid"), variant: "success" });
       await reload();
     } catch (e) {
-      pushToast({ title: "Mark paid failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Mark paid failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     } finally {
       setActingId(null);
     }
@@ -123,27 +127,27 @@ export function BillingInvoicesPage() {
           <Input type="month" value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} />
           <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All status</option>
-            <option value="draft">draft</option>
-            <option value="issued">issued</option>
-            <option value="paid">paid</option>
+            <option value="">{t("All status")}</option>
+            <option value="draft">{t("draft")}</option>
+            <option value="issued">{t("issued")}</option>
+            <option value="paid">{t("paid")}</option>
           </select>
-          <Button variant="secondary" onClick={() => void reload()}>Filter</Button>
+          <Button variant="secondary" onClick={() => void reload()}>{t("Filter")}</Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => void onGenerate(0)}>Generate</Button>
-          <Button variant="secondary" onClick={() => void onGenerate(1)}>Re-generate Draft</Button>
-          <Button variant="ghost" onClick={() => void onSeed()}>Create Sample Events</Button>
+          <Button onClick={() => void onGenerate(0)}>{t("Generate")}</Button>
+          <Button variant="secondary" onClick={() => void onGenerate(1)}>{t("Re-generate Draft")}</Button>
+          <Button variant="ghost" onClick={() => void onSeed()}>{t("Create Sample Events")}</Button>
         </div>
       </div>
 
       <div className="rounded-xl border bg-white p-6">
         {error ? (
-          <ErrorState title="Failed to load invoices" message={error} onRetry={() => void reload()} />
+          <ErrorState title={t("Failed to load invoices")} message={error} onRetry={() => void reload()} />
         ) : (
           <DataTable
             rows={rows}
-            emptyText={loading ? "Loading..." : "No invoices"}
+            emptyText={loading ? t("Loading...") : t("No invoices")}
             columns={[
               { key: "invoice_no", label: "Invoice No", render: (row) => <Link href={`/billing/${row.id}`} className="font-medium hover:underline">{row.invoice_no}</Link> },
               { key: "client", label: "Client", render: (row) => `${row.client_code} (${row.client_id})` },

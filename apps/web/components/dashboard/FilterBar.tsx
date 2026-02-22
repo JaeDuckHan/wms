@@ -145,6 +145,7 @@ export function FilterBar({
         </Button>
       </div>
       <div className="mt-2 text-xs text-slate-500">{t("filter.pressEnter")}</div>
+      <div className="mt-2 text-xs text-slate-500">{t("filter.pressEnter")}</div>
       {validationError && <p className="mt-2 text-sm text-red-600">{validationError}</p>}
     </div>
   );

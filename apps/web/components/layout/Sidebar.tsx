@@ -13,18 +13,19 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { pushToast } = useToast();
+
   const items = [
-    { href: "/inbounds", label: t("nav.inbounds"), icon: Download },
-    { href: "/outbounds", label: t("nav.outbounds"), icon: Send },
-    { href: "/inventory", label: t("nav.inventory"), icon: Boxes },
-    { href: "/billing", label: t("nav.billing"), icon: FileText },
-    { href: "/dashboard", label: t("nav.dashboard"), icon: House },
-    { href: "/settings", label: t("nav.settings"), icon: Settings },
+    { href: "/inbounds", label: "nav.inbounds", icon: Download },
+    { href: "/outbounds", label: "nav.outbounds", icon: Send },
+    { href: "/inventory", label: "nav.inventory", icon: Boxes },
+    { href: "/billing", label: "nav.billing", icon: FileText },
+    { href: "/dashboard", label: "nav.dashboard", icon: House },
+    { href: "/settings", label: "nav.settings", icon: Settings },
   ];
 
   const handleLogout = () => {
     logout();
-    pushToast({ title: "Signed out", variant: "info" });
+    pushToast({ title: t("common.signedOut"), variant: "info" });
     router.push("/login");
   };
 
@@ -45,7 +46,7 @@ export function Sidebar() {
                 lang === "ko" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
               )}
             >
-              한국어
+              KO
             </button>
             <button
               type="button"
@@ -56,7 +57,7 @@ export function Sidebar() {
                 lang === "en" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
               )}
             >
-              English
+              EN
             </button>
           </div>
         </div>
@@ -75,7 +76,7 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-4 w-4" />
-              <span>{item.label}</span>
+              <span>{t(item.label)}</span>
             </Link>
           );
         })}

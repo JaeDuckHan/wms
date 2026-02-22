@@ -379,7 +379,7 @@ export function StorageBillingPage() {
 
       {error && (
         <div className="mb-4">
-          <ErrorState title="Failed to load billing preview" message={error} onRetry={() => void load()} />
+          <ErrorState title={t("Failed to load billing preview")} message={error} onRetry={() => void load()} />
         </div>
       )}
 
@@ -410,7 +410,7 @@ export function StorageBillingPage() {
           <Card>
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <CardTitle>Billing Lines</CardTitle>
-              <p className="text-sm text-slate-500">Monthly line-item preview by warehouse and client.</p>
+              <p className="text-sm text-slate-500">{t("Monthly line-item preview by warehouse and client.")}</p>
             </CardHeader>
           </Card>
         </div>
@@ -495,7 +495,7 @@ export function StorageBillingPage() {
                       <TableCell className="text-right">
                         <div className="inline-flex items-center gap-2">
                           <span>{safeNumber(row.days_count).toLocaleString()}</span>
-                          {row.days_count < 20 ? <Badge variant="warning">insufficient snapshot days</Badge> : null}
+                          {row.days_count < 20 ? <Badge variant="warning">{t("insufficient snapshot days")}</Badge> : null}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">{formatCbm(row.avg_cbm)}</TableCell>

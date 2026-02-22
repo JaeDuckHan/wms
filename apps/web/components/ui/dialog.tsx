@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import { X } from "lucide-react";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type DialogContextValue = {
@@ -52,6 +54,8 @@ export function DialogContent({
   children: React.ReactNode;
 }) {
   const ctx = React.useContext(DialogContext);
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   if (!ctx || !ctx.open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -62,7 +66,7 @@ export function DialogContent({
           type="button"
           onClick={() => ctx.setOpen(false)}
           className="absolute right-3 top-3 rounded p-1 text-slate-500 hover:bg-slate-100"
-          aria-label="Close"
+          aria-label={t("Close")}
         >
           <X className="h-4 w-4" />
         </button>
@@ -80,16 +84,32 @@ export function DialogHeader({
 
 export function DialogTitle({
   className,
+  children,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("text-base font-semibold", className)} {...props} />;
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
+  const nextChildren = typeof children === "string" ? t(children) : children;
+  return (
+    <h3 className={cn("text-base font-semibold", className)} {...props}>
+      {nextChildren}
+    </h3>
+  );
 }
 
 export function DialogDescription({
   className,
+  children,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("text-sm text-slate-500", className)} {...props} />;
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
+  const nextChildren = typeof children === "string" ? t(children) : children;
+  return (
+    <p className={cn("text-sm text-slate-500", className)} {...props}>
+      {nextChildren}
+    </p>
+  );
 }
 
 export function DialogFooter({

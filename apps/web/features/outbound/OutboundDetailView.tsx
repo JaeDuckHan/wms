@@ -23,6 +23,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { addOutboundBox, ApiError, transitionOutboundStatus } from "@/features/outbound/api";
 import { useToast } from "@/components/ui/toast";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 
 const tabs = ["overview", "items", "boxes", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
@@ -56,6 +58,8 @@ export function OutboundDetailView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
 
   const [order, setOrder] = useState(initialOrder);
   const [tab, setTab] = useState<TabValue>(normalizeTab(initialTab));
@@ -94,13 +98,13 @@ export function OutboundDetailView({
       setOrder(updated);
       setConfirmOpen(false);
       pushToast({
-        title: `${actionLabel(pendingAction)} completed`,
-        description: `Order status changed to ${updated.status}.`,
+        title: `${t(actionLabel(pendingAction))} ${t("completed")}`,
+        description: `${t("Order status changed to")} ${t(updated.status)}.`,
         variant: "success",
       });
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Action failed";
-      pushToast({ title: "Action failed", description: message, variant: "error" });
+      const message = error instanceof ApiError ? error.message : t("Action failed");
+      pushToast({ title: t("Action failed"), description: message, variant: "error" });
     } finally {
       setLoading(false);
       setPendingAction(null);
@@ -138,24 +142,24 @@ export function OutboundDetailView({
           row.available_qty < row.requested_qty ? (
             <Badge variant="danger" className="inline-flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
-              Shortage
+              {t("Shortage")}
             </Badge>
           ) : (
-            <Badge variant={row.status === "picked" ? "success" : "default"}>{row.status}</Badge>
+            <Badge variant={row.status === "picked" ? "success" : "default"}>{t(row.status)}</Badge>
           ),
       },
     ],
-    []
+    [locale]
   );
 
   const submitBox = async () => {
     const parsedItemCount = Number(itemCount);
     if (!boxNo.trim() || !courier.trim() || !trackingNo.trim()) {
-      setFormError("All fields are required.");
+      setFormError(t("All fields are required."));
       return;
     }
     if (!Number.isFinite(parsedItemCount) || parsedItemCount < 1) {
-      setFormError("Item count must be 1 or greater.");
+      setFormError(t("Item count must be 1 or greater."));
       return;
     }
 
@@ -174,10 +178,10 @@ export function OutboundDetailView({
       setCourier("");
       setTrackingNo("");
       setItemCount("1");
-      pushToast({ title: "Box added", variant: "success" });
+      pushToast({ title: t("Box added"), variant: "success" });
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Please check input values or API status.";
-      pushToast({ title: "Failed to add box", description: message, variant: "error" });
+      const message = error instanceof ApiError ? error.message : t("Please check input values or API status.");
+      pushToast({ title: t("Failed to add box"), description: message, variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -192,13 +196,13 @@ export function OutboundDetailView({
           { label: order.outbound_no },
         ]}
         title={order.outbound_no}
-        subtitle={`${order.client} | ETA ${order.eta_date}`}
+        subtitle={`${order.client} | ${t("ETA")} ${order.eta_date}`}
         rightSlot={
           <div className="flex items-center gap-2">
             <StatusBadge status={order.status} />
             {currentAction && (
               <Button onClick={openActionConfirm} disabled={loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : actionLabel(currentAction)}
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t(actionLabel(currentAction))}
               </Button>
             )}
           </div>
@@ -207,16 +211,16 @@ export function OutboundDetailView({
 
       <Tabs value={tab} onValueChange={setTabWithQuery}>
         <TabsList className="mb-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="items">Items</TabsTrigger>
-          <TabsTrigger value="boxes">Boxes</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="overview">{t("Overview")}</TabsTrigger>
+          <TabsTrigger value="items">{t("Items")}</TabsTrigger>
+          <TabsTrigger value="boxes">{t("Boxes")}</TabsTrigger>
+          <TabsTrigger value="timeline">{t("Timeline")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="grid gap-6 md:grid-cols-3">
           <Card>
             <CardHeader>
-              <CardTitle>Client</CardTitle>
+              <CardTitle>{t("Client")}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm font-medium">{order.client}</p>
@@ -224,7 +228,7 @@ export function OutboundDetailView({
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Shipping Address</CardTitle>
+              <CardTitle>{t("Shipping Address")}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm">{order.ship_to}</p>
@@ -232,7 +236,7 @@ export function OutboundDetailView({
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Summary</CardTitle>
+              <CardTitle>{t("Summary")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="text-sm">{order.summary}</p>
@@ -242,29 +246,29 @@ export function OutboundDetailView({
         </TabsContent>
 
         <TabsContent value="items">
-          <DataTable rows={order.items} columns={itemColumns} emptyText="No items available." />
+          <DataTable rows={order.items} columns={itemColumns} emptyText={t("No items available.")} />
         </TabsContent>
 
         <TabsContent value="boxes">
           <div className="mb-4 flex justify-end">
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="secondary" disabled={!order.boxes_supported} title={!order.boxes_supported ? "Box API is unavailable in current backend." : undefined}>
+                <Button variant="secondary" disabled={!order.boxes_supported} title={!order.boxes_supported ? t("Box API is unavailable in current backend.") : undefined}>
                   <PackagePlus className="h-4 w-4" />
-                  Add Box
+                  {t("Add Box")}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Add Box</DialogTitle>
-                  <DialogDescription>Mock form with client-side validation.</DialogDescription>
+                  <DialogTitle>{t("Add Box")}</DialogTitle>
+                  <DialogDescription>{t("Mock form with client-side validation.")}</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
-                  <Input placeholder="Box No" value={boxNo} onChange={(e) => setBoxNo(e.target.value)} />
-                  <Input placeholder="Courier" value={courier} onChange={(e) => setCourier(e.target.value)} />
-                  <Input placeholder="Tracking No" value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} />
+                  <Input placeholder={t("Box No")} value={boxNo} onChange={(e) => setBoxNo(e.target.value)} />
+                  <Input placeholder={t("Courier")} value={courier} onChange={(e) => setCourier(e.target.value)} />
+                  <Input placeholder={t("Tracking No")} value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} />
                   <Input
-                    placeholder="Item Count"
+                    placeholder={t("Item Count")}
                     type="number"
                     min={1}
                     value={itemCount}
@@ -274,10 +278,10 @@ export function OutboundDetailView({
                 </div>
                 <DialogFooter>
                   <Button variant="secondary" onClick={() => setDialogOpen(false)} disabled={loading}>
-                    Cancel
+                    {t("Cancel")}
                   </Button>
                   <Button onClick={submitBox} disabled={loading}>
-                    {loading ? "Saving..." : "Save"}
+                    {loading ? t("Saving...") : t("Save")}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -300,14 +304,14 @@ export function OutboundDetailView({
           />
           {!order.boxes_supported && (
             <p className="mt-3 text-sm text-amber-700">
-              Box API is unavailable on current backend, so box create/update is disabled.
+              {t("Box API is unavailable on current backend, so box create/update is disabled.")}
             </p>
           )}
         </TabsContent>
 
         <TabsContent value="timeline">
           {order.timeline.length === 0 ? (
-            <div className="rounded-xl border bg-white px-6 py-8 text-center text-sm text-slate-500">No timeline logs.</div>
+            <div className="rounded-xl border bg-white px-6 py-8 text-center text-sm text-slate-500">{t("No timeline logs.")}</div>
           ) : (
             <div className="rounded-xl border bg-white px-6 py-2">
               {order.timeline.map((log, idx) => (
@@ -333,17 +337,17 @@ export function OutboundDetailView({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm {pendingAction ? actionLabel(pendingAction) : "Action"}</DialogTitle>
+            <DialogTitle>{t("Confirm")} {pendingAction ? t(actionLabel(pendingAction)) : t("Action")}</DialogTitle>
             <DialogDescription>
-              This changes outbound status and appends a timeline log in mock data.
+              {t("This changes outbound status and appends a timeline log in mock data.")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={loading}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={runStatusAction} disabled={loading || !pendingAction}>
-              {loading ? "Processing..." : "Confirm"}
+              {loading ? t("Processing...") : t("Confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

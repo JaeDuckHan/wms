@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Bell, Search, UserCircle2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocale } from "@/components/i18n/LocaleProvider";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
+import { translateUiText } from "@/lib/i18n";
 
 export function Topbar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
 
   const initialQuery = useMemo(() => searchParams.get("q") ?? "", [searchParams]);
   const [query, setQuery] = useState(initialQuery);
@@ -36,7 +40,7 @@ export function Topbar() {
 
   const onLogout = () => {
     logout();
-    pushToast({ title: "Signed out", variant: "info" });
+    pushToast({ title: t("Signed out"), variant: "info" });
     router.push("/login");
   };
 
@@ -45,7 +49,7 @@ export function Topbar() {
       <form onSubmit={onSearch} className="relative w-full max-w-md">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <Input
-          placeholder="Search orders, clients, products..."
+          placeholder={t("Search orders, clients, products...")}
           className="pl-9"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -57,7 +61,7 @@ export function Topbar() {
         </button>
         <Button variant="secondary" size="sm" onClick={onLogout}>
           <UserCircle2 className="h-4 w-4" />
-          Admin
+          {t("Admin")}
         </Button>
       </div>
     </header>

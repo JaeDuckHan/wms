@@ -1,4 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TranslatedText } from "@/components/i18n/TranslatedText";
 import type { ReactNode } from "react";
 
 type Column<T> = {
@@ -26,7 +27,7 @@ export function DataTable<T>({
           <TableRow>
             {columns.map((column) => (
               <TableHead key={column.key} className={column.className}>
-                {column.label}
+                <TranslatedText text={column.label} />
               </TableHead>
             ))}
           </TableRow>
@@ -35,7 +36,7 @@ export function DataTable<T>({
           {rows.length === 0 ? (
             <TableRow>
               <TableCell className="text-center text-slate-500" colSpan={columns.length}>
-                {emptyText}
+                <TranslatedText text={emptyText} />
               </TableCell>
             </TableRow>
           ) : (

@@ -1,6 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 
 type BreadcrumbItem = {
   label: string;
@@ -22,6 +26,8 @@ export function PageHeader({
   subtitle?: string;
   rightSlot?: ReactNode;
 }) {
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const summary = description ?? subtitle;
   const actionSlot = actions ?? rightSlot;
 
@@ -32,15 +38,15 @@ export function PageHeader({
           {breadcrumbs.map((item, idx) => (
             <div key={item.label} className="flex items-center gap-2">
               {idx > 0 && <ChevronRight className="h-3 w-3" />}
-              {item.href ? <Link href={item.href}>{item.label}</Link> : <span>{item.label}</span>}
+              {item.href ? <Link href={item.href}>{t(item.label)}</Link> : <span>{t(item.label)}</span>}
             </div>
           ))}
         </nav>
       )}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-          {summary && <p className="mt-1 text-sm text-slate-500">{summary}</p>}
+          <h1 className="text-2xl font-semibold text-slate-900">{t(title)}</h1>
+          {summary && <p className="mt-1 text-sm text-slate-500">{t(summary)}</p>}
         </div>
         {actionSlot}
       </div>

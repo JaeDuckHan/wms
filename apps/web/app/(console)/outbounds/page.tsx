@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getOutboundOrders } from "@/features/outbound/api";
 import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/badge";
+import { TranslatedText } from "@/components/i18n/TranslatedText";
 import type { OutboundListStatus } from "@/features/outbound/types";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
@@ -43,7 +44,9 @@ export default async function OutboundsPage({
 
           return (
             <Link key={item.value} href={`/outbounds?${params.toString()}`}>
-              <Badge variant={active ? "info" : "default"}>{item.label}</Badge>
+              <Badge variant={active ? "info" : "default"}>
+                <TranslatedText text={item.label} />
+              </Badge>
             </Link>
           );
         })}

@@ -8,6 +8,8 @@ import { DataTable } from "@/components/ui/DataTable";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import {
   createServiceRate,
   deleteServiceRate,
@@ -28,6 +30,8 @@ const blank: Omit<ServiceRate, "id"> = {
 
 export function ServiceRatesSettingsPage() {
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const [rows, setRows] = useState<ServiceRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +44,7 @@ export function ServiceRatesSettingsPage() {
     try {
       setRows(await listServiceRates());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load service rates.");
+      setError(e instanceof Error ? e.message : t("Failed to load service rates."));
     } finally {
       setLoading(false);
     }
@@ -62,7 +66,7 @@ export function ServiceRatesSettingsPage() {
 
   const save = async () => {
     if (!form.service_code.trim() || !form.service_name.trim()) {
-      pushToast({ title: "Service code and name are required.", variant: "error" });
+      pushToast({ title: t("Service code and name are required."), variant: "error" });
       return;
     }
     try {
@@ -71,22 +75,22 @@ export function ServiceRatesSettingsPage() {
       } else {
         await createServiceRate(form);
       }
-      pushToast({ title: "Saved", variant: "success" });
+      pushToast({ title: t("Saved"), variant: "success" });
       await reload();
       startCreate();
     } catch (e) {
-      pushToast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Save failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
   const remove = async (serviceCode: string) => {
     try {
       await deleteServiceRate(serviceCode);
-      pushToast({ title: "Deleted", variant: "info" });
+      pushToast({ title: t("Deleted"), variant: "info" });
       await reload();
       if (editing === serviceCode) startCreate();
     } catch (e) {
-      pushToast({ title: "Delete failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Delete failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
@@ -102,11 +106,11 @@ export function ServiceRatesSettingsPage() {
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
           {error ? (
-            <ErrorState title="Failed to load service rates" message={error} onRetry={() => void reload()} />
+            <ErrorState title={t("Failed to load service rates")} message={error} onRetry={() => void reload()} />
           ) : (
             <DataTable
               rows={rows}
-              emptyText={loading ? "Loading..." : "No service rates"}
+              emptyText={loading ? t("Loading...") : t("No service rates")}
               columns={[
                 { key: "service_code", label: "Service Code", render: (row) => <span className="font-medium">{row.service_code}</span> },
                 { key: "service_name", label: "Service Name", render: (row) => row.service_name },
@@ -129,13 +133,13 @@ export function ServiceRatesSettingsPage() {
 
         <div className="rounded-xl border bg-white p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">{editing ? "Edit service" : "New service"}</h3>
+            <h3 className="text-sm font-semibold">{editing ? t("Edit service") : t("New service")}</h3>
             {editing && (
               <Button size="sm" variant="ghost" onClick={startCreate}>Reset</Button>
             )}
           </div>
-          <Input placeholder="Service code" value={form.service_code} onChange={(e) => setForm((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))} />
-          <Input placeholder="Service name" value={form.service_name} onChange={(e) => setForm((p) => ({ ...p, service_name: e.target.value }))} />
+          <Input placeholder={t("Service code")} value={form.service_code} onChange={(e) => setForm((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))} />
+          <Input placeholder={t("Service name")} value={form.service_name} onChange={(e) => setForm((p) => ({ ...p, service_name: e.target.value }))} />
           <select className="h-9 rounded-md border px-3 text-sm" value={form.billing_unit} onChange={(e) => setForm((p) => ({ ...p, billing_unit: e.target.value as ServiceRate["billing_unit"] }))}>
             <option value="ORDER">ORDER</option><option value="SKU">SKU</option><option value="BOX">BOX</option><option value="CBM">CBM</option><option value="PALLET">PALLET</option><option value="EVENT">EVENT</option><option value="MONTH">MONTH</option>
           </select>
@@ -149,10 +153,10 @@ export function ServiceRatesSettingsPage() {
           </select>
           <Input type="number" placeholder="Default rate" value={form.default_rate} onChange={(e) => setForm((p) => ({ ...p, default_rate: Number(e.target.value || 0) }))} />
           <select className="h-9 rounded-md border px-3 text-sm" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as ServiceRate["status"] }))}>
-            <option value="active">active</option>
-            <option value="inactive">inactive</option>
+            <option value="active">{t("active")}</option>
+            <option value="inactive">{t("inactive")}</option>
           </select>
-          <Button onClick={() => void save()}>Save</Button>
+          <Button onClick={() => void save()}>{t("Save")}</Button>
         </div>
       </div>
     </section>

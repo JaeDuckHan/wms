@@ -8,10 +8,14 @@ import { Input } from "@/components/ui/input";
 import { login } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/features/outbound/api";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 
 export function LoginForm({ nextUrl }: { nextUrl: string }) {
   const router = useRouter();
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
 
   const [email, setEmail] = useState("admin.demo@example.com");
   const [password, setPassword] = useState("1234");
@@ -21,7 +25,7 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!email.trim() || !password.trim()) {
-      setError("Email and password are required.");
+      setError(t("Email and password are required."));
       return;
     }
 
@@ -29,12 +33,12 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
     setLoading(true);
     try {
       await login({ email: email.trim(), password });
-      pushToast({ title: "Login successful", variant: "success" });
+      pushToast({ title: t("Login successful"), variant: "success" });
       router.replace(nextUrl);
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Login request failed";
+      const message = err instanceof ApiError ? err.message : t("Login request failed");
       setError(message);
-      pushToast({ title: "Login failed", description: message, variant: "error" });
+      pushToast({ title: t("Login failed"), description: message, variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -63,10 +67,10 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
             />
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button className="w-full" disabled={loading}>
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? t("Signing in...") : t("Sign in")}
             </Button>
           </form>
-          <p className="text-xs text-slate-500">Use a valid WMS API account.</p>
+          <p className="text-xs text-slate-500">{t("Use a valid WMS API account.")}</p>
         </CardContent>
       </Card>
     </div>

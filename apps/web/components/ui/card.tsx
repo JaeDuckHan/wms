@@ -1,4 +1,8 @@
+"use client";
+
 import * as React from "react";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export function Card({
@@ -22,9 +26,17 @@ export function CardHeader({
 
 export function CardTitle({
   className,
+  children,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("text-sm font-semibold", className)} {...props} />;
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
+  const nextChildren = typeof children === "string" ? t(children) : children;
+  return (
+    <h3 className={cn("text-sm font-semibold", className)} {...props}>
+      {nextChildren}
+    </h3>
+  );
 }
 
 export function CardContent({

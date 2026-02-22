@@ -8,6 +8,8 @@ import { DataTable } from "@/components/ui/DataTable";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import {
   createExchangeRate,
   deleteExchangeRate,
@@ -26,6 +28,8 @@ const blank: Omit<ExchangeRate, "id" | "base_currency" | "quote_currency"> = {
 
 export function ExchangeRatesSettingsPage() {
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const [rows, setRows] = useState<ExchangeRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +42,7 @@ export function ExchangeRatesSettingsPage() {
     try {
       setRows(await listExchangeRates());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load exchange rates.");
+      setError(e instanceof Error ? e.message : t("Failed to load exchange rates."));
     } finally {
       setLoading(false);
     }
@@ -71,22 +75,22 @@ export function ExchangeRatesSettingsPage() {
       } else {
         await createExchangeRate(form);
       }
-      pushToast({ title: "Saved", variant: "success" });
+      pushToast({ title: t("Saved"), variant: "success" });
       await reload();
       startCreate();
     } catch (e) {
-      pushToast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Save failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
   const remove = async (id: number) => {
     try {
       await deleteExchangeRate(id);
-      pushToast({ title: "Deleted", variant: "info" });
+      pushToast({ title: t("Deleted"), variant: "info" });
       await reload();
       if (editingId === id) startCreate();
     } catch (e) {
-      pushToast({ title: "Delete failed", description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: t("Delete failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
   };
 
@@ -102,11 +106,11 @@ export function ExchangeRatesSettingsPage() {
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
           {error ? (
-            <ErrorState title="Failed to load exchange rates" message={error} onRetry={() => void reload()} />
+            <ErrorState title={t("Failed to load exchange rates")} message={error} onRetry={() => void reload()} />
           ) : (
             <DataTable
               rows={rows}
-              emptyText={loading ? "Loading..." : "No exchange rates"}
+              emptyText={loading ? t("Loading...") : t("No exchange rates")}
               columns={[
                 { key: "rate_date", label: "Rate Date", render: (row) => row.rate_date?.slice(0, 10) },
                 { key: "pair", label: "Pair", render: () => "THB/KRW" },
@@ -131,25 +135,25 @@ export function ExchangeRatesSettingsPage() {
 
         <div className="rounded-xl border bg-white p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">{editingId ? "Edit rate" : "New rate"}</h3>
+            <h3 className="text-sm font-semibold">{editingId ? t("Edit rate") : t("New rate")}</h3>
             {editingId && <Button size="sm" variant="ghost" onClick={startCreate}>Reset</Button>}
           </div>
           <Input type="date" value={form.rate_date} onChange={(e) => setForm((p) => ({ ...p, rate_date: e.target.value }))} />
           <Input type="number" step="0.0001" value={form.rate} onChange={(e) => setForm((p) => ({ ...p, rate: Number(e.target.value || 0) }))} />
           <select className="h-9 rounded-md border px-3 text-sm" value={form.source} onChange={(e) => setForm((p) => ({ ...p, source: e.target.value as ExchangeRate["source"] }))}>
-            <option value="manual">manual</option>
-            <option value="api">api</option>
+            <option value="manual">{t("manual")}</option>
+            <option value="api">{t("api")}</option>
           </select>
           <select className="h-9 rounded-md border px-3 text-sm" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as ExchangeRate["status"] }))}>
-            <option value="active">active</option>
-            <option value="draft">draft</option>
-            <option value="superseded">superseded</option>
+            <option value="active">{t("active")}</option>
+            <option value="draft">{t("draft")}</option>
+            <option value="superseded">{t("superseded")}</option>
           </select>
           <select className="h-9 rounded-md border px-3 text-sm" value={form.locked} onChange={(e) => setForm((p) => ({ ...p, locked: Number(e.target.value) }))}>
-            <option value={0}>Unlocked</option>
-            <option value={1}>Locked</option>
+            <option value={0}>{t("Unlocked")}</option>
+            <option value={1}>{t("Locked")}</option>
           </select>
-          <Button onClick={() => void save()}>Save</Button>
+          <Button onClick={() => void save()}>{t("Save")}</Button>
         </div>
       </div>
     </section>

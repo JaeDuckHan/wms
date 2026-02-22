@@ -17,6 +17,8 @@ import {
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useLocale } from "@/components/i18n/LocaleProvider";
+import { translateUiText } from "@/lib/i18n";
 import { createWarehouse, listWarehouses, toggleWarehouseStatus, updateWarehouse } from "@/features/settings/warehouses/api";
 import type { Warehouse, WarehouseStatus } from "@/features/settings/warehouses/types";
 
@@ -37,6 +39,8 @@ const initialForm: FormState = {
 
 export function WarehousesSettingsPage() {
   const { pushToast } = useToast();
+  const { locale } = useLocale();
+  const t = (text: string) => translateUiText(text, locale);
   const [rows, setRows] = useState<Warehouse[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -57,7 +61,7 @@ export function WarehousesSettingsPage() {
       const data = await listWarehouses();
       setRows(data);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Failed to load warehouses.");
+      setLoadError(error instanceof Error ? error.message : t("Failed to load warehouses."));
     } finally {
       setLoadingRows(false);
     }
@@ -107,10 +111,10 @@ export function WarehousesSettingsPage() {
 
   const submit = async () => {
     if (!form.warehouse_code.trim() || !form.name.trim()) {
-      setFieldError("Warehouse code and name are required.");
+      setFieldError(t("Warehouse code and name are required."));
       pushToast({
-        title: "Missing required fields",
-        description: "Warehouse code and name are required.",
+        title: t("Missing required fields"),
+        description: t("Warehouse code and name are required."),
         variant: "error",
       });
       return;
@@ -121,18 +125,18 @@ export function WarehousesSettingsPage() {
     try {
       if (editingId) {
         await updateWarehouse(editingId, form);
-        pushToast({ title: "Warehouse updated", variant: "success" });
+        pushToast({ title: t("Warehouse updated"), variant: "success" });
       } else {
         await createWarehouse(form);
-        pushToast({ title: "Warehouse created", variant: "success" });
+        pushToast({ title: t("Warehouse created"), variant: "success" });
       }
       await loadRows();
       setOpen(false);
     } catch (error) {
-      setFieldError(error instanceof Error ? error.message : "Please try again.");
+      setFieldError(error instanceof Error ? error.message : t("Please try again."));
       pushToast({
-        title: "Save failed",
-        description: error instanceof Error ? error.message : "Please try again.",
+        title: t("Save failed"),
+        description: error instanceof Error ? error.message : t("Please try again."),
         variant: "error",
       });
     } finally {
@@ -146,13 +150,13 @@ export function WarehousesSettingsPage() {
       await toggleWarehouseStatus(row.id);
       await loadRows();
       pushToast({
-        title: row.status === "active" ? "Warehouse deactivated" : "Warehouse reactivated",
+        title: row.status === "active" ? t("Warehouse deactivated") : t("Warehouse reactivated"),
         variant: "info",
       });
     } catch (error) {
       pushToast({
-        title: "Action failed",
-        description: error instanceof Error ? error.message : "Please try again.",
+        title: t("Action failed"),
+        description: error instanceof Error ? error.message : t("Please try again."),
         variant: "error",
       });
     } finally {
@@ -166,7 +170,7 @@ export function WarehousesSettingsPage() {
         breadcrumbs={[{ label: "Settings" }, { label: "Warehouses" }]}
         title="Warehouses"
         subtitle="Configure warehouse master records used across operations."
-        rightSlot={<Button onClick={openCreate}>New</Button>}
+        rightSlot={<Button onClick={openCreate}>{t("New")}</Button>}
       />
       <SettingsTabs />
 
@@ -182,28 +186,28 @@ export function WarehousesSettingsPage() {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
+            <option value="all">{t("All Status")}</option>
+            <option value="active">{t("Active")}</option>
+            <option value="inactive">{t("Inactive")}</option>
           </select>
           <select
             className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as SortKey)}
           >
-            <option value="created_desc">Newest</option>
-            <option value="created_asc">Oldest</option>
-            <option value="code_asc">Warehouse Code</option>
-            <option value="name_asc">Name</option>
+            <option value="created_desc">{t("Newest")}</option>
+            <option value="created_asc">{t("Oldest")}</option>
+            <option value="code_asc">{t("Warehouse Code")}</option>
+            <option value="name_asc">{t("Name")}</option>
           </select>
         </div>
 
         {loadError ? (
-          <ErrorState title="Failed to load warehouses." message={loadError} onRetry={() => void loadRows()} />
+          <ErrorState title={t("Failed to load warehouses.")} message={loadError} onRetry={() => void loadRows()} />
         ) : (
           <DataTable
             rows={filteredRows}
-            emptyText={loadingRows ? "Loading warehouses..." : "No warehouses found."}
+            emptyText={loadingRows ? t("Loading warehouses...") : t("No warehouses found.")}
             rowClassName="cursor-pointer hover:bg-slate-50"
             columns={[
             { key: "warehouse_code", label: "Warehouse Code", render: (row) => <span className="font-medium">{row.warehouse_code}</span> },
@@ -214,9 +218,9 @@ export function WarehousesSettingsPage() {
               label: "Actions",
               render: (row) => (
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id}>Edit</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id}>{t("Edit")}</Button>
                   <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id}>
-                    {row.status === "active" ? "Deactivate" : "Activate"}
+                    {row.status === "active" ? t("Deactivate") : t("Activate")}
                   </Button>
                 </div>
               ),
@@ -229,40 +233,40 @@ export function WarehousesSettingsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit warehouse" : "New warehouse"}</DialogTitle>
-            <DialogDescription>Warehouse code and name are required.</DialogDescription>
+            <DialogTitle>{editingId ? t("Edit warehouse") : t("New warehouse")}</DialogTitle>
+            <DialogDescription>{t("Warehouse code and name are required.")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Warehouse Code</label>
+              <label className="text-xs font-medium text-slate-600">{t("Warehouse Code")}</label>
               <Input
                 value={form.warehouse_code}
                 onChange={(e) => setForm((prev) => ({ ...prev, warehouse_code: e.target.value.toUpperCase() }))}
                 placeholder="e.g. ICN-01"
               />
-              <p className="text-xs text-slate-500">Use 2-30 chars: A-Z, 0-9, underscore or hyphen.</p>
+              <p className="text-xs text-slate-500">{t("Use 2-30 chars: A-Z, 0-9, underscore or hyphen.")}</p>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Name</label>
+              <label className="text-xs font-medium text-slate-600">{t("Name")}</label>
               <Input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Status</label>
+              <label className="text-xs font-medium text-slate-600">{t("Status")}</label>
               <select
                 className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
                 value={form.status}
                 onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value as WarehouseStatus }))}
               >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="active">{t("Active")}</option>
+                <option value="inactive">{t("Inactive")}</option>
               </select>
             </div>
             {fieldError && <p className="text-xs text-red-600">{fieldError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setOpen(false)}>{t("Cancel")}</Button>
             <Button onClick={() => void submit()} disabled={saving || !form.warehouse_code.trim() || !form.name.trim()}>
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("Saving...") : t("Save")}
             </Button>
           </DialogFooter>
         </DialogContent>
