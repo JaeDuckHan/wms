@@ -30,11 +30,29 @@ async function forward(request: NextRequest, params: { path: string[] }) {
   });
 
   const text = await response.text();
+  const resHeaders = new Headers({
+    "content-type": response.headers.get("content-type") ?? "application/json",
+  });
+
+  // On successful login, also set server cookie so next SSR/RSC requests always see token.
+  if (joinedPath === "auth/login" && response.ok) {
+    try {
+      const parsed = JSON.parse(text) as { data?: { token?: string } };
+      const token = parsed?.data?.token;
+      if (token) {
+        resHeaders.append(
+          "set-cookie",
+          `${AUTH_COOKIE_KEY}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; SameSite=Lax; Secure`
+        );
+      }
+    } catch {
+      // ignore malformed JSON
+    }
+  }
+
   return new Response(text, {
     status: response.status,
-    headers: {
-      "content-type": response.headers.get("content-type") ?? "application/json",
-    },
+    headers: resHeaders,
   });
 }
 

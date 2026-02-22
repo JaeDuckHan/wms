@@ -133,7 +133,10 @@ async function resolveToken(input?: string): Promise<string | undefined> {
     const tokenCookie = document.cookie
       .split("; ")
       .find((entry) => entry.startsWith(`${AUTH_COOKIE_KEY}=`));
-    return tokenCookie ? decodeURIComponent(tokenCookie.split("=")[1]) : undefined;
+    if (tokenCookie) return decodeURIComponent(tokenCookie.split("=")[1]);
+
+    const tokenLocal = localStorage.getItem(AUTH_COOKIE_KEY) ?? undefined;
+    if (tokenLocal) return tokenLocal;
   }
   return undefined;
 }

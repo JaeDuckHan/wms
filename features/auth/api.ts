@@ -47,7 +47,7 @@ export async function login(payload: LoginPayload): Promise<{ token: string; ema
   });
 
   const token = data.token;
-  document.cookie = `${AUTH_COOKIE_KEY}=${token}; path=/; max-age=28800; samesite=lax`;
+  document.cookie = `${AUTH_COOKIE_KEY}=${encodeURIComponent(token)}; path=/; max-age=28800; samesite=lax; secure`;
   localStorage.setItem(AUTH_COOKIE_KEY, token);
   localStorage.setItem("kb3pl_user_email", payload.email);
 
