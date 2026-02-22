@@ -1,0 +1,39 @@
+# Monorepo common
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+dist/
+build/
+coverage/
+.DS_Store
+Thumbs.db
+
+# Logs and env files
+*.log
+.env
+.env.*
+!.env.example
+
+# Legacy standalone repos (kept on disk temporarily)
+wms-api/
+wms-web/
+
+# Migration artifacts
+*.bundle
+*.zip
+*.msi
+
+# Local root-level artifacts not part of monorepo source
+3pl/
+3pl.txt
+docs/
+sql/
+tests/
+schema_v1.sql
+seed_testpack_base.sql
+package-lock.json
+run_mysql_import.cmd
+run_testpack.ps1
+run_testpackbom.ps1
+run_testpack_utf8bom.ps1.bak
