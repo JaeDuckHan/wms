@@ -33,7 +33,7 @@ export type OutboundBox = {
 
 export type OutboundTimeline = {
   id: string;
-  type: "created" | "allocated" | "packed" | "shipped";
+  type: "created" | "allocated" | "packed" | "shipped" | "updated" | "cancelled";
   title: string;
   at: string;
   actor: string;

@@ -88,6 +88,18 @@ type RawOutboundBox = {
   updated_at: string;
 };
 
+type RawOutboundLog = {
+  id: number;
+  action: string;
+  from_status: string | null;
+  to_status: string | null;
+  note: string | null;
+  actor_user_id: number | null;
+  actor_email: string | null;
+  actor_name: string | null;
+  created_at: string;
+};
+
 type JsonResponse<T> = {
   ok: boolean;
   data?: T;
@@ -244,6 +256,46 @@ function buildTimeline(order: RawOutboundOrder): OutboundTimeline[] {
   return timeline;
 }
 
+function formatTimelineAt(value: string | null | undefined): string {
+  if (!value) return "-";
+  return value.slice(0, 16).replace("T", " ");
+}
+
+function mapOutboundLogType(log: RawOutboundLog): OutboundTimeline["type"] {
+  if (log.action === "allocate") return "allocated";
+  if (log.action === "pack") return "packed";
+  if (log.action === "ship") return "shipped";
+  if (log.action === "cancel") return "cancelled";
+  if (log.action === "create") return "created";
+  return "updated";
+}
+
+function mapOutboundLogTitle(log: RawOutboundLog): string {
+  if (log.action === "allocate") return "Stock Allocated";
+  if (log.action === "pack") return "Packing Completed";
+  if (log.action === "ship") return "Shipment Completed";
+  if (log.action === "cancel") return "Outbound Cancelled";
+  if (log.action === "create") return "Order Created";
+  if (log.action === "status_change") return "Status Changed";
+  if (log.action === "delete") return "Outbound Deleted";
+  return "Outbound Updated";
+}
+
+function mapOutboundLogs(logs: RawOutboundLog[]): OutboundTimeline[] {
+  return logs.map((log) => ({
+    id: `tl-log-${log.id}`,
+    type: mapOutboundLogType(log),
+    title: mapOutboundLogTitle(log),
+    at: formatTimelineAt(log.created_at),
+    actor: log.actor_name ?? log.actor_email ?? (log.actor_user_id ? `user-${log.actor_user_id}` : "system"),
+    note:
+      log.note ??
+      (log.from_status && log.to_status && log.from_status !== log.to_status
+        ? `${log.from_status} -> ${log.to_status}`
+        : undefined),
+  }));
+}
+
 function mapOrderSummary(order: RawOutboundOrder, itemCount: number, totalQty: number): string {
   return `${itemCount} SKUs / ${totalQty} EA`;
 }
@@ -253,7 +305,8 @@ function mapOutboundOrder(
   clientName: string,
   items: OutboundItem[],
   boxes: OutboundBox[],
-  boxesSupported = true
+  boxesSupported = true,
+  timeline?: OutboundTimeline[]
 ): OutboundOrder {
   const totalQty = items.reduce((acc, item) => acc + item.requested_qty, 0);
   return {
@@ -268,7 +321,7 @@ function mapOutboundOrder(
     items,
     boxes,
     boxes_supported: boxesSupported,
-    timeline: buildTimeline(order),
+    timeline: timeline && timeline.length > 0 ? timeline : buildTimeline(order),
   };
 }
 
@@ -360,6 +413,7 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
     ]);
     let rawBoxes: RawOutboundBox[] = [];
     let boxesSupported = true;
+    let rawLogs: RawOutboundLog[] = [];
     try {
       rawBoxes = await requestJson<RawOutboundBox[]>(`/outbound-orders/${rawOrder.id}/boxes`, undefined, options);
     } catch (error) {
@@ -370,12 +424,18 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
         throw error;
       }
     }
+    try {
+      rawLogs = await requestJson<RawOutboundLog[]>(`/outbound-orders/${rawOrder.id}/logs`, undefined, options);
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 404)) throw error;
+    }
 
     const items = mapItems(rawItems, products, lots, balances, rawOrder.status);
     const boxes = mapBoxes(rawBoxes, rawOrder.tracking_no);
     const clientName = clients.find((client) => client.id === rawOrder.client_id)?.name_kr ?? "";
+    const timeline = mapOutboundLogs(rawLogs);
 
-    return mapOutboundOrder(rawOrder, clientName, items, boxes, boxesSupported);
+    return mapOutboundOrder(rawOrder, clientName, items, boxes, boxesSupported, timeline);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;

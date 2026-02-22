@@ -43,6 +43,18 @@ type RawInboundItem = {
   remark: string | null;
 };
 
+type RawInboundLog = {
+  id: number;
+  action: string;
+  from_status: string | null;
+  to_status: string | null;
+  note: string | null;
+  actor_user_id: number | null;
+  actor_email: string | null;
+  actor_name: string | null;
+  created_at: string;
+};
+
 type RawClient = { id: number; name_kr: string };
 type RawProduct = { id: number; barcode_full: string; name_kr: string };
 type RawLot = { id: number; lot_no: string };
@@ -168,7 +180,52 @@ function buildTimeline(order: RawInboundOrder): InboundTimeline[] {
   return timeline;
 }
 
-function mapInboundOrder(order: RawInboundOrder, clientName: string, items: InboundItem[]): InboundOrder {
+function formatTimelineAt(value: string | null | undefined): string {
+  if (!value) return "-";
+  return value.slice(0, 16).replace("T", " ");
+}
+
+function mapInboundLogType(log: RawInboundLog): InboundTimeline["type"] {
+  if (log.action === "submit") return "submitted";
+  if (log.action === "arrive") return "arrived";
+  if (log.action === "receive") return "received";
+  if (log.action === "cancel") return "cancelled";
+  if (log.action === "create") return "created";
+  return "updated";
+}
+
+function mapInboundLogTitle(log: RawInboundLog): string {
+  if (log.action === "submit") return "Inbound Submitted";
+  if (log.action === "arrive") return "Goods Arrived";
+  if (log.action === "receive") return "Receiving Completed";
+  if (log.action === "cancel") return "Inbound Cancelled";
+  if (log.action === "create") return "Inbound Created";
+  if (log.action === "status_change") return "Status Changed";
+  if (log.action === "delete") return "Inbound Deleted";
+  return "Inbound Updated";
+}
+
+function mapInboundLogs(logs: RawInboundLog[]): InboundTimeline[] {
+  return logs.map((log) => ({
+    id: `itl-log-${log.id}`,
+    type: mapInboundLogType(log),
+    title: mapInboundLogTitle(log),
+    at: formatTimelineAt(log.created_at),
+    actor: log.actor_name ?? log.actor_email ?? (log.actor_user_id ? `user-${log.actor_user_id}` : "system"),
+    note:
+      log.note ??
+      (log.from_status && log.to_status && log.from_status !== log.to_status
+        ? `${log.from_status} -> ${log.to_status}`
+        : undefined),
+  }));
+}
+
+function mapInboundOrder(
+  order: RawInboundOrder,
+  clientName: string,
+  items: InboundItem[],
+  timeline?: InboundTimeline[]
+): InboundOrder {
   const totalQty = items.reduce((acc, item) => acc + item.qty, 0);
   return {
     id: String(order.id),
@@ -180,7 +237,7 @@ function mapInboundOrder(order: RawInboundOrder, clientName: string, items: Inbo
     warehouse: `Warehouse #${order.warehouse_id}`,
     summary: `${items.length} SKUs / ${totalQty} EA`,
     items,
-    timeline: buildTimeline(order),
+    timeline: timeline && timeline.length > 0 ? timeline : buildTimeline(order),
   };
 }
 
@@ -232,9 +289,15 @@ export async function getInboundOrderByNo(inboundNo: string, options?: RequestOp
       requestJson<RawProduct[]>("/products", undefined, options),
       requestJson<RawLot[]>("/product-lots", undefined, options),
     ]);
+    let rawLogs: RawInboundLog[] = [];
+    try {
+      rawLogs = await requestJson<RawInboundLog[]>(`/inbound-orders/${rawOrder.id}/logs`, undefined, options);
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 404)) throw error;
+    }
     const clientName = clients.find((client) => client.id === rawOrder.client_id)?.name_kr ?? "";
     const items = mapItems(rawItems, products, lots);
-    return mapInboundOrder(rawOrder, clientName, items);
+    return mapInboundOrder(rawOrder, clientName, items, mapInboundLogs(rawLogs));
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;

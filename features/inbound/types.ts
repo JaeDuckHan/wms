@@ -23,7 +23,7 @@ export type InboundItem = {
 
 export type InboundTimeline = {
   id: string;
-  type: "created" | "submitted" | "arrived" | "received";
+  type: "created" | "submitted" | "arrived" | "received" | "updated" | "cancelled";
   title: string;
   at: string;
   actor: string;
