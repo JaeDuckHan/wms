@@ -1,0 +1,24 @@
+{
+  "ko": {
+    "navInbounds": "입고",
+    "outboundSummary": "요약",
+    "outboundMemo": "메모",
+    "outboundTimelineTitle": "오더 상태가 변경되었습니다:",
+    "outboundTimelineNote": "저장 실패",
+    "inboundSummary": "요약",
+    "inboundMemo": "메모",
+    "inboundTimelineTitle": "입고 상태가 변경되었습니다:",
+    "inboundTimelineNote": "저장 실패"
+  },
+  "en": {
+    "navInbounds": "Inbounds",
+    "outboundSummary": "Summary",
+    "outboundMemo": "Memo",
+    "outboundTimelineTitle": "Order status changed to",
+    "outboundTimelineNote": "Save failed",
+    "inboundSummary": "Summary",
+    "inboundMemo": "Memo",
+    "inboundTimelineTitle": "Inbound status changed to",
+    "inboundTimelineNote": "Save failed"
+  }
+}

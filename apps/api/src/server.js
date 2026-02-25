@@ -26,11 +26,6 @@ const openapi = require("./openapi.json");
 
 dotenv.config();
 
-const app = express();
-const port = Number(process.env.PORT || 3100);
-app.use(express.json());
-app.use("/auth", authRouter);
-
 function isPublicPath(pathname) {
   return (
     pathname === "/health" ||
@@ -41,79 +36,104 @@ function isPublicPath(pathname) {
   );
 }
 
-app.get("/health", (_req, res) => {
-  res.json({
-    ok: true,
-    service: "wms-api"
-  });
-});
 
-app.get("/health/db", async (_req, res) => {
-  try {
-    const result = await pingDb();
+function createApp() {
+  const app = express();
+  app.use(express.json());
+  app.use("/auth", authRouter);
+
+  app.get("/health", (_req, res) => {
     res.json({
       ok: true,
-      db: result.db,
-      serverTime: result.server_time
+      service: "wms-api"
     });
-  } catch (error) {
+  });
+
+  app.get("/health/db", async (_req, res) => {
+    try {
+      const result = await pingDb();
+      res.json({
+        ok: true,
+        db: result.db,
+        serverTime: result.server_time
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: "Database connection failed",
+        error: error.message
+      });
+    }
+  });
+
+  app.use((req, res, next) => {
+    if (isPublicPath(req.path)) {
+      return next();
+    }
+    return authenticateToken(req, res, next);
+  });
+
+  app.use((req, res, next) => {
+    if (isPublicPath(req.path)) {
+      return next();
+    }
+    return enforceWriteAccess(req, res, next);
+  });
+
+  app.use("/products", productsRouter);
+  app.use("/product-lots", productLotsRouter);
+  app.use("/warehouses", warehousesRouter);
+  app.use("/clients", clientsRouter);
+  app.use("/inbound-orders", inboundOrdersRouter);
+  app.use("/inbound-items", inboundItemsRouter);
+  app.use("/outbound-orders", outboundOrdersRouter);
+  app.use("/outbound-orders", outboundBoxesRouter);
+  app.use("/outbound-items", outboundItemsRouter);
+  app.use("/return-orders", returnOrdersRouter);
+  app.use("/return-items", returnItemsRouter);
+  app.use("/", stocksRouter);
+  app.use("/", serviceEventsRouter);
+  app.use("/", settlementsRouter);
+  app.use("/", billingEngineRouter);
+  app.use("/api/dashboard", dashboardRouter);
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapi));
+
+  app.use((_req, res) => {
+    res.status(404).json({
+      ok: false,
+      code: "NOT_FOUND",
+      message: "Route not found"
+    });
+  });
+
+  app.use((error, _req, res, _next) => {
     res.status(500).json({
       ok: false,
-      message: "Database connection failed",
-      error: error.message
+      code: "INTERNAL_ERROR",
+      message: error.message || "Internal server error"
     });
-  }
-});
-
-app.use((req, res, next) => {
-  if (isPublicPath(req.path)) {
-    return next();
-  }
-  return authenticateToken(req, res, next);
-});
-
-app.use((req, res, next) => {
-  if (isPublicPath(req.path)) {
-    return next();
-  }
-  return enforceWriteAccess(req, res, next);
-});
-
-app.use("/products", productsRouter);
-app.use("/product-lots", productLotsRouter);
-app.use("/warehouses", warehousesRouter);
-app.use("/clients", clientsRouter);
-app.use("/inbound-orders", inboundOrdersRouter);
-app.use("/inbound-items", inboundItemsRouter);
-app.use("/outbound-orders", outboundOrdersRouter);
-app.use("/outbound-orders", outboundBoxesRouter);
-app.use("/outbound-items", outboundItemsRouter);
-app.use("/return-orders", returnOrdersRouter);
-app.use("/return-items", returnItemsRouter);
-app.use("/", stocksRouter);
-app.use("/", serviceEventsRouter);
-app.use("/", settlementsRouter);
-app.use("/", billingEngineRouter);
-app.use("/api/dashboard", dashboardRouter);
-app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapi));
-
-app.use((_req, res) => {
-  res.status(404).json({
-    ok: false,
-    code: "NOT_FOUND",
-    message: "Route not found"
   });
-});
 
-app.use((error, _req, res, _next) => {
-  res.status(500).json({
-    ok: false,
-    code: "INTERNAL_ERROR",
-    message: error.message || "Internal server error"
+  return app;
+}
+
+function startServer(port = Number(process.env.PORT || 3100), options = {}) {
+  const { startScheduler = true } = options;
+  const app = createApp();
+  const server = app.listen(port, () => {
+    if (startScheduler) {
+      startStorageSnapshotSchedule();
+    }
+    console.log(`wms-api listening on http://localhost:${port}`);
   });
-});
+  return server;
+}
 
-app.listen(port, () => {
-  startStorageSnapshotSchedule();
-  console.log(`wms-api listening on http://localhost:${port}`);
-});
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  createApp,
+  startServer
+};

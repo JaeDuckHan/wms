@@ -60,6 +60,7 @@ npm run test:e2e:invoice-reuse
 npm run test:e2e:insufficient-stock
 npm run test:e2e:outbound-detail
 npm run test:e2e:inbound-detail
+npm run test:e2e:health-smoke
 ```
 
 Details and parameter options:

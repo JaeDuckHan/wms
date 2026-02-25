@@ -4,6 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "typecheck": "tsc --noEmit --pretty false --incremental false",
+    "i18n:check": "node scripts/check_i18n_keys.mjs",
+    "test:snapshot:detail-i18n": "node scripts/test_detail_i18n_snapshot.mjs",
+    "test:snapshot:detail-i18n:update": "node scripts/test_detail_i18n_snapshot.mjs --update",
+    "web:check": "npm run typecheck && npm run i18n:check && npm run test:snapshot:detail-i18n && npm run build",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

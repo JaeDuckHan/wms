@@ -142,8 +142,8 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
           <Card>
             <CardHeader><CardTitle>{t("Summary")}</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              <p className="text-sm">{order.summary}</p>
-              <p className="text-sm text-slate-500">{order.memo}</p>
+              <p className="text-sm">{t(order.summary)}</p>
+              <p className="text-sm text-slate-500">{t(order.memo)}</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -164,11 +164,11 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
                     {idx < order.timeline.length - 1 && <span className="mt-1 h-full w-px bg-slate-200" />}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">{log.title}</p>
+                    <p className="text-sm font-medium">{t(log.title)}</p>
                     <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
                       {log.at} | {log.actor}
                     </p>
-                    {log.note && <p className="mt-1 text-sm text-slate-600">{log.note}</p>}
+                    {log.note && <p className="mt-1 text-sm text-slate-600">{t(log.note)}</p>}
                   </div>
                 </div>
               ))}

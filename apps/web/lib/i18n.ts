@@ -324,9 +324,21 @@ const koByEn: Record<string, string> = {
   "Search warehouse_id": "warehouse_id 검색",
   "Press Enter to submit.": "Enter 키로 적용할 수 있습니다.",
   Load: "조회",
+  "Action failed": "작업 실패",
+  "Failed to load billing events.": "정산 이벤트를 불러오지 못했습니다.",
+  "FX Rate": "환율",
+  "VAT 7%": "부가세 7%",
+  Total: "합계",
+  "Failed to load capacity": "적재율을 불러오지 못했습니다",
+  Name: "이름",
 };
 
+const enByKo = Object.entries(koByEn).reduce<Record<string, string>>((acc, [en, ko]) => {
+  if (!(ko in acc)) acc[ko] = en;
+  return acc;
+}, {});
+
 export function translateUiText(text: string, locale: UiLocale): string {
-  if (locale === "en") return text;
-  return koByEn[text] ?? text;
+  if (locale === "ko") return koByEn[text] ?? text;
+  return enByKo[text] ?? text;
 }
