@@ -12,6 +12,7 @@ import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
+const ENABLE_DEV_FALLBACK = process.env.NODE_ENV !== "production";
 const LATENCY_MS = 120;
 
 type RequestOptions = {
@@ -117,6 +118,10 @@ export class ApiError extends Error {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldUseFallback(token?: string) {
+  return USE_MOCK || ENABLE_DEV_FALLBACK || token === "mock-token";
 }
 
 function toDateOnly(value: string | null | undefined): string {
@@ -376,16 +381,26 @@ export async function getOutboundOrders(query?: OutboundListQuery, options?: Req
     await delay(LATENCY_MS);
     return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
   }
-
-  const [orders, clients] = await Promise.all([
-    requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options),
-    requestJson<RawClient[]>("/clients", undefined, options),
-  ]);
-  const clientMap = new Map(clients.map((client) => [client.id, client.name_kr]));
-  const mapped = orders.map((order) =>
-    mapOutboundOrder(order, clientMap.get(order.client_id) ?? "", [], [])
-  );
-  return applyListFilter(mapped, query);
+  const token = await resolveToken(options?.token);
+  try {
+    const [orders, clients] = await Promise.all([
+      requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options),
+      requestJson<RawClient[]>("/clients", undefined, options),
+    ]);
+    const clientMap = new Map(clients.map((client) => [client.id, client.name_kr]));
+    const mapped = orders.map((order) =>
+      mapOutboundOrder(order, clientMap.get(order.client_id) ?? "", [], [])
+    );
+    if (mapped.length === 0 && shouldUseFallback(token)) {
+      return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
+    }
+    return applyListFilter(mapped, query);
+  } catch (error) {
+    if (shouldUseFallback(token)) {
+      return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
+    }
+    throw error;
+  }
 }
 
 export async function getOutboundOrderByNo(outboundNo: string, options?: RequestOptions): Promise<OutboundOrder | null> {
@@ -394,11 +409,18 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
     const order = mockDb.find((item) => item.outbound_no === outboundNo) ?? getOutboundByNo(outboundNo);
     return order ? cloneOrder(order) : null;
   }
+  const token = await resolveToken(options?.token);
 
   try {
     const rawOrders = await requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options);
     const rawOrder = rawOrders.find((order) => order.outbound_no === outboundNo);
-    if (!rawOrder) return null;
+    if (!rawOrder) {
+      if (shouldUseFallback(token)) {
+        const fallbackOrder = mockDb.find((item) => item.outbound_no === outboundNo) ?? getOutboundByNo(outboundNo);
+        return fallbackOrder ? cloneOrder(fallbackOrder) : null;
+      }
+      return null;
+    }
 
     const [clients, rawItems, products, lots, balances] = await Promise.all([
       requestJson<RawClient[]>("/clients", undefined, options),
@@ -437,6 +459,10 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
 
     return mapOutboundOrder(rawOrder, clientName, items, boxes, boxesSupported, timeline);
   } catch (error) {
+    if (shouldUseFallback(token)) {
+      const fallbackOrder = mockDb.find((item) => item.outbound_no === outboundNo) ?? getOutboundByNo(outboundNo);
+      return fallbackOrder ? cloneOrder(fallbackOrder) : null;
+    }
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }

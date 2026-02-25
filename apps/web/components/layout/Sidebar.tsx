@@ -22,6 +22,7 @@ export function Sidebar() {
     { href: "/dashboard", label: "nav.dashboard", icon: House },
     { href: "/settings", label: "nav.settings", icon: Settings },
   ];
+  const toStackedLabel = (text: string) => text.replace(" / ", "\n");
 
   const handleLogout = () => {
     logout();
@@ -49,7 +50,7 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-4 w-4" />
-              <span className="whitespace-pre-line leading-tight">{t(item.label)}</span>
+              <span className="whitespace-pre-line leading-tight">{toStackedLabel(t(item.label))}</span>
             </Link>
           );
         })}

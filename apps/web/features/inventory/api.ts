@@ -151,8 +151,15 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
       available_qty: Number(row.available_qty),
       reserved_qty: Number(row.reserved_qty),
     }));
-
-    return mapped.filter((row) => includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q));
+    const filtered = mapped.filter((row) =>
+      includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
+    );
+    if (filtered.length === 0 && shouldUseFallback(token)) {
+      return mockBalances.filter((row) =>
+        includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
+      );
+    }
+    return filtered;
   } catch (error) {
     if (shouldUseFallback(token)) {
       return mockBalances.filter((row) =>
@@ -198,10 +205,19 @@ export async function getStockTransactions(
       ref: row.ref_type && row.ref_id ? `${row.ref_type}:${row.ref_id}` : "-",
       note: row.note ?? "-",
     }));
-
-    return mapped.filter((row) =>
+    const filtered = mapped.filter((row) =>
       includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
     );
+    if (filtered.length === 0 && shouldUseFallback(token)) {
+      const fallbackRows =
+        query?.txn_type && query.txn_type.length > 0
+          ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
+          : mockTransactions;
+      return fallbackRows.filter((row) =>
+        includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
+      );
+    }
+    return filtered;
   } catch (error) {
     if (shouldUseFallback(token)) {
       const fallbackRows =

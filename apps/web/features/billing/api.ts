@@ -248,7 +248,11 @@ async function withFallback<T>(
   const token = await resolveToken(options?.token);
   if (shouldUseMockMode()) return clone(await fallback());
   try {
-    return await backend();
+    const data = await backend();
+    if (Array.isArray(data) && data.length === 0 && shouldUseFallback(token)) {
+      return clone(await fallback());
+    }
+    return data;
   } catch (error) {
     if (shouldUseFallback(token)) return clone(await fallback());
     throw error;
