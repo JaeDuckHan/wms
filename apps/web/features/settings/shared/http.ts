@@ -46,6 +46,34 @@ export async function requestJson<T>(path: string, init?: RequestInit, options?:
   return json.data;
 }
 
+export async function requestVoid(path: string, init?: RequestInit, options?: AuthRequestOptions): Promise<void> {
+  const token = await resolveToken(options?.token);
+  if (!token && !options?.allowAnonymous) throw new ApiError("Missing auth token", 401);
+
+  const endpoint = typeof window === "undefined" ? `${API_BASE_URL}${path}` : `/api/proxy${path}`;
+  const response = await fetch(endpoint, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new ApiError(message || "Request failed", response.status);
+  }
+
+  try {
+    const json = (await response.json()) as JsonResponse<unknown>;
+    if (!json.ok) throw new ApiError(json.message ?? "Request failed", response.status);
+  } catch {
+    // Accept empty body or non-JSON for endpoints that only return status code.
+  }
+}
+
 export function shouldUseFallback(token?: string) {
   return USE_MOCK || ENABLE_DEV_FALLBACK || token === "mock-token";
 }

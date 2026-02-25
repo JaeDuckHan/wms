@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
 export function Sidebar() {
-  const { lang, setLang, t } = useI18n();
+  const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
   const { pushToast } = useToast();
@@ -34,33 +34,6 @@ export function Sidebar() {
       <div className="mb-6 px-3">
         <p className="text-xs text-slate-500">{t("sidebar.product")}</p>
         <h2 className="mt-1 text-base font-semibold">{t("sidebar.console")}</h2>
-        <div className="mt-3">
-          <p className="mb-1 text-[11px] text-slate-500">{t("sidebar.language")}</p>
-          <div className="inline-flex rounded-md border border-slate-200 p-0.5">
-            <button
-              type="button"
-              onClick={() => setLang("ko")}
-              disabled={lang === "ko"}
-              className={cn(
-                "rounded px-2 py-1 text-xs",
-                lang === "ko" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-              )}
-            >
-              KO
-            </button>
-            <button
-              type="button"
-              onClick={() => setLang("en")}
-              disabled={lang === "en"}
-              className={cn(
-                "rounded px-2 py-1 text-xs",
-                lang === "en" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-              )}
-            >
-              EN
-            </button>
-          </div>
-        </div>
       </div>
       <nav className="space-y-1">
         {items.map((item) => {
@@ -76,7 +49,7 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-4 w-4" />
-              <span>{t(item.label)}</span>
+              <span className="whitespace-pre-line leading-tight">{t(item.label)}</span>
             </Link>
           );
         })}

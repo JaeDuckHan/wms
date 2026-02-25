@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/DataTable";
+import { Badge } from "@/components/ui/badge";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -101,6 +102,9 @@ export function ClientContractRatesSettingsPage() {
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Badge variant="default">{`${t("All")}: ${rows.length}`}</Badge>
+          </div>
           {error ? (
             <ErrorState title={t("Failed to load contract rates")} message={error} onRetry={() => void reload()} />
           ) : (

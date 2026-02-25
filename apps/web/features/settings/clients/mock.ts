@@ -1,28 +1,21 @@
 import type { Client } from "@/features/settings/clients/types";
 
-export const clientsMock: Client[] = [
-  {
-    id: "cl-1",
-    client_code: "ACME",
-    name: "ACME Korea",
-    memo: "Main enterprise account",
-    status: "active",
-    created_at: "2026-02-15T09:10:00Z",
-  },
-  {
-    id: "cl-2",
-    client_code: "BLUE",
-    name: "Blue Retail",
-    memo: "",
-    status: "active",
-    created_at: "2026-02-16T11:45:00Z",
-  },
-  {
-    id: "cl-3",
-    client_code: "STRIPE",
-    name: "Stripe Retail Demo",
-    memo: "Sandbox demo client",
-    status: "inactive",
-    created_at: "2026-02-17T13:20:00Z",
-  },
-];
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+const baseDate = new Date("2026-01-01T09:00:00Z");
+
+export const clientsMock: Client[] = Array.from({ length: 20 }, (_, index) => {
+  const seq = index + 1;
+  const date = new Date(baseDate);
+  date.setUTCDate(baseDate.getUTCDate() + index);
+  return {
+    id: `cl-${seq}`,
+    client_code: `CL${pad2(seq)}`,
+    name: `Sample Client ${pad2(seq)}`,
+    memo: seq % 4 === 0 ? "Priority account for CRUD QA" : "",
+    status: seq % 5 === 0 ? "inactive" : "active",
+    created_at: date.toISOString(),
+  };
+});

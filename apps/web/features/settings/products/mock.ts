@@ -1,31 +1,28 @@
 import type { Product } from "@/features/settings/products/types";
 
-export const productsMock: Product[] = [
-  {
-    id: "prd-1",
-    client_code: "ACME",
-    barcode_raw: "8800001000001",
-    barcode_full: "ACME-8800001000001",
-    name: "Protein Bar 40g",
-    status: "active",
-    created_at: "2026-02-15T10:10:00Z",
-  },
-  {
-    id: "prd-2",
-    client_code: "BLUE",
-    barcode_raw: "8800002000002",
-    barcode_full: "BLUE-8800002000002",
-    name: "Vitamin C 500mg",
-    status: "active",
-    created_at: "2026-02-16T10:10:00Z",
-  },
-  {
-    id: "prd-3",
-    client_code: "STRIPE",
-    barcode_raw: "8800007000007",
-    barcode_full: "STRIPE-8800007000007",
-    name: "Collagen Stick 20g",
-    status: "inactive",
-    created_at: "2026-02-17T10:10:00Z",
-  },
-];
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function pad13(value: number) {
+  return String(value).padStart(13, "0");
+}
+
+const baseDate = new Date("2026-01-01T10:10:00Z");
+
+export const productsMock: Product[] = Array.from({ length: 20 }, (_, index) => {
+  const seq = index + 1;
+  const clientCode = `CL${pad2(((index % 10) + 1))}`;
+  const barcodeRaw = `8800${pad13(seq)}`;
+  const date = new Date(baseDate);
+  date.setUTCDate(baseDate.getUTCDate() + index);
+  return {
+    id: `prd-${seq}`,
+    client_code: clientCode,
+    barcode_raw: barcodeRaw,
+    barcode_full: `${clientCode}-${barcodeRaw}`,
+    name: `Sample Product ${pad2(seq)}`,
+    status: seq % 6 === 0 ? "inactive" : "active",
+    created_at: date.toISOString(),
+  };
+});

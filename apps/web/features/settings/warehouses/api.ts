@@ -1,6 +1,6 @@
 import { warehousesMock } from "@/features/settings/warehouses/mock";
 import type { Warehouse, WarehouseFormInput, WarehouseStatus } from "@/features/settings/warehouses/types";
-import { delay, requestJson, resolveToken, shouldUseFallback, shouldUseMockMode, type RequestOptions } from "@/features/settings/shared/http";
+import { delay, requestJson, requestVoid, resolveToken, shouldUseFallback, shouldUseMockMode, type RequestOptions } from "@/features/settings/shared/http";
 
 const LATENCY_MS = 80;
 const CODE_REGEX = /^[A-Z0-9_-]{2,30}$/;
@@ -103,6 +103,12 @@ async function toggleWarehouseStatusInMock(id: string): Promise<Warehouse> {
   return clone(updated);
 }
 
+async function deleteWarehouseInMock(id: string): Promise<void> {
+  const idx = mockDb.findIndex((item) => item.id === id);
+  if (idx < 0) throw new Error("Warehouse not found.");
+  mockDb.splice(idx, 1);
+}
+
 export async function listWarehouses(options?: RequestOptions): Promise<Warehouse[]> {
   const token = await resolveToken(options?.token);
   if (shouldUseMockMode()) return listWarehousesFromMock();
@@ -196,6 +202,18 @@ export async function toggleWarehouseStatus(id: string, options?: RequestOptions
     return mapRawWarehouse(updated);
   } catch (error) {
     if (shouldUseFallback(token)) return toggleWarehouseStatusInMock(id);
+    throw error;
+  }
+}
+
+export async function deleteWarehouse(id: string, options?: RequestOptions): Promise<void> {
+  const token = await resolveToken(options?.token);
+  if (shouldUseMockMode()) return deleteWarehouseInMock(id);
+
+  try {
+    await requestVoid(`/warehouses/${id}`, { method: "DELETE" }, options);
+  } catch (error) {
+    if (shouldUseFallback(token)) return deleteWarehouseInMock(id);
     throw error;
   }
 }

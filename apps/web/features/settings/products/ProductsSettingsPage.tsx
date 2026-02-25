@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/DataTable";
 import { ActiveStatusBadge } from "@/components/ui/ActiveStatusBadge";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,7 @@ import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { listClients } from "@/features/settings/clients/api";
-import { buildBarcodeFull, createProduct, listProducts, toggleProductStatus, updateProduct } from "@/features/settings/products/api";
+import { buildBarcodeFull, createProduct, deleteProduct, listProducts, toggleProductStatus, updateProduct } from "@/features/settings/products/api";
 import type { Product, ProductStatus } from "@/features/settings/products/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 type FormState = {
@@ -54,6 +55,7 @@ export function ProductsSettingsPage() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const loadRows = async () => {
     setLoadingRows(true);
@@ -98,6 +100,16 @@ export function ProductsSettingsPage() {
     });
     return sorted;
   }, [rows, search, statusFilter, sortKey]);
+
+  const counts = useMemo(() => {
+    const active = rows.filter((item) => item.status === "active").length;
+    return {
+      total: rows.length,
+      active,
+      inactive: rows.length - active,
+      filtered: filteredRows.length,
+    };
+  }, [rows, filteredRows]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -173,6 +185,29 @@ export function ProductsSettingsPage() {
     }
   };
 
+  const removeRow = async (row: Product) => {
+    if (!window.confirm(`${t("Delete")} ${row.barcode_full}?`)) return;
+    setRemovingId(row.id);
+    try {
+      await deleteProduct(row.id);
+      await loadRows();
+      if (editingId === row.id) {
+        setOpen(false);
+        setEditingId(null);
+        setForm(initialForm);
+      }
+      pushToast({ title: t("Deleted"), variant: "info" });
+    } catch (error) {
+      pushToast({
+        title: t("Delete failed"),
+        description: error instanceof Error ? error.message : t("Please try again."),
+        variant: "error",
+      });
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
   return (
     <section>
       <PageHeader
@@ -184,6 +219,12 @@ export function ProductsSettingsPage() {
       <SettingsTabs />
 
       <div className="rounded-xl border bg-white p-6">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Badge variant="default">{`${t("All")}: ${counts.total}`}</Badge>
+          <Badge variant="success">{`${t("Active")}: ${counts.active}`}</Badge>
+          <Badge variant="warning">{`${t("Inactive")}: ${counts.inactive}`}</Badge>
+          <Badge variant="info">{`${t("Filter")}: ${counts.filtered}`}</Badge>
+        </div>
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <Input
             placeholder="Search by product name, barcode, or client code"
@@ -229,9 +270,12 @@ export function ProductsSettingsPage() {
               label: "Actions",
               render: (row) => (
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id}>{t("Edit")}</Button>
-                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id}>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id || removingId === row.id}>{t("Edit")}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id || removingId === row.id}>
                     {row.status === "active" ? t("Archive") : t("Activate")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void removeRow(row)} disabled={togglingId === row.id || removingId === row.id}>
+                    {t("Delete")}
                   </Button>
                 </div>
               ),

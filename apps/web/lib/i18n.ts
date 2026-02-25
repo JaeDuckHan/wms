@@ -169,6 +169,7 @@ const koByEn: Record<string, string> = {
   Edit: "수정",
   Deactivate: "비활성화",
   Activate: "활성화",
+  Delete: "삭제",
   "Edit client": "고객사 수정",
   "New client": "신규 고객사",
   "Client code and name are required fields.": "고객사 코드와 이름은 필수입니다.",

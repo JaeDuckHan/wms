@@ -1,6 +1,6 @@
 import { clientsMock } from "@/features/settings/clients/mock";
 import type { Client, ClientFormInput, ClientStatus } from "@/features/settings/clients/types";
-import { delay, requestJson, resolveToken, shouldUseFallback, shouldUseMockMode, type RequestOptions } from "@/features/settings/shared/http";
+import { delay, requestJson, requestVoid, resolveToken, shouldUseFallback, shouldUseMockMode, type RequestOptions } from "@/features/settings/shared/http";
 
 const LATENCY_MS = 80;
 const CODE_REGEX = /^[A-Z0-9_-]{2,30}$/;
@@ -109,6 +109,12 @@ async function toggleClientStatusInMock(id: string): Promise<Client> {
   return clone(updated);
 }
 
+async function deleteClientInMock(id: string): Promise<void> {
+  const idx = mockDb.findIndex((item) => item.id === id);
+  if (idx < 0) throw new Error("Client not found.");
+  mockDb.splice(idx, 1);
+}
+
 export async function listClients(options?: RequestOptions): Promise<Client[]> {
   const token = await resolveToken(options?.token);
   if (shouldUseMockMode()) return listClientsFromMock();
@@ -205,6 +211,18 @@ export async function toggleClientStatus(id: string, options?: RequestOptions): 
     return mapRawClient(updated);
   } catch (error) {
     if (shouldUseFallback(token)) return toggleClientStatusInMock(id);
+    throw error;
+  }
+}
+
+export async function deleteClient(id: string, options?: RequestOptions): Promise<void> {
+  const token = await resolveToken(options?.token);
+  if (shouldUseMockMode()) return deleteClientInMock(id);
+
+  try {
+    await requestVoid(`/clients/${id}`, { method: "DELETE" }, options);
+  } catch (error) {
+    if (shouldUseFallback(token)) return deleteClientInMock(id);
     throw error;
   }
 }

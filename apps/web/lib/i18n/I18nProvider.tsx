@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { translateUiText } from "@/lib/i18n";
 import { messagesEn } from "@/lib/i18n/messages.en";
 import { messagesKo } from "@/lib/i18n/messages.ko";
@@ -18,8 +18,6 @@ const MESSAGES = {
   en: messagesEn,
 } as const;
 
-const STORAGE_KEY = "wms.ui.locale";
-
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 function getByPath(source: unknown, path: string) {
@@ -32,28 +30,33 @@ function getByPath(source: unknown, path: string) {
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>("ko");
+  const lang: Lang = "ko";
+  const setLang: I18nContextValue["setLang"] = () => {};
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === "ko" || stored === "en") {
-      setLang(stored);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, lang);
-    document.documentElement.lang = lang;
-  }, [lang]);
+  const mergeText = (ko: string, en: string) => {
+    const koText = ko.trim();
+    const enText = en.trim();
+    if (!koText && !enText) return "";
+    if (!koText) return enText;
+    if (!enText) return koText;
+    if (koText === enText) return koText;
+    return `${koText} / ${enText}`;
+  };
 
   const t = useMemo(() => {
-    const messages = MESSAGES[lang];
     return (path: string) => {
-      const value = getByPath(messages, path);
-      if (typeof value === "string") return value;
-      return translateUiText(path, lang);
+      const koValue = getByPath(MESSAGES.ko, path);
+      const enValue = getByPath(MESSAGES.en, path);
+
+      if (typeof koValue === "string" || typeof enValue === "string") {
+        return mergeText(typeof koValue === "string" ? koValue : "", typeof enValue === "string" ? enValue : "");
+      }
+
+      const fallbackKo = translateUiText(path, "ko");
+      const fallbackEn = translateUiText(path, "en");
+      return mergeText(fallbackKo, fallbackEn);
     };
-  }, [lang]);
+  }, []);
 
   return <I18nContext.Provider value={{ lang, setLang, t }}>{children}</I18nContext.Provider>;
 }

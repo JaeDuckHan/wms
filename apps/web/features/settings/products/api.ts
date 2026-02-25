@@ -1,6 +1,6 @@
 import { productsMock } from "@/features/settings/products/mock";
 import type { Product, ProductFormInput, ProductStatus } from "@/features/settings/products/types";
-import { delay, requestJson, resolveToken, shouldUseFallback, shouldUseMockMode, type RequestOptions } from "@/features/settings/shared/http";
+import { delay, requestJson, requestVoid, resolveToken, shouldUseFallback, shouldUseMockMode, type RequestOptions } from "@/features/settings/shared/http";
 
 const LATENCY_MS = 80;
 const CODE_REGEX = /^[A-Z0-9_-]{2,30}$/;
@@ -124,6 +124,12 @@ async function toggleProductStatusInMock(id: string): Promise<Product> {
   return clone(updated);
 }
 
+async function deleteProductInMock(id: string): Promise<void> {
+  const idx = mockDb.findIndex((item) => item.id === id);
+  if (idx < 0) throw new Error("Product not found.");
+  mockDb.splice(idx, 1);
+}
+
 export async function listProducts(options?: RequestOptions): Promise<Product[]> {
   const token = await resolveToken(options?.token);
   if (shouldUseMockMode()) return listProductsFromMock();
@@ -220,6 +226,18 @@ export async function toggleProductStatus(id: string, options?: RequestOptions):
     return mapRawProduct(updated);
   } catch (error) {
     if (shouldUseFallback(token)) return toggleProductStatusInMock(id);
+    throw error;
+  }
+}
+
+export async function deleteProduct(id: string, options?: RequestOptions): Promise<void> {
+  const token = await resolveToken(options?.token);
+  if (shouldUseMockMode()) return deleteProductInMock(id);
+
+  try {
+    await requestVoid(`/products/${id}`, { method: "DELETE" }, options);
+  } catch (error) {
+    if (shouldUseFallback(token)) return deleteProductInMock(id);
     throw error;
   }
 }

@@ -35,14 +35,20 @@ export function PageHeader({
           {breadcrumbs.map((item, idx) => (
             <div key={item.label} className="flex items-center gap-2">
               {idx > 0 && <ChevronRight className="h-3 w-3" />}
-              {item.href ? <Link href={item.href}>{t(item.label)}</Link> : <span>{t(item.label)}</span>}
+              {item.href ? (
+                <Link href={item.href} className="whitespace-pre-line leading-tight">
+                  {t(item.label)}
+                </Link>
+              ) : (
+                <span className="whitespace-pre-line leading-tight">{t(item.label)}</span>
+              )}
             </div>
           ))}
         </nav>
       )}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{t(title)}</h1>
+          <h1 className="whitespace-pre-line text-2xl font-semibold leading-tight text-slate-900">{t(title)}</h1>
           {summary && <p className="mt-1 text-sm text-slate-500">{t(summary)}</p>}
         </div>
         {actionSlot}

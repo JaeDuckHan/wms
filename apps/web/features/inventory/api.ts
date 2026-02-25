@@ -42,59 +42,46 @@ type RawTxn = {
   note: string | null;
 };
 
-const mockBalances: StockBalanceRow[] = [
-  {
-    id: "mb-1",
-    client: "ACME Korea",
-    product: "Protein Bar 40g",
-    lot: "LOT-2402-A",
-    warehouse: "WH-1",
-    location: "LOC-101",
-    available_qty: 120,
-    reserved_qty: 18,
-  },
-  {
-    id: "mb-2",
-    client: "Blue Retail",
-    product: "Vitamin C 500mg",
-    lot: "LOT-2402-B",
-    warehouse: "WH-1",
-    location: "LOC-202",
-    available_qty: 42,
-    reserved_qty: 9,
-  },
-];
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
 
-const mockTransactions: StockTransactionRow[] = [
-  {
-    id: "mt-1",
-    txn_date: "2026-02-18 09:41",
-    txn_type: "inbound_receive",
-    client: "ACME Korea",
-    product: "Protein Bar 40g",
-    lot: "LOT-2402-A",
-    warehouse: "WH-1",
-    location: "LOC-101",
-    qty_in: 60,
-    qty_out: 0,
-    ref: "inbound:101",
-    note: "Morning receiving batch",
-  },
-  {
-    id: "mt-2",
-    txn_date: "2026-02-18 14:22",
-    txn_type: "outbound_ship",
-    client: "Blue Retail",
-    product: "Vitamin C 500mg",
-    lot: "LOT-2402-B",
-    warehouse: "WH-1",
-    location: "LOC-202",
-    qty_in: 0,
-    qty_out: 14,
-    ref: "outbound:22008",
-    note: "Courier pickup completed",
-  },
-];
+const mockBalances: StockBalanceRow[] = Array.from({ length: 20 }, (_, index) => {
+  const seq = index + 1;
+  return {
+    id: `mb-${seq}`,
+    client: `Sample Client ${pad2(((seq - 1) % 20) + 1)}`,
+    product: `Sample Product ${pad2(((seq - 1) % 20) + 1)}`,
+    lot: `LOT-26${pad2(((seq - 1) % 12) + 1)}-${String.fromCharCode(65 + (seq % 3))}`,
+    warehouse: `WH-${pad2(((seq - 1) % 20) + 1)}`,
+    location: `LOC-${String(100 + seq)}`,
+    available_qty: 30 + seq * 3,
+    reserved_qty: seq % 6,
+  };
+});
+
+const transactionTypes = ["inbound_receive", "outbound_ship", "return_receive"] as const;
+
+const mockTransactions: StockTransactionRow[] = Array.from({ length: 20 }, (_, index) => {
+  const seq = index + 1;
+  const txnType = transactionTypes[index % transactionTypes.length];
+  const qtyIn = txnType !== "outbound_ship" ? 10 + seq : 0;
+  const qtyOut = txnType === "outbound_ship" ? 6 + seq : 0;
+  return {
+    id: `mt-${seq}`,
+    txn_date: `2026-02-${pad2((seq % 28) + 1)} ${pad2(8 + (seq % 10))}:20`,
+    txn_type: txnType,
+    client: `Sample Client ${pad2(((seq - 1) % 20) + 1)}`,
+    product: `Sample Product ${pad2(((seq - 1) % 20) + 1)}`,
+    lot: `LOT-26${pad2(((seq - 1) % 12) + 1)}-${String.fromCharCode(65 + (seq % 3))}`,
+    warehouse: `WH-${pad2(((seq - 1) % 20) + 1)}`,
+    location: `LOC-${String(200 + seq)}`,
+    qty_in: qtyIn,
+    qty_out: qtyOut,
+    ref: txnType === "outbound_ship" ? `outbound:${5000 + seq}` : `inbound:${3000 + seq}`,
+    note: `Inventory sample txn #${pad2(seq)}`,
+  };
+});
 
 async function resolveToken(input?: string): Promise<string | undefined> {
   if (input) return input;

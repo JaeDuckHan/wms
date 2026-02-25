@@ -1,10 +1,11 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/DataTable";
+import { Badge } from "@/components/ui/badge";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -32,6 +33,11 @@ export function ExchangeRatesSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(blank);
+  const counts = useMemo(() => {
+    const locked = rows.filter((row) => Number(row.locked) === 1).length;
+    const used = rows.filter((row) => Number(row.used_invoice_count || 0) > 0).length;
+    return { total: rows.length, locked, used };
+  }, [rows]);
 
   const reload = async () => {
     setLoading(true);
@@ -102,6 +108,11 @@ export function ExchangeRatesSettingsPage() {
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Badge variant="default">{`${t("All")}: ${counts.total}`}</Badge>
+            <Badge variant="warning">{`${t("Locked")}: ${counts.locked}`}</Badge>
+            <Badge variant="info">{`Used: ${counts.used}`}</Badge>
+          </div>
           {error ? (
             <ErrorState title={t("Failed to load exchange rates")} message={error} onRetry={() => void reload()} />
           ) : (

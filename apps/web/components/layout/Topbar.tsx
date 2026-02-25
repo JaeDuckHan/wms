@@ -1,13 +1,15 @@
-﻿"use client";
+"use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Bell, Search, UserCircle2 } from "lucide-react";
+import { Bell, BookOpenText, Search, UserCircle2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+
 export function Topbar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -53,6 +55,12 @@ export function Topbar() {
         />
       </form>
       <div className="ml-4 flex items-center gap-2">
+        <Link href="/guide">
+          <Button variant="secondary" size="sm">
+            <BookOpenText className="h-4 w-4" />
+            사용 가이드 / Guide
+          </Button>
+        </Link>
         <button type="button" className="rounded-md p-2 text-slate-500 hover:bg-slate-100">
           <Bell className="h-5 w-5" />
         </button>
@@ -64,5 +72,3 @@ export function Topbar() {
     </header>
   );
 }
-
-
