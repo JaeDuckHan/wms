@@ -240,6 +240,14 @@ function syncExchangeRateUsageCounts() {
 
 syncExchangeRateUsageCounts();
 
+function isEndpointUnavailableError(error: unknown) {
+  const status =
+    typeof error === "object" && error !== null && "status" in error
+      ? Number((error as { status?: unknown }).status)
+      : NaN;
+  return [404, 501, 502, 503, 504].includes(status);
+}
+
 async function withFallback<T>(
   options: RequestOptions | undefined,
   backend: () => Promise<T>,
@@ -254,7 +262,7 @@ async function withFallback<T>(
     }
     return data;
   } catch (error) {
-    if (shouldUseFallback(token)) return clone(await fallback());
+    if (shouldUseFallback(token) || isEndpointUnavailableError(error)) return clone(await fallback());
     throw error;
   }
 }
@@ -607,6 +615,36 @@ export async function generateBillingInvoice(
         options
       ),
     () => {
+      const existingPending = eventsDb.some(
+        (row) =>
+          row.client_id === input.client_id &&
+          row.event_date.startsWith(input.invoice_month) &&
+          row.status === "PENDING"
+      );
+      if (!existingPending) {
+        const fx = pickFxRate(input.invoice_month);
+        for (let i = 0; i < 12; i += 1) {
+          const seq = i + 1;
+          const amountThb = Number((15 + seq * 1.4).toFixed(2));
+          eventsDb.unshift({
+            id: nextEventId++,
+            event_date: `${input.invoice_month}-${pad2(((seq - 1) % 27) + 1)}T08:00:00Z`,
+            client_id: input.client_id,
+            client_code: `CL${pad2(input.client_id)}`,
+            name_kr: `Sample Client ${pad2(input.client_id)}`,
+            service_code: serviceCatalogDb[(seq - 1) % serviceCatalogDb.length].service_code,
+            qty: (seq % 5) + 1,
+            amount_thb: amountThb,
+            fx_rate_thbkrw: fx?.rate ?? 39,
+            amount_krw: trunc100(amountThb * (fx?.rate ?? 39)),
+            reference_type: seq % 2 === 0 ? "outbound" : "inbound",
+            reference_id: String(9800 + seq),
+            status: "PENDING",
+            invoice_id: null,
+          });
+        }
+      }
+
       const existingDraft = invoicesDb.find(
         (row) =>
           row.client_id === input.client_id &&

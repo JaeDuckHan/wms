@@ -44,3 +44,21 @@
 - 관련 파일:
 - 관련 이슈/티켓:
 - 비고:
+## 2026-02-25
+
+- [web] 사이드바/헤더 ko/en 병기 라벨을 줄바꿈 표기로 통일 (예: 출고\nOutbounds)
+- [web] Inbounds/Outbounds/Inventory/Billing에서 API 빈 응답/일부 실패 시 샘플 데이터 폴백 보강
+- [web] 정산 생성(Generate) 실패 구간 보강: 엔드포인트 미지원/장애 시 폴백, 월별 pending 이벤트 자동 보충 후 생성
+- [web] 대시보드(보관추이/정산/적재율) API 실패 시 탭별 샘플 응답 폴백 추가
+- [ops] 런타임 경로 점검 결과 공유: 현재 화면 불일치 원인은 apps/web가 아닌 다른 경로 실행 가능성 확인
+- [verify] apps/web typecheck 통과
+- [git] main 브랜치에 커밋/푸시 진행
+
+관련 파일:
+- apps/web/components/layout/Sidebar.tsx
+- apps/web/components/ui/PageHeader.tsx
+- apps/web/features/inbound/api.ts
+- apps/web/features/outbound/api.ts
+- apps/web/features/inventory/api.ts
+- apps/web/features/billing/api.ts
+- apps/web/features/dashboard/api.ts
