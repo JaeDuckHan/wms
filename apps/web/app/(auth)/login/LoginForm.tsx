@@ -63,7 +63,7 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
               autoComplete="current-password"
             />
             {error && <p className="text-sm text-red-600">{error}</p>}
-            <Button className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading ? t("Signing in...") : t("Sign in")}
             </Button>
           </form>

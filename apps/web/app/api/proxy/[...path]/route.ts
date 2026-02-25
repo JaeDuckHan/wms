@@ -40,9 +40,10 @@ async function forward(request: NextRequest, params: { path: string[] }) {
       const parsed = JSON.parse(text) as { data?: { token?: string } };
       const token = parsed?.data?.token;
       if (token) {
+        const secureAttr = request.nextUrl.protocol === "https:" ? "; Secure" : "";
         resHeaders.append(
           "set-cookie",
-          `${AUTH_COOKIE_KEY}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; SameSite=Lax; Secure`
+          `${AUTH_COOKIE_KEY}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; SameSite=Lax${secureAttr}`
         );
       }
     } catch {
