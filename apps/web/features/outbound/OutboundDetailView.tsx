@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -23,9 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { addOutboundBox, ApiError, transitionOutboundStatus } from "@/features/outbound/api";
 import { useToast } from "@/components/ui/toast";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 const tabs = ["overview", "items", "boxes", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
 
@@ -58,8 +56,7 @@ export function OutboundDetailView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   const [order, setOrder] = useState(initialOrder);
   const [tab, setTab] = useState<TabValue>(normalizeTab(initialTab));
@@ -149,7 +146,7 @@ export function OutboundDetailView({
           ),
       },
     ],
-    [locale]
+    [t]
   );
 
   const submitBox = async () => {
@@ -355,3 +352,5 @@ export function OutboundDetailView({
     </section>
   );
 }
+
+

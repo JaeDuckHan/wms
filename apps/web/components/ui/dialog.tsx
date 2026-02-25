@@ -1,11 +1,9 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import { X } from "lucide-react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 type DialogContextValue = {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -54,8 +52,7 @@ export function DialogContent({
   children: React.ReactNode;
 }) {
   const ctx = React.useContext(DialogContext);
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   if (!ctx || !ctx.open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -87,8 +84,7 @@ export function DialogTitle({
   children,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextChildren = typeof children === "string" ? t(children) : children;
   return (
     <h3 className={cn("text-base font-semibold", className)} {...props}>
@@ -102,8 +98,7 @@ export function DialogDescription({
   children,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextChildren = typeof children === "string" ? t(children) : children;
   return (
     <p className={cn("text-sm text-slate-500", className)} {...props}>
@@ -118,3 +113,5 @@ export function DialogFooter({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("mt-5 flex justify-end gap-2", className)} {...props} />;
 }
+
+

@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
+    "env:check": "powershell -ExecutionPolicy Bypass -File ./scripts/check_env.ps1",
+    "install:local": "powershell -ExecutionPolicy Bypass -File ./scripts/install_local.ps1",
     "seed:billing-demo": "node scripts/seed_billing_demo.js",
     "test:e2e:settlement": "powershell -ExecutionPolicy Bypass -File ./scripts/run_settlement_invoice_flow.ps1",
     "test:e2e:reopen-reject": "powershell -ExecutionPolicy Bypass -File ./scripts/run_settlement_reopen_reject_flow.ps1",

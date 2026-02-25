@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,8 +8,6 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/toast";
 import { getMe } from "@/features/auth/api";
 import { BillingTabs } from "@/components/billing/BillingTabs";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import {
   duplicateBillingInvoiceAdmin,
   exportBillingInvoicePdf,
@@ -19,11 +17,10 @@ import {
   type BillingInvoice,
   type BillingInvoiceItem,
 } from "@/features/billing/api";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const [invoice, setInvoice] = useState<BillingInvoice | null>(null);
   const [items, setItems] = useState<BillingInvoiceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -149,3 +146,5 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
     </section>
   );
 }
+
+

@@ -1,11 +1,9 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 const tabs = [
   { href: "/billing", label: "Invoices" },
   { href: "/billing/events", label: "Billing Events" },
@@ -13,8 +11,7 @@ const tabs = [
 
 export function BillingTabs() {
   const pathname = usePathname();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   return (
     <div className="mb-6 rounded-xl border bg-white p-1">
@@ -38,3 +35,5 @@ export function BillingTabs() {
     </div>
   );
 }
+
+

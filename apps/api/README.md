@@ -5,9 +5,16 @@ Minimal API server to validate `wms_test` database connectivity.
 ## 1) Setup
 
 ```powershell
-cd D:\_?묒뾽?대뜑_codex\wms-api
+cd D:\_작업폴더_codex\apps\api
 copy .env.example .env
 npm install
+```
+
+If npm install fails due cache/permission issues:
+
+```powershell
+npm run env:check
+npm run install:local
 ```
 
 ## 2) Run
@@ -44,7 +51,7 @@ End-to-end one-shot flow:
 Run:
 
 ```powershell
-cd D:\_?묒뾽?대뜑_codex\wms-api
+cd D:\_작업폴더_codex\apps\api
 powershell -ExecutionPolicy Bypass -File .\scripts\run_settlement_invoice_flow.ps1
 # or
 npm run test:e2e:settlement

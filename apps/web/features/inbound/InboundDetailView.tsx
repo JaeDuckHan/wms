@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -13,9 +13,7 @@ import type { InboundAction, InboundOrder, InboundStatus } from "@/features/inbo
 import { ApiError } from "@/features/outbound/api";
 import { transitionInboundStatus } from "@/features/inbound/api";
 import { useToast } from "@/components/ui/toast";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 const tabs = ["overview", "items", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
 
@@ -55,8 +53,7 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   const [order, setOrder] = useState(initialOrder);
   const [tab, setTab] = useState<TabValue>(normalizeTab(initialTab));
@@ -182,3 +179,5 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
     </section>
   );
 }
+
+

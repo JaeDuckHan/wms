@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -8,14 +8,11 @@ import { Input } from "@/components/ui/input";
 import { login } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/features/outbound/api";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function LoginForm({ nextUrl }: { nextUrl: string }) {
   const router = useRouter();
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   const [email, setEmail] = useState("admin.demo@example.com");
   const [password, setPassword] = useState("1234");
@@ -76,3 +73,5 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
     </div>
   );
 }
+
+

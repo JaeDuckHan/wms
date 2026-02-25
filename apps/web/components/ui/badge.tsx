@@ -1,11 +1,9 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 const badgeVariants = cva(
   "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
   {
@@ -29,8 +27,7 @@ export interface BadgeProps
     VariantProps<typeof badgeVariants> {}
 
 export function Badge({ className, variant, children, title, "aria-label": ariaLabel, ...props }: BadgeProps) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextChildren = typeof children === "string" ? t(children) : children;
   const nextTitle = typeof title === "string" ? t(title) : title;
   const nextAriaLabel = typeof ariaLabel === "string" ? t(ariaLabel) : ariaLabel;
@@ -41,3 +38,5 @@ export function Badge({ className, variant, children, title, "aria-label": ariaL
     </div>
   );
 }
+
+

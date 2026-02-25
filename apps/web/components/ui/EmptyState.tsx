@@ -1,9 +1,7 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function EmptyState({
   title,
   description,
@@ -15,8 +13,7 @@ export function EmptyState({
   icon?: ReactNode;
   actions?: ReactNode;
 }) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   return (
     <div className="rounded-xl border bg-white px-6 py-8 text-center">
@@ -27,3 +24,5 @@ export function EmptyState({
     </div>
   );
 }
+
+

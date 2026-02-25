@@ -1,22 +1,19 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Bell, Search, UserCircle2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useLocale } from "@/components/i18n/LocaleProvider";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
-import { translateUiText } from "@/lib/i18n";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function Topbar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   const initialQuery = useMemo(() => searchParams.get("q") ?? "", [searchParams]);
   const [query, setQuery] = useState(initialQuery);
@@ -67,3 +64,5 @@ export function Topbar() {
     </header>
   );
 }
+
+

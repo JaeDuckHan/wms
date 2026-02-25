@@ -1,9 +1,9 @@
 "use client";
 
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 export function TranslatedText({ text }: { text: string }) {
-  const { locale } = useLocale();
-  return <>{translateUiText(text, locale)}</>;
+  const { t } = useI18n();
+  return <>{t(text)}</>;
 }
+

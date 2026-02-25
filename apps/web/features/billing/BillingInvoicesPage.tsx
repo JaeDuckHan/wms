@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -9,8 +9,6 @@ import { DataTable } from "@/components/ui/DataTable";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { BillingTabs } from "@/components/billing/BillingTabs";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import {
   generateBillingInvoice,
   issueBillingInvoice,
@@ -19,7 +17,7 @@ import {
   seedBillingEvents,
   type BillingInvoice,
 } from "@/features/billing/api";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -30,8 +28,7 @@ function thisMonth() {
 
 export function BillingInvoicesPage() {
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const [rows, setRows] = useState<BillingInvoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,3 +179,5 @@ export function BillingInvoicesPage() {
     </section>
   );
 }
+
+

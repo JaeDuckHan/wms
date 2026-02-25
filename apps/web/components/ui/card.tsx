@@ -1,10 +1,8 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function Card({
   className,
   ...props
@@ -29,8 +27,7 @@ export function CardTitle({
   children,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextChildren = typeof children === "string" ? t(children) : children;
   return (
     <h3 className={cn("text-sm font-semibold", className)} {...props}>
@@ -45,3 +42,5 @@ export function CardContent({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("px-6 pb-6", className)} {...props} />;
 }
+
+

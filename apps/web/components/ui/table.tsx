@@ -1,10 +1,8 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
   return <table className={cn("w-full caption-bottom text-sm", className)} {...props} />;
 }
@@ -22,8 +20,7 @@ export function TableRow({ className, ...props }: React.HTMLAttributes<HTMLTable
 }
 
 export function TableHead({ className, children, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextChildren = typeof children === "string" ? t(children) : children;
   return (
     <th
@@ -36,8 +33,7 @@ export function TableHead({ className, children, ...props }: React.ThHTMLAttribu
 }
 
 export function TableCell({ className, children, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextChildren = typeof children === "string" ? t(children) : children;
   return (
     <td className={cn("p-4 align-middle", className)} {...props}>
@@ -45,3 +41,5 @@ export function TableCell({ className, children, ...props }: React.TdHTMLAttribu
     </td>
   );
 }
+
+

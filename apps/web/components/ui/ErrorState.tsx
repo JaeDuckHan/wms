@@ -1,9 +1,7 @@
-"use client";
+﻿"use client";
 
-import { useLocale } from "@/components/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
-import { translateUiText } from "@/lib/i18n";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function ErrorState({
   title,
   message,
@@ -13,8 +11,7 @@ export function ErrorState({
   message?: string;
   onRetry?: () => void;
 }) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   return (
     <div className="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -32,3 +29,5 @@ export function ErrorState({
     </div>
   );
 }
+
+

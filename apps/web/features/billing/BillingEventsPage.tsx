@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -9,23 +9,20 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { getMe } from "@/features/auth/api";
 import { BillingTabs } from "@/components/billing/BillingTabs";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import {
   billingEventsCsvUrl,
   listBillingEvents,
   markBillingEventsPending,
   type BillingEvent,
 } from "@/features/billing/api";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 function thisMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
 export function BillingEventsPage() {
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const [rows, setRows] = useState<BillingEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,3 +156,5 @@ export function BillingEventsPage() {
     </section>
   );
 }
+
+

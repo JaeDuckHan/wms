@@ -1,11 +1,9 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:pointer-events-none disabled:opacity-50",
   {
@@ -33,8 +31,7 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, children, title, "aria-label": ariaLabel, ...props }, ref) => {
-    const { locale } = useLocale();
-    const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
     const nextChildren = typeof children === "string" ? t(children) : children;
     const nextTitle = typeof title === "string" ? t(title) : title;
     const nextAriaLabel = typeof ariaLabel === "string" ? t(ariaLabel) : ariaLabel;
@@ -56,3 +53,5 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = "Button";
 
 export { Button, buttonVariants };
+
+

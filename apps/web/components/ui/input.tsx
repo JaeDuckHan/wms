@@ -1,10 +1,8 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 export function Input({
   className,
   placeholder,
@@ -12,8 +10,7 @@ export function Input({
   "aria-label": ariaLabel,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement>) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextPlaceholder = typeof placeholder === "string" ? t(placeholder) : placeholder;
   const nextTitle = typeof title === "string" ? t(title) : title;
   const nextAriaLabel = typeof ariaLabel === "string" ? t(ariaLabel) : ariaLabel;
@@ -31,3 +28,5 @@ export function Input({
     />
   );
 }
+
+

@@ -1,11 +1,9 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 type BreadcrumbItem = {
   label: string;
   href?: string;
@@ -26,8 +24,7 @@ export function PageHeader({
   subtitle?: string;
   rightSlot?: ReactNode;
 }) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const summary = description ?? subtitle;
   const actionSlot = actions ?? rightSlot;
 
@@ -53,3 +50,5 @@ export function PageHeader({
     </div>
   );
 }
+
+

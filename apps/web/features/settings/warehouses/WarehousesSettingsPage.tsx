@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -17,11 +17,9 @@ import {
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { createWarehouse, listWarehouses, toggleWarehouseStatus, updateWarehouse } from "@/features/settings/warehouses/api";
 import type { Warehouse, WarehouseStatus } from "@/features/settings/warehouses/types";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 type FormState = {
   warehouse_code: string;
   name: string;
@@ -39,8 +37,7 @@ const initialForm: FormState = {
 
 export function WarehousesSettingsPage() {
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const [rows, setRows] = useState<Warehouse[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -274,3 +271,5 @@ export function WarehousesSettingsPage() {
     </section>
   );
 }
+
+

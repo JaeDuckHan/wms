@@ -1,10 +1,8 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 type TabsContextValue = {
   value: string;
   onChange: (value: string) => void;
@@ -52,8 +50,7 @@ export function TabsTrigger({
   className?: string;
   children: React.ReactNode;
 }) {
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const nextChildren = typeof children === "string" ? t(children) : children;
   const ctx = React.useContext(TabsContext);
   if (!ctx) return null;
@@ -86,3 +83,5 @@ export function TabsContent({
   if (!ctx || ctx.value !== value) return null;
   return <div className={className}>{children}</div>;
 }
+
+

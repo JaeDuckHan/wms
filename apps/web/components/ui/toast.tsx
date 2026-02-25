@@ -1,11 +1,9 @@
-"use client";
+﻿"use client";
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 type ToastVariant = "success" | "error" | "info";
 
 type ToastItem = {
@@ -29,8 +27,7 @@ function toastClasses(variant: ToastVariant = "info") {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
 
   const pushToast = useCallback((toast: Omit<ToastItem, "id">) => {
     const id = crypto.randomUUID();
@@ -86,3 +83,5 @@ export function useToast() {
   }
   return ctx;
 }
+
+

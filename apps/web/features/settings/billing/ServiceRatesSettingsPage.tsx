@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,8 +8,6 @@ import { DataTable } from "@/components/ui/DataTable";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import {
   createServiceRate,
   deleteServiceRate,
@@ -17,7 +15,7 @@ import {
   type ServiceRate,
   updateServiceRate,
 } from "@/features/billing/api";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 const blank: Omit<ServiceRate, "id"> = {
   service_code: "",
   service_name: "",
@@ -30,8 +28,7 @@ const blank: Omit<ServiceRate, "id"> = {
 
 export function ServiceRatesSettingsPage() {
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const [rows, setRows] = useState<ServiceRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,3 +159,5 @@ export function ServiceRatesSettingsPage() {
     </section>
   );
 }
+
+

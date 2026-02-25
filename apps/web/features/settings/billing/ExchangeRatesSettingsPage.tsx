@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,8 +8,6 @@ import { DataTable } from "@/components/ui/DataTable";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import {
   createExchangeRate,
   deleteExchangeRate,
@@ -17,7 +15,7 @@ import {
   type ExchangeRate,
   updateExchangeRate,
 } from "@/features/billing/api";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 const blank: Omit<ExchangeRate, "id" | "base_currency" | "quote_currency"> = {
   rate_date: new Date().toISOString().slice(0, 10),
   rate: 39,
@@ -28,8 +26,7 @@ const blank: Omit<ExchangeRate, "id" | "base_currency" | "quote_currency"> = {
 
 export function ExchangeRatesSettingsPage() {
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const [rows, setRows] = useState<ExchangeRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,3 +156,5 @@ export function ExchangeRatesSettingsPage() {
     </section>
   );
 }
+
+

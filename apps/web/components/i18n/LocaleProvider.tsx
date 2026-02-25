@@ -1,46 +1,18 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { UI_LOCALE_STORAGE_KEY, type UiLocale } from "@/lib/i18n";
-
-type LocaleContextValue = {
-  locale: UiLocale;
-  setLocale: (locale: UiLocale) => void;
-  toggleLocale: () => void;
-};
-
-const LocaleContext = createContext<LocaleContextValue | null>(null);
+import { useI18n } from "@/lib/i18n/I18nProvider";
+import type { UiLocale } from "@/lib/i18n";
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<UiLocale>("ko");
-
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(UI_LOCALE_STORAGE_KEY) : null;
-    if (stored === "ko" || stored === "en") {
-      setLocaleState(stored);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(UI_LOCALE_STORAGE_KEY, locale);
-    document.documentElement.lang = locale;
-  }, [locale]);
-
-  const value = useMemo<LocaleContextValue>(
-    () => ({
-      locale,
-      setLocale: (next) => setLocaleState(next),
-      toggleLocale: () => setLocaleState((prev) => (prev === "ko" ? "en" : "ko")),
-    }),
-    [locale]
-  );
-
-  return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
+  return <>{children}</>;
 }
 
 export function useLocale() {
-  const ctx = useContext(LocaleContext);
-  if (!ctx) throw new Error("useLocale must be used within LocaleProvider");
-  return ctx;
+  const { lang, setLang } = useI18n();
+  const locale = lang as UiLocale;
+  return {
+    locale,
+    setLocale: (next: UiLocale) => setLang(next),
+    toggleLocale: () => setLang(locale === "ko" ? "en" : "ko"),
+  };
 }

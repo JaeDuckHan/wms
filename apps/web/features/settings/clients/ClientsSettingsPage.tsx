@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -17,11 +17,9 @@ import {
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { useLocale } from "@/components/i18n/LocaleProvider";
-import { translateUiText } from "@/lib/i18n";
 import { createClient, listClients, toggleClientStatus, updateClient } from "@/features/settings/clients/api";
 import type { Client, ClientStatus } from "@/features/settings/clients/types";
-
+import { useI18n } from "@/lib/i18n/I18nProvider";
 type FormState = {
   client_code: string;
   name: string;
@@ -41,8 +39,7 @@ const initialForm: FormState = {
 
 export function ClientsSettingsPage() {
   const { pushToast } = useToast();
-  const { locale } = useLocale();
-  const t = (text: string) => translateUiText(text, locale);
+  const { t } = useI18n();
   const [rows, setRows] = useState<Client[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -282,3 +279,5 @@ export function ClientsSettingsPage() {
     </section>
   );
 }
+
+
