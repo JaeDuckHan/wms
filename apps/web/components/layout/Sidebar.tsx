@@ -32,10 +32,10 @@ export function Sidebar() {
 
   return (
     <aside className="w-[240px] border-r bg-white px-3 py-6">
-      <div className="mb-6 px-3">
+      <Link href="/dashboard" className="mb-6 block cursor-pointer rounded-md px-3 py-1 hover:bg-slate-100">
         <p className="text-xs text-slate-500">{t("sidebar.product")}</p>
         <h2 className="mt-1 text-base font-semibold">{t("sidebar.console")}</h2>
-      </div>
+      </Link>
       <nav className="space-y-1">
         {items.map((item) => {
           const active = pathname.startsWith(item.href);
@@ -45,7 +45,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                 active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
               )}
             >

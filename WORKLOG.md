@@ -62,3 +62,15 @@
 - apps/web/features/inventory/api.ts
 - apps/web/features/billing/api.ts
 - apps/web/features/dashboard/api.ts
+
+## 2026-02-26
+
+- [web] Left sidebar title text updated from `WMS Console / WMS 콘솔` to `3PL AMIN` (ko/en i18n).
+- [web] Sidebar title area changed to a main-screen link (`/dashboard`).
+- [web] Pointer cursor (`cursor-pointer`) explicitly applied to linked sidebar title and nav links.
+- [verify] `apps/web` typecheck passed (`npm run typecheck`).
+
+Related files:
+- apps/web/components/layout/Sidebar.tsx
+- apps/web/lib/i18n/messages.en.ts
+- apps/web/lib/i18n/messages.ko.ts

@@ -29,7 +29,7 @@ export const messagesEn = {
   },
   sidebar: {
     product: "Kowinsblue 3PL",
-    console: "WMS Console",
+    console: "3PL AMIN",
     logout: "Logout",
     language: "Language",
   },

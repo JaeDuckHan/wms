@@ -29,7 +29,7 @@ export const messagesKo = {
   },
   sidebar: {
     product: "Kowinsblue 3PL",
-    console: "WMS 콘솔",
+    console: "3PL AMIN",
     logout: "로그아웃",
     language: "언어",
   },
