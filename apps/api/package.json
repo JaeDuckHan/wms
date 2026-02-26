@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
+    "build": "node -e \"require('./src/server'); console.log('build-ok')\"",
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "env:check": "powershell -ExecutionPolicy Bypass -File ./scripts/check_env.ps1",

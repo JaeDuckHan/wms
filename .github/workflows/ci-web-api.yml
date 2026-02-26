@@ -26,11 +26,34 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
+      - name: Enforce i18n location
+        run: |
+          if [ -d ../../lib/i18n ]; then
+            echo "root/lib/i18n is not allowed. Use apps/web/lib/i18n only."
+            exit 1
+          fi
+
       - name: Install
         run: npm ci
 
       - name: Run Web Check
         run: npm run web:check
+
+      - name: Web Smoke (/login)
+        run: |
+          npm run start -- -p 3000 &
+          WEB_PID=$!
+          trap "kill $WEB_PID" EXIT
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/login || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Web smoke passed"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Web smoke failed: GET /login did not return 200"
+          exit 1
 
   api-e2e-smoke:
     name: API E2E Smoke
@@ -51,6 +74,9 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Build API
+        run: npm run build
 
       - name: Run API Health Smoke
         run: npm run test:e2e:health-smoke

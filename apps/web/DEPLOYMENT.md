@@ -1,7 +1,9 @@
 # 3PL Web Deployment Standard
 
 ## Runtime standard
-- App path: `/var/www/3pl`
+- Monorepo path: `/var/www/wms`
+- Web app path: `/var/www/wms/apps/web`
+- API app path: `/var/www/wms/apps/api`
 - PM2 app name: `3pl-web`
 - Next.js port: `3000`
 - Nginx upstream: `127.0.0.1:3000`
@@ -9,10 +11,10 @@
 
 ## 1) Deploy latest source
 ```bash
-cd /var/www/3pl
+cd /var/www/wms
 git fetch --all
-git reset --hard origin/main
-rm -rf .next
+git pull --rebase origin main
+cd apps/web
 npm ci
 npm run build
 ```
@@ -21,10 +23,16 @@ npm run build
 ```bash
 sudo mkdir -p /var/log/3pl-web
 sudo chown -R $USER:$USER /var/log/3pl-web
+cd /var/www/wms/apps/web
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```
+
+PM2 command policy:
+- Allowed start args: `npm run start -- -p 3000` only.
+- Do not pass runtime flags like `--time` or `--max-memory-restart` into app args.
+- Keep `cwd` pinned to `/var/www/wms/apps/web`.
 
 ## 3) Nginx reverse proxy
 `/etc/nginx/sites-available/3pl.kowinsblue.com`:
@@ -63,6 +71,10 @@ sudo certbot renew --dry-run
 ```bash
 pm2 list
 pm2 logs 3pl-web --lines 100
-curl -I http://127.0.0.1:3000
+curl -I http://127.0.0.1:3000/login
 curl -I https://3pl.kowinsblue.com
 ```
+
+## 6) `next: not found` prevention
+- Every deploy must run `npm ci` in `/var/www/wms/apps/web` before `npm run build`.
+- Do not reuse stale `node_modules` from previous releases.

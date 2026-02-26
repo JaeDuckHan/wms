@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: "3pl-web",
-      cwd: "/var/www/3pl",
+      cwd: "/var/www/wms/apps/web",
       script: "npm",
       args: "run start -- -p 3000",
       env: {
@@ -11,10 +11,8 @@ module.exports = {
       },
       autorestart: true,
       watch: false,
-      max_memory_restart: "500M",
       out_file: "/var/log/3pl-web/out.log",
       error_file: "/var/log/3pl-web/error.log",
-      time: true,
     },
   ],
 };
