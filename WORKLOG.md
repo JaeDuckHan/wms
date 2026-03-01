@@ -147,3 +147,29 @@
 ### Commit
 
 - `c093316` feat(billing): support year+day-range search and update admin guide
+
+## 2026-03-01 (Billing UX flow polish: calendar/search/navigation)
+
+- [Request] Fixed billing UX flow issues found during live verification.
+- [Web] Billing invoice search input switched to calendar date pickers.
+  - Replaced `Year + MM-DD` text inputs with `type="date"` range inputs.
+  - Search continues to use `invoice_date_from` / `invoice_date_to`.
+  - Invoice generate baseline remains end-date based (`invoice_date`, `invoice_month`).
+- [Web] Button interaction affordance improved.
+  - Added pointer cursor for enabled buttons.
+  - Added not-allowed cursor for disabled buttons.
+- [Web] Billing tab order aligned to operation flow.
+  - `Billing Events` now shown before `Invoices`.
+- [Web] Sidebar billing entry now opens billing events first.
+  - Changed sidebar Billing route from `/billing` to `/billing/events`.
+  - Kept Billing active state for all `/billing*` pages including invoice detail.
+- [Verification]
+  - `apps/web`: `npm run typecheck` passed after each UX patch.
+
+### Commits
+
+- `534a231` feat(web): switch billing invoice date filters to calendar pickers
+- `75d3957` fix(web): show pointer cursor on interactive buttons
+- `a0830f8` fix(web): reorder billing tabs to events before invoices
+- `9ea6283` fix(web): route billing nav entry to billing events by default
+- `9db065e` feat(api): apply outbound shipment status-driven stock and billing sync
