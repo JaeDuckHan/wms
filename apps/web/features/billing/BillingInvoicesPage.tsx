@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -133,7 +133,7 @@ export function BillingInvoicesPage() {
             <option value="issued">{t("issued")}</option>
             <option value="paid">{t("paid")}</option>
           </select>
-          <Button variant="secondary" onClick={() => void reload()}>{t("Search")}</Button>
+          <Button variant="secondary" onClick={() => void reload()}>Search</Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={() => void onGenerate(0)}>{t("Generate")}</Button>
@@ -184,5 +184,6 @@ export function BillingInvoicesPage() {
     </section>
   );
 }
+
 
 

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -109,7 +109,7 @@ export function BillingEventsPage() {
             <option value="INVOICED">{t("INVOICED")}</option>
           </select>
           <Input placeholder="Service code" value={serviceCode} onChange={(e) => setServiceCode(e.target.value.toUpperCase())} />
-          <Button variant="secondary" onClick={() => void reload()}>{t("Search")}</Button>
+          <Button variant="secondary" onClick={() => void reload()}>Search</Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <a href={csvHref} className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50">{t("Export CSV")}</a>
@@ -156,5 +156,6 @@ export function BillingEventsPage() {
     </section>
   );
 }
+
 
 
