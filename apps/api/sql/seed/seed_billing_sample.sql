@@ -4,29 +4,24 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- Billing sample seed for local/dev verification
 
 INSERT INTO service_catalog
-  (service_code, service_name_kr, service_name, billing_basis, billing_unit, pricing_policy, default_currency, default_rate, status)
+  (service_code, service_name_kr, billing_basis, default_currency, status)
 VALUES
-  ('TH_SHIPPING', 'Thailand Shipping', 'Thailand Shipping', 'ORDER', 'ORDER', 'THB_BASED', 'THB', 120, 'active'),
-  ('TH_BOX', 'Thailand Box', 'Thailand Box', 'BOX', 'BOX', 'THB_BASED', 'THB', 8, 'active'),
-  ('OUTBOUND_FEE', 'Outbound Fee', 'Outbound Fee', 'ORDER', 'ORDER', 'KRW_FIXED', 'KRW', 3500, 'active')
+  ('TH_SHIPPING', 'Thailand Shipping', 'ORDER', 'THB', 'active'),
+  ('TH_BOX', 'Thailand Box', 'BOX', 'THB', 'active'),
+  ('OUTBOUND_FEE', 'Outbound Fee', 'ORDER', 'KRW', 'active')
 ON DUPLICATE KEY UPDATE
   service_name_kr = VALUES(service_name_kr),
-  service_name = VALUES(service_name),
   billing_basis = VALUES(billing_basis),
-  billing_unit = VALUES(billing_unit),
-  pricing_policy = VALUES(pricing_policy),
   default_currency = VALUES(default_currency),
-  default_rate = VALUES(default_rate),
   status = VALUES(status),
   deleted_at = NULL;
 
 INSERT INTO exchange_rates
-  (rate_date, base_currency, quote_currency, rate, source, locked, status, entered_by)
+  (rate_date, base_currency, quote_currency, rate, status, entered_by)
 VALUES
-  ('2026-02-20', 'THB', 'KRW', 39.125000, 'manual', 0, 'active', 1)
+  ('2026-02-20', 'THB', 'KRW', 39.125000, 'active', 1)
 ON DUPLICATE KEY UPDATE
   rate = VALUES(rate),
-  source = VALUES(source),
   status = VALUES(status),
   deleted_at = NULL;
 

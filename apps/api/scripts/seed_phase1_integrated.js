@@ -14,6 +14,24 @@ const seedFiles = [
   'sql/seed/seed_phase1_05_validation.sql'
 ];
 
+function resolveSeedPath(relPath) {
+  const appRootFromScript = path.resolve(__dirname, '..');
+  const candidates = [
+    path.resolve(process.cwd(), relPath),
+    path.resolve(appRootFromScript, relPath)
+  ];
+
+  for (const abs of candidates) {
+    if (fs.existsSync(abs)) return abs;
+  }
+
+  throw new Error(
+    `Seed SQL file not found: ${relPath}\n` +
+      `Checked:\n- ${candidates.join('\n- ')}\n` +
+      `Run from apps/api, or ensure apps/api/sql/seed exists.`
+  );
+}
+
 async function main() {
   const conn = await mysql.createConnection({
     host: process.env.DB_HOST || '127.0.0.1',
@@ -26,10 +44,10 @@ async function main() {
 
   try {
     for (const rel of seedFiles) {
-      const abs = path.resolve(process.cwd(), rel);
+      const abs = resolveSeedPath(rel);
       const sql = fs.readFileSync(abs, 'utf8');
       await conn.query(sql);
-      console.log(`[OK] ${rel}`);
+      console.log(`[OK] ${rel} -> ${abs}`);
     }
 
     const [passRows] = await conn.query(`
