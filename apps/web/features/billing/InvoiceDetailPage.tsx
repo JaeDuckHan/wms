@@ -122,8 +122,9 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
       <BillingTabs />
 
       {invoice && (
-        <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-4">
+        <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-5">
           <div><p className="text-xs text-slate-500">{t("FX Rate")}</p><p className="font-semibold">{Number(invoice.fx_rate_thbkrw).toFixed(4)}</p></div>
+          <div><p className="text-xs text-slate-500">Original THB</p><p className="font-semibold">{Number(invoice.subtotal_thb ?? 0).toLocaleString()} THB</p></div>
           <div><p className="text-xs text-slate-500">{t("Subtotal")}</p><p className="font-semibold">{Number(invoice.subtotal_krw).toLocaleString()} KRW (TRUNC100)</p></div>
           <div><p className="text-xs text-slate-500">{t("VAT 7%")}</p><p className="font-semibold">{Number(invoice.vat_krw).toLocaleString()} KRW (TRUNC100)</p></div>
           <div><p className="text-xs text-slate-500">{t("Total")}</p><p className="font-semibold">{Number(invoice.total_krw).toLocaleString()} KRW (TRUNC100)</p></div>

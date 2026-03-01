@@ -24,7 +24,7 @@ async function withTransaction(work) {
 
 async function getInboundOrderContext(conn, inboundOrderId) {
   const [rows] = await conn.query(
-    `SELECT id, client_id, warehouse_id, created_by
+    `SELECT id, client_id, warehouse_id, created_by, status
      FROM inbound_orders
      WHERE id = ? AND deleted_at IS NULL`,
     [inboundOrderId]
@@ -163,7 +163,7 @@ async function getStockTxnId(conn, txnType, refType, refId) {
   const [rows] = await conn.query(
     `SELECT id
      FROM stock_transactions
-     WHERE txn_type = ? AND ref_type = ? AND ref_id = ?
+     WHERE txn_type = ? AND ref_type = ? AND ref_id = ? AND deleted_at IS NULL
      LIMIT 1`,
     [txnType, refType, refId]
   );

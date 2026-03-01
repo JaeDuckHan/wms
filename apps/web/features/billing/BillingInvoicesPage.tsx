@@ -76,8 +76,12 @@ export function BillingInvoicesPage() {
 
   const onSeed = async () => {
     try {
-      await seedBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
-      pushToast({ title: t("Sample events created"), variant: "success" });
+      const result = await seedBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
+      pushToast({
+        title: t("Sample events created"),
+        description: `Inserted ${Number(result.inserted_count ?? 0)} events. Check Billing Events with month=${invoiceMonth}, client=${clientId}.`,
+        variant: "success"
+      });
     } catch (e) {
       pushToast({ title: t("Seed failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
@@ -129,7 +133,7 @@ export function BillingInvoicesPage() {
             <option value="issued">{t("issued")}</option>
             <option value="paid">{t("paid")}</option>
           </select>
-          <Button variant="secondary" onClick={() => void reload()}>{t("Filter")}</Button>
+          <Button variant="secondary" onClick={() => void reload()}>{t("Search")}</Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={() => void onGenerate(0)}>{t("Generate")}</Button>
@@ -150,6 +154,7 @@ export function BillingInvoicesPage() {
               { key: "client", label: "Client", render: (row) => `${row.client_code} (${row.client_id})` },
               { key: "month", label: "Month", render: (row) => row.invoice_month },
               { key: "fx", label: "FX", render: (row) => Number(row.fx_rate_thbkrw).toFixed(4) },
+              { key: "subtotal_thb", label: "Original THB", render: (row) => Number(row.subtotal_thb ?? 0).toLocaleString() },
               { key: "subtotal", label: "Subtotal", render: (row) => Number(row.subtotal_krw).toLocaleString() },
               { key: "vat", label: "VAT 7%", render: (row) => Number(row.vat_krw).toLocaleString() },
               { key: "total", label: "Total KRW", render: (row) => <span className="font-semibold">{Number(row.total_krw).toLocaleString()}</span> },

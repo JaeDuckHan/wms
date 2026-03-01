@@ -924,28 +924,120 @@ router.post("/billing/events/sample", async (req, res) => {
   const month = String(req.body?.invoice_month || "2026-01");
   const dateA = `${month}-03`;
   const dateB = `${month}-07`;
+  const sampleSuffix = Date.now();
 
   try {
     const hasWarehouseId = await hasColumn("billing_events", "warehouse_id");
-    if (hasWarehouseId) {
+    const hasStatus = await hasColumn("billing_events", "status");
+    let effectiveWarehouseId = warehouseId;
+
+    if (hasWarehouseId && !effectiveWarehouseId) {
+      effectiveWarehouseId = await resolveClientDefaultWarehouseId(getPool(), clientId);
+      if (!effectiveWarehouseId) {
+        const [warehouseRows] = await getPool().query(
+          `SELECT id
+           FROM warehouses
+           WHERE deleted_at IS NULL
+           ORDER BY id ASC
+           LIMIT 1`
+        );
+        effectiveWarehouseId = warehouseRows[0]?.id ?? null;
+      }
+    }
+
+    if (hasWarehouseId && !effectiveWarehouseId) {
+      return res.status(400).json({
+        ok: false,
+        code: "WAREHOUSE_REQUIRED",
+        message: "warehouse_id is required to seed sample events"
+      });
+    }
+
+    if (hasWarehouseId && hasStatus) {
+      await getPool().query(
+        `INSERT INTO billing_events
+          (client_id, warehouse_id, service_code, reference_type, reference_id, event_date, qty, pricing_policy, unit_price_thb, amount_thb, status)
+         VALUES
+          (?, ?, 'TH_SHIPPING', 'SHIPPING', ?, ?, 1, 'THB_BASED', 120, 120, 'PENDING'),
+          (?, ?, 'TH_BOX', 'SHIPPING', ?, ?, 5, 'THB_BASED', 8, 40, 'PENDING'),
+          (?, ?, 'OUTBOUND_FEE', 'OUTBOUND', ?, ?, 3, 'KRW_FIXED', NULL, NULL, 'PENDING')`,
+        [
+          clientId,
+          effectiveWarehouseId,
+          `SAMPLE-SHP-${sampleSuffix}`,
+          dateA,
+          clientId,
+          effectiveWarehouseId,
+          `SAMPLE-BOX-${sampleSuffix}`,
+          dateB,
+          clientId,
+          effectiveWarehouseId,
+          `SAMPLE-OUT-${sampleSuffix}`,
+          dateB
+        ]
+      );
+    } else if (hasWarehouseId) {
       await getPool().query(
         `INSERT INTO billing_events
           (client_id, warehouse_id, service_code, reference_type, reference_id, event_date, qty, pricing_policy, unit_price_thb, amount_thb)
          VALUES
-          (?, ?, 'TH_SHIPPING', 'SHIPPING', 'SAMPLE-SHP-001', ?, 1, 'THB_BASED', 120, 120),
-          (?, ?, 'TH_BOX', 'SHIPPING', 'SAMPLE-BOX-001', ?, 5, 'THB_BASED', 8, 40),
-          (?, ?, 'OUTBOUND_FEE', 'OUTBOUND', 'SAMPLE-OUT-001', ?, 3, 'KRW_FIXED', NULL, NULL)`,
-        [clientId, warehouseId, dateA, clientId, warehouseId, dateB, clientId, warehouseId, dateB]
+          (?, ?, 'TH_SHIPPING', 'SHIPPING', ?, ?, 1, 'THB_BASED', 120, 120),
+          (?, ?, 'TH_BOX', 'SHIPPING', ?, ?, 5, 'THB_BASED', 8, 40),
+          (?, ?, 'OUTBOUND_FEE', 'OUTBOUND', ?, ?, 3, 'KRW_FIXED', NULL, NULL)`,
+        [
+          clientId,
+          effectiveWarehouseId,
+          `SAMPLE-SHP-${sampleSuffix}`,
+          dateA,
+          clientId,
+          effectiveWarehouseId,
+          `SAMPLE-BOX-${sampleSuffix}`,
+          dateB,
+          clientId,
+          effectiveWarehouseId,
+          `SAMPLE-OUT-${sampleSuffix}`,
+          dateB
+        ]
+      );
+    } else if (hasStatus) {
+      await getPool().query(
+        `INSERT INTO billing_events
+          (client_id, service_code, reference_type, reference_id, event_date, qty, pricing_policy, unit_price_thb, amount_thb, status)
+         VALUES
+          (?, 'TH_SHIPPING', 'SHIPPING', ?, ?, 1, 'THB_BASED', 120, 120, 'PENDING'),
+          (?, 'TH_BOX', 'SHIPPING', ?, ?, 5, 'THB_BASED', 8, 40, 'PENDING'),
+          (?, 'OUTBOUND_FEE', 'OUTBOUND', ?, ?, 3, 'KRW_FIXED', NULL, NULL, 'PENDING')`,
+        [
+          clientId,
+          `SAMPLE-SHP-${sampleSuffix}`,
+          dateA,
+          clientId,
+          `SAMPLE-BOX-${sampleSuffix}`,
+          dateB,
+          clientId,
+          `SAMPLE-OUT-${sampleSuffix}`,
+          dateB
+        ]
       );
     } else {
       await getPool().query(
         `INSERT INTO billing_events
           (client_id, service_code, reference_type, reference_id, event_date, qty, pricing_policy, unit_price_thb, amount_thb)
          VALUES
-          (?, 'TH_SHIPPING', 'SHIPPING', 'SAMPLE-SHP-001', ?, 1, 'THB_BASED', 120, 120),
-          (?, 'TH_BOX', 'SHIPPING', 'SAMPLE-BOX-001', ?, 5, 'THB_BASED', 8, 40),
-          (?, 'OUTBOUND_FEE', 'OUTBOUND', 'SAMPLE-OUT-001', ?, 3, 'KRW_FIXED', NULL, NULL)`,
-        [clientId, dateA, clientId, dateB, clientId, dateB]
+          (?, 'TH_SHIPPING', 'SHIPPING', ?, ?, 1, 'THB_BASED', 120, 120),
+          (?, 'TH_BOX', 'SHIPPING', ?, ?, 5, 'THB_BASED', 8, 40),
+          (?, 'OUTBOUND_FEE', 'OUTBOUND', ?, ?, 3, 'KRW_FIXED', NULL, NULL)`,
+        [
+          clientId,
+          `SAMPLE-SHP-${sampleSuffix}`,
+          dateA,
+          clientId,
+          `SAMPLE-BOX-${sampleSuffix}`,
+          dateB,
+          clientId,
+          `SAMPLE-OUT-${sampleSuffix}`,
+          dateB
+        ]
       );
     }
 
@@ -953,15 +1045,24 @@ router.post("/billing/events/sample", async (req, res) => {
       `UPDATE billing_events
        SET unit_price_krw = 3500, amount_krw = 10500
        WHERE client_id = ?
-         AND reference_id = 'SAMPLE-OUT-001'
+         AND reference_id = ?
          AND pricing_policy = 'KRW_FIXED'
          AND deleted_at IS NULL
        ORDER BY id DESC
        LIMIT 1`,
-      [clientId]
+      [clientId, `SAMPLE-OUT-${sampleSuffix}`]
     );
 
-    return res.json({ ok: true, data: { client_id: clientId, invoice_month: month, seeded: true } });
+    return res.json({
+      ok: true,
+      data: {
+        client_id: clientId,
+        invoice_month: month,
+        warehouse_id: effectiveWarehouseId,
+        seeded: true,
+        inserted_count: 3
+      }
+    });
   } catch (error) {
     return res.status(500).json({ ok: false, message: error.message });
   }
@@ -1323,10 +1424,14 @@ router.get("/billing/invoices", async (req, res) => {
 
     const hasInvoiceMonth = await hasInvoiceMonthColumn();
     const hasInvoiceDate = await hasInvoiceDateColumn();
+    const hasBillingEvents = await hasTable("billing_events");
     const hasFxRate = await hasColumn("invoices", "fx_rate_thbkrw");
     const hasSubtotal = await hasColumn("invoices", "subtotal_krw");
     const hasVat = await hasColumn("invoices", "vat_krw");
     const hasTotalKrw = await hasColumn("invoices", "total_krw");
+    const subtotalThbExpr = hasBillingEvents
+      ? "COALESCE((SELECT SUM(be.amount_thb) FROM billing_events be WHERE be.invoice_id = i.id AND be.deleted_at IS NULL), 0)"
+      : "0";
     const fxExpr = hasFxRate ? "i.fx_rate_thbkrw" : "NULL";
     const subtotalExpr = hasSubtotal ? "i.subtotal_krw" : "0";
     const vatExpr = hasVat ? "i.vat_krw" : "0";
@@ -1336,7 +1441,7 @@ router.get("/billing/invoices", async (req, res) => {
 
     let query = `SELECT i.id, i.client_id, c.client_code, c.name_kr,
                         i.invoice_no, ${monthExpr} AS invoice_month, ${dateExpr} AS invoice_date, i.currency,
-                        ${fxExpr} AS fx_rate_thbkrw, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at
+                        ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at
                  FROM invoices i
                  JOIN clients c ON c.id = i.client_id
                  WHERE i.deleted_at IS NULL
@@ -1373,6 +1478,7 @@ router.get("/billing/invoices/:id", async (req, res) => {
 
     const hasInvoiceMonth = await hasInvoiceMonthColumn();
     const hasInvoiceDate = await hasInvoiceDateColumn();
+    const hasBillingEvents = await hasTable("billing_events");
     const hasFxRate = await hasColumn("invoices", "fx_rate_thbkrw");
     const hasSubtotal = await hasColumn("invoices", "subtotal_krw");
     const hasVat = await hasColumn("invoices", "vat_krw");
@@ -1381,6 +1487,9 @@ router.get("/billing/invoices/:id", async (req, res) => {
 
     const monthExpr = invoiceMonthExpr(hasInvoiceMonth, "i");
     const dateExpr = invoiceDateExpr(hasInvoiceDate, "i");
+    const subtotalThbExpr = hasBillingEvents
+      ? "COALESCE((SELECT SUM(be.amount_thb) FROM billing_events be WHERE be.invoice_id = i.id AND be.deleted_at IS NULL), 0)"
+      : "0";
     const fxExpr = hasFxRate ? "i.fx_rate_thbkrw" : "NULL";
     const subtotalExpr = hasSubtotal ? "i.subtotal_krw" : "0";
     const vatExpr = hasVat ? "i.vat_krw" : "0";
@@ -1389,7 +1498,7 @@ router.get("/billing/invoices/:id", async (req, res) => {
     const [invoiceRows] = await getPool().query(
       `SELECT i.id, i.client_id, c.client_code, c.name_kr,
               i.invoice_no, ${monthExpr} AS invoice_month, ${dateExpr} AS invoice_date, i.currency,
-              ${fxExpr} AS fx_rate_thbkrw, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at, i.updated_at,
+              ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at, i.updated_at,
               (MOD(${subtotalExpr}, 100) = 0) AS subtotal_trunc100,
               (MOD(${vatExpr}, 100) = 0) AS vat_trunc100,
               (MOD(${totalExpr}, 100) = 0) AS total_trunc100

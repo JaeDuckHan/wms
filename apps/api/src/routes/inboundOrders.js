@@ -2,6 +2,15 @@ const express = require("express");
 const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
+const {
+  StockError,
+  withTransaction,
+  adjustAvailableQty,
+  upsertStockTxn,
+  getStockTxnId,
+  softDeleteStockTxn
+} = require("../services/stock");
+const { syncInboundOrderBillingEvent } = require("../services/billingEvents");
 
 const router = express.Router();
 
@@ -74,6 +83,83 @@ function deriveInboundAction(fromStatus, toStatus) {
   if (toStatus === "cancelled" && fromStatus !== "cancelled") return "cancel";
   if (fromStatus !== toStatus) return "status_change";
   return "update";
+}
+
+function toAppError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function isReceiptAppliedStatus(status) {
+  return status === "received";
+}
+
+async function getInboundItems(conn, inboundOrderId) {
+  const [rows] = await conn.query(
+    `SELECT id, product_id, lot_id, location_id, qty, remark
+     FROM inbound_items
+     WHERE inbound_order_id = ? AND deleted_at IS NULL
+     ORDER BY id ASC`,
+    [inboundOrderId]
+  );
+  return rows;
+}
+
+async function applyReceiptEffects(conn, order, items) {
+  for (const item of items) {
+    await adjustAvailableQty(
+      conn,
+      {
+        clientId: order.client_id,
+        productId: item.product_id,
+        lotId: item.lot_id,
+        warehouseId: order.warehouse_id,
+        locationId: item.location_id
+      },
+      Number(item.qty)
+    );
+
+    await upsertStockTxn(conn, {
+      clientId: order.client_id,
+      productId: item.product_id,
+      lotId: item.lot_id,
+      warehouseId: order.warehouse_id,
+      locationId: item.location_id,
+      txnType: "inbound_receive",
+      qtyIn: Number(item.qty),
+      qtyOut: 0,
+      refType: "inbound_item",
+      refId: item.id,
+      createdBy: order.created_by,
+      note: item.remark
+    });
+  }
+
+  await syncInboundOrderBillingEvent(conn, order.id);
+}
+
+async function rollbackReceiptEffects(conn, order, items) {
+  for (const item of items) {
+    const stockTxnId = await getStockTxnId(conn, "inbound_receive", "inbound_item", item.id);
+    if (!stockTxnId) continue;
+
+    await adjustAvailableQty(
+      conn,
+      {
+        clientId: order.client_id,
+        productId: item.product_id,
+        lotId: item.lot_id,
+        warehouseId: order.warehouse_id,
+        locationId: item.location_id
+      },
+      -Number(item.qty)
+    );
+
+    await softDeleteStockTxn(conn, "inbound_receive", "inbound_item", item.id);
+  }
+
+  await syncInboundOrderBillingEvent(conn, order.id);
 }
 
 async function appendInboundOrderLog({
@@ -212,55 +298,87 @@ router.put("/:id", validate(inboundOrderUpdateSchema), async (req, res) => {
   }
 
   try {
-    const [existingRows] = await getPool().query(
-      `SELECT id, status
-       FROM inbound_orders
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
-    );
-    if (existingRows.length === 0) {
-      return res.status(404).json({ ok: false, message: "Inbound order not found" });
-    }
-    const previousStatus = existingRows[0].status;
+    const result = await withTransaction(async (conn) => {
+      const [existingRows] = await conn.query(
+        `SELECT id, status, client_id, warehouse_id, created_by
+         FROM inbound_orders
+         WHERE id = ? AND deleted_at IS NULL
+         FOR UPDATE`,
+        [req.params.id]
+      );
+      if (existingRows.length === 0) {
+        throw toAppError("NOT_FOUND", "Inbound order not found");
+      }
 
-    const [result] = await getPool().query(
-      `UPDATE inbound_orders
-       SET inbound_no = ?, client_id = ?, warehouse_id = ?, inbound_date = ?, status = ?, memo = ?, created_by = ?, received_at = ?
-       WHERE id = ? AND deleted_at IS NULL`,
-      [
-        inbound_no,
-        client_id,
-        warehouse_id,
-        inbound_date,
-        status,
-        memo || null,
-        created_by,
-        toMysqlDateTime(received_at),
-        req.params.id
-      ]
-    );
+      const previous = existingRows[0];
+      const wasApplied = isReceiptAppliedStatus(previous.status);
+      const willApply = isReceiptAppliedStatus(status);
 
-    const [rows] = await getPool().query(
-      `SELECT id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at
-       FROM inbound_orders
-       WHERE id = ?`,
-      [req.params.id]
-    );
+      if (wasApplied && (Number(previous.client_id) !== Number(client_id) || Number(previous.warehouse_id) !== Number(warehouse_id))) {
+        throw toAppError("ORDER_LOCKED_FIELDS", "Cannot change client/warehouse after receipt");
+      }
+
+      await conn.query(
+        `UPDATE inbound_orders
+         SET inbound_no = ?, client_id = ?, warehouse_id = ?, inbound_date = ?, status = ?, memo = ?, created_by = ?, received_at = ?
+         WHERE id = ? AND deleted_at IS NULL`,
+        [
+          inbound_no,
+          client_id,
+          warehouse_id,
+          inbound_date,
+          status,
+          memo || null,
+          created_by,
+          toMysqlDateTime(received_at),
+          req.params.id
+        ]
+      );
+
+      const [rows] = await conn.query(
+        `SELECT id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at
+         FROM inbound_orders
+         WHERE id = ?`,
+        [req.params.id]
+      );
+      const updated = rows[0];
+      const items = await getInboundItems(conn, updated.id);
+
+      if (!wasApplied && willApply) {
+        await applyReceiptEffects(conn, updated, items);
+      } else if (wasApplied && !willApply) {
+        await rollbackReceiptEffects(conn, previous, items);
+      } else if (willApply) {
+        await syncInboundOrderBillingEvent(conn, updated.id);
+      }
+
+      return { updated, previousStatus: previous.status };
+    });
+
     await appendInboundOrderLog({
       inboundOrderId: Number(req.params.id),
-      action: deriveInboundAction(previousStatus, status),
-      fromStatus: previousStatus,
+      action: deriveInboundAction(result.previousStatus, status),
+      fromStatus: result.previousStatus,
       toStatus: status,
-      note: previousStatus !== status ? `${previousStatus} -> ${status}` : "Inbound order updated",
+      note: result.previousStatus !== status ? `${result.previousStatus} -> ${status}` : "Inbound order updated",
       actorUserId: resolveActorUserId(req, created_by)
     });
-    res.json({ ok: true, data: rows[0] });
+    res.json({ ok: true, data: result.updated });
   } catch (error) {
+    if (error && error.code === "NOT_FOUND") {
+      return res.status(404).json({ ok: false, message: "Inbound order not found" });
+    }
+    if (error && error.code === "ORDER_LOCKED_FIELDS") {
+      return res.status(409).json({ ok: false, code: error.code, message: error.message });
+    }
     if (isMysqlDuplicate(error)) {
       return res.status(409).json({ ok: false, message: "Duplicate inbound_no" });
     }
     if (isMysqlForeignKey(error)) {
       return res.status(400).json({ ok: false, message: "Invalid client_id, warehouse_id or created_by" });
+    }
+    if (error instanceof StockError) {
+      return res.status(400).json({ ok: false, code: error.code, message: error.message });
     }
     res.status(500).json({ ok: false, message: error.message });
   }
@@ -268,31 +386,48 @@ router.put("/:id", validate(inboundOrderUpdateSchema), async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
-    const [existingRows] = await getPool().query(
-      `SELECT id, status
-       FROM inbound_orders
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
-    );
-    if (existingRows.length === 0) {
-      return res.status(404).json({ ok: false, message: "Inbound order not found" });
-    }
+    const existing = await withTransaction(async (conn) => {
+      const [existingRows] = await conn.query(
+        `SELECT id, status, client_id, warehouse_id
+         FROM inbound_orders
+         WHERE id = ? AND deleted_at IS NULL
+         FOR UPDATE`,
+        [req.params.id]
+      );
+      if (existingRows.length === 0) {
+        throw toAppError("NOT_FOUND", "Inbound order not found");
+      }
+      const current = existingRows[0];
 
-    const [result] = await getPool().query(
-      "UPDATE inbound_orders SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",
-      [req.params.id]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ ok: false, message: "Inbound order not found" });
+      if (isReceiptAppliedStatus(current.status)) {
+        const items = await getInboundItems(conn, current.id);
+        await rollbackReceiptEffects(conn, current, items);
+      }
+
+      await conn.query(
+        "UPDATE inbound_orders SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",
+        [req.params.id]
+      );
+
+      return current;
+    });
+
     await appendInboundOrderLog({
       inboundOrderId: Number(req.params.id),
       action: "delete",
-      fromStatus: existingRows[0].status,
+      fromStatus: existing.status,
       toStatus: null,
       note: "Inbound order deleted",
       actorUserId: resolveActorUserId(req, null)
     });
     res.json({ ok: true });
   } catch (error) {
+    if (error && error.code === "NOT_FOUND") {
+      return res.status(404).json({ ok: false, message: "Inbound order not found" });
+    }
+    if (error instanceof StockError) {
+      return res.status(400).json({ ok: false, code: error.code, message: error.message });
+    }
     res.status(500).json({ ok: false, message: error.message });
   }
 });

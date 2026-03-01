@@ -29,6 +29,40 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
+async function ensureInboundOrderLogsTable(conn) {
+  await conn.query(
+    `CREATE TABLE IF NOT EXISTS inbound_order_logs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      inbound_order_id BIGINT UNSIGNED NOT NULL,
+      action VARCHAR(40) NOT NULL,
+      from_status VARCHAR(30) NULL,
+      to_status VARCHAR(30) NULL,
+      note VARCHAR(1000) NULL,
+      actor_user_id BIGINT UNSIGNED NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_inbound_order_logs_order_created (inbound_order_id, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
+function resolveActorUserId(req, fallbackUserId) {
+  const tokenUserId = Number(req.user?.sub || 0);
+  if (Number.isFinite(tokenUserId) && tokenUserId > 0) return tokenUserId;
+  const fallback = Number(fallbackUserId || 0);
+  if (Number.isFinite(fallback) && fallback > 0) return fallback;
+  return null;
+}
+
+async function appendInboundOrderLog(conn, { inboundOrderId, action, note, actorUserId }) {
+  await ensureInboundOrderLogsTable(conn);
+  await conn.query(
+    `INSERT INTO inbound_order_logs (inbound_order_id, action, note, actor_user_id)
+     VALUES (?, ?, ?, ?)`,
+    [inboundOrderId, action, note || null, actorUserId]
+  );
+}
+
 async function validateLotBelongsToProduct(conn, productId, lotId) {
   const [rows] = await conn.query(
     "SELECT id FROM product_lots WHERE id = ? AND product_id = ? AND deleted_at IS NULL",
@@ -40,13 +74,17 @@ async function validateLotBelongsToProduct(conn, productId, lotId) {
 async function getInboundItemWithContext(conn, itemId) {
   const [rows] = await conn.query(
     `SELECT ii.id, ii.inbound_order_id, ii.product_id, ii.lot_id, ii.location_id, ii.qty, ii.invoice_price, ii.currency, ii.remark, ii.created_at, ii.updated_at,
-            io.client_id, io.warehouse_id, io.created_by
+            io.client_id, io.warehouse_id, io.created_by, io.status
      FROM inbound_items ii
      JOIN inbound_orders io ON io.id = ii.inbound_order_id
      WHERE ii.id = ? AND ii.deleted_at IS NULL`,
     [itemId]
   );
   return rows[0] || null;
+}
+
+function isInboundReceiptAppliedStatus(status) {
+  return status === "received";
 }
 
 router.get("/", async (req, res) => {
@@ -119,33 +157,42 @@ router.post("/", validate(inboundItemSchema), async (req, res) => {
         [inbound_order_id, product_id, lot_id, location_id, qty, invoice_price, currency, remark]
       );
 
-      await adjustAvailableQty(
-        conn,
-        {
+      if (isInboundReceiptAppliedStatus(order.status)) {
+        await adjustAvailableQty(
+          conn,
+          {
+            clientId: order.client_id,
+            productId: product_id,
+            lotId: lot_id,
+            warehouseId: order.warehouse_id,
+            locationId: location_id
+          },
+          qty
+        );
+
+        await upsertStockTxn(conn, {
           clientId: order.client_id,
           productId: product_id,
           lotId: lot_id,
           warehouseId: order.warehouse_id,
-          locationId: location_id
-        },
-        qty
-      );
+          locationId: location_id,
+          txnType: "inbound_receive",
+          qtyIn: qty,
+          qtyOut: 0,
+          refType: "inbound_item",
+          refId: result.insertId,
+          createdBy: order.created_by,
+          note: remark
+        });
+      }
 
-      await upsertStockTxn(conn, {
-        clientId: order.client_id,
-        productId: product_id,
-        lotId: lot_id,
-        warehouseId: order.warehouse_id,
-        locationId: location_id,
-        txnType: "inbound_receive",
-        qtyIn: qty,
-        qtyOut: 0,
-        refType: "inbound_item",
-        refId: result.insertId,
-        createdBy: order.created_by,
-        note: remark
-      });
       await syncInboundOrderBillingEvent(conn, order.id);
+      await appendInboundOrderLog(conn, {
+        inboundOrderId: order.id,
+        action: "item_create",
+        note: `Item added (product=${product_id}, lot=${lot_id}, qty=${qty})`,
+        actorUserId: resolveActorUserId(req, order.created_by)
+      });
 
       const [rows] = await conn.query(
         `SELECT id, inbound_order_id, product_id, lot_id, location_id, qty, invoice_price, currency, remark, created_at, updated_at
@@ -199,6 +246,16 @@ router.put("/:id", validate(inboundItemSchema), async (req, res) => {
       if (!nextOrder) {
         throw new StockError("INVALID_ORDER", "Invalid inbound_order_id");
       }
+      const [nextOrderRows] = await conn.query(
+        `SELECT status FROM inbound_orders WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+        [inbound_order_id]
+      );
+      if (nextOrderRows.length === 0) {
+        throw new StockError("INVALID_ORDER", "Invalid inbound_order_id");
+      }
+
+      const prevApplied = isInboundReceiptAppliedStatus(prev.status);
+      const nextApplied = isInboundReceiptAppliedStatus(nextOrderRows[0].status);
 
       await conn.query(
         `UPDATE inbound_items
@@ -217,48 +274,70 @@ router.put("/:id", validate(inboundItemSchema), async (req, res) => {
         ]
       );
 
-      await adjustAvailableQty(
-        conn,
-        {
-          clientId: prev.client_id,
-          productId: prev.product_id,
-          lotId: prev.lot_id,
-          warehouseId: prev.warehouse_id,
-          locationId: prev.location_id
-        },
-        -Number(prev.qty)
-      );
+      if (prevApplied) {
+        await adjustAvailableQty(
+          conn,
+          {
+            clientId: prev.client_id,
+            productId: prev.product_id,
+            lotId: prev.lot_id,
+            warehouseId: prev.warehouse_id,
+            locationId: prev.location_id
+          },
+          -Number(prev.qty)
+        );
+      }
 
-      await adjustAvailableQty(
-        conn,
-        {
+      if (nextApplied) {
+        await adjustAvailableQty(
+          conn,
+          {
+            clientId: nextOrder.client_id,
+            productId: product_id,
+            lotId: lot_id,
+            warehouseId: nextOrder.warehouse_id,
+            locationId: location_id || null
+          },
+          qty
+        );
+
+        await upsertStockTxn(conn, {
           clientId: nextOrder.client_id,
           productId: product_id,
           lotId: lot_id,
           warehouseId: nextOrder.warehouse_id,
-          locationId: location_id || null
-        },
-        qty
-      );
+          locationId: location_id || null,
+          txnType: "inbound_receive",
+          qtyIn: qty,
+          qtyOut: 0,
+          refType: "inbound_item",
+          refId: Number(req.params.id),
+          createdBy: nextOrder.created_by,
+          note: remark
+        });
+      } else {
+        await softDeleteStockTxn(conn, "inbound_receive", "inbound_item", req.params.id);
+      }
 
-      await upsertStockTxn(conn, {
-        clientId: nextOrder.client_id,
-        productId: product_id,
-        lotId: lot_id,
-        warehouseId: nextOrder.warehouse_id,
-        locationId: location_id || null,
-        txnType: "inbound_receive",
-        qtyIn: qty,
-        qtyOut: 0,
-        refType: "inbound_item",
-        refId: Number(req.params.id),
-        createdBy: nextOrder.created_by,
-        note: remark
-      });
       if (Number(prev.inbound_order_id) !== Number(nextOrder.id)) {
         await syncInboundOrderBillingEvent(conn, prev.inbound_order_id);
+        await appendInboundOrderLog(conn, {
+          inboundOrderId: prev.inbound_order_id,
+          action: "item_move_out",
+          note: `Item moved out to inbound_order_id=${nextOrder.id} (item=${req.params.id}, qty=${qty})`,
+          actorUserId: resolveActorUserId(req, prev.created_by)
+        });
       }
       await syncInboundOrderBillingEvent(conn, nextOrder.id);
+      await appendInboundOrderLog(conn, {
+        inboundOrderId: nextOrder.id,
+        action: Number(prev.inbound_order_id) === Number(nextOrder.id) ? "item_update" : "item_move_in",
+        note:
+          Number(prev.inbound_order_id) === Number(nextOrder.id)
+            ? `Item updated (item=${req.params.id}, qty ${prev.qty} -> ${qty})`
+            : `Item moved in from inbound_order_id=${prev.inbound_order_id} (item=${req.params.id}, qty=${qty})`,
+        actorUserId: resolveActorUserId(req, nextOrder.created_by)
+      });
 
       const [rows] = await conn.query(
         `SELECT id, inbound_order_id, product_id, lot_id, location_id, qty, invoice_price, currency, remark, created_at, updated_at
@@ -293,17 +372,19 @@ router.delete("/:id", async (req, res) => {
         throw new StockError("NOT_FOUND", "Inbound item not found");
       }
 
-      await adjustAvailableQty(
-        conn,
-        {
-          clientId: prev.client_id,
-          productId: prev.product_id,
-          lotId: prev.lot_id,
-          warehouseId: prev.warehouse_id,
-          locationId: prev.location_id
-        },
-        -Number(prev.qty)
-      );
+      if (isInboundReceiptAppliedStatus(prev.status)) {
+        await adjustAvailableQty(
+          conn,
+          {
+            clientId: prev.client_id,
+            productId: prev.product_id,
+            lotId: prev.lot_id,
+            warehouseId: prev.warehouse_id,
+            locationId: prev.location_id
+          },
+          -Number(prev.qty)
+        );
+      }
 
       await conn.query(
         "UPDATE inbound_items SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",
@@ -312,6 +393,12 @@ router.delete("/:id", async (req, res) => {
 
       await softDeleteStockTxn(conn, "inbound_receive", "inbound_item", req.params.id);
       await syncInboundOrderBillingEvent(conn, prev.inbound_order_id);
+      await appendInboundOrderLog(conn, {
+        inboundOrderId: prev.inbound_order_id,
+        action: "item_delete",
+        note: `Item deleted (item=${req.params.id}, product=${prev.product_id}, lot=${prev.lot_id}, qty=${prev.qty})`,
+        actorUserId: resolveActorUserId(req, prev.created_by)
+      });
     });
 
     return res.json({ ok: true });

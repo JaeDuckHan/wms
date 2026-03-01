@@ -48,6 +48,7 @@ export type BillingInvoice = {
   invoice_date: string;
   currency: "KRW";
   fx_rate_thbkrw: number;
+  subtotal_thb?: number | null;
   subtotal_krw: number;
   vat_krw: number;
   total_krw: number;
@@ -227,6 +228,20 @@ const invoiceItemsDb: BillingInvoiceItem[] = invoicesDb.flatMap((invoice, index)
   })
 );
 
+function syncInvoiceSubtotalThb() {
+  const subtotalByInvoice = new Map<number, number>();
+  for (const event of eventsDb) {
+    if (!event.invoice_id) continue;
+    subtotalByInvoice.set(
+      event.invoice_id,
+      Number(subtotalByInvoice.get(event.invoice_id) || 0) + Number(event.amount_thb || 0)
+    );
+  }
+  for (const invoice of invoicesDb) {
+    invoice.subtotal_thb = Number((subtotalByInvoice.get(invoice.id) || 0).toFixed(2));
+  }
+}
+
 function syncExchangeRateUsageCounts() {
   const usageByRateDate = new Map<string, number>();
   for (const invoice of invoicesDb) {
@@ -238,6 +253,7 @@ function syncExchangeRateUsageCounts() {
   }
 }
 
+syncInvoiceSubtotalThb();
 syncExchangeRateUsageCounts();
 
 function isEndpointUnavailableError(error: unknown) {
@@ -502,7 +518,7 @@ export async function seedBillingEvents(input: { client_id: number; invoice_mont
   return withFallback(
     options,
     () =>
-      requestJson<{ seeded: boolean }>(
+      requestJson<{ seeded: boolean; inserted_count?: number }>(
         "/billing/events/sample",
         { method: "POST", body: JSON.stringify(input) },
         options
@@ -534,7 +550,7 @@ export async function seedBillingEvents(input: { client_id: number; invoice_mont
           invoice_id: null,
         });
       }
-      return { seeded: true as const };
+      return { seeded: true as const, inserted_count: toCreate };
     }
   );
 }
@@ -719,6 +735,7 @@ export async function generateBillingInvoice(
         const idx = eventsDb.findIndex((row) => row.id === event.id);
         if (idx >= 0) eventsDb[idx] = { ...eventsDb[idx], status: "INVOICED", invoice_id: invoice.id };
       }
+      syncInvoiceSubtotalThb();
       syncExchangeRateUsageCounts();
 
       return { invoice: clone(invoice), events_count: targets.length, reused: false, invoice_id: invoice.id };
@@ -738,13 +755,15 @@ export async function listBillingInvoices(
   return withFallback(
     options,
     () => requestJson<BillingInvoice[]>(`/billing/invoices${suffix}`, undefined, options),
-    () =>
-      invoicesDb.filter((row) => {
+    () => {
+      syncInvoiceSubtotalThb();
+      return invoicesDb.filter((row) => {
         if (query?.client_id && row.client_id !== query.client_id) return false;
         if (query?.invoice_month && row.invoice_month !== query.invoice_month) return false;
         if (query?.status && row.status !== query.status) return false;
         return true;
-      })
+      });
+    }
   );
 }
 
@@ -758,6 +777,7 @@ export async function getBillingInvoice(id: string | number, options?: RequestOp
         options
       ),
     () => {
+      syncInvoiceSubtotalThb();
       const invoice = findInvoice(id);
       const items = invoiceItemsDb.filter((row) => row.invoice_id === invoice.id);
       return { invoice, items };

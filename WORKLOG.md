@@ -71,3 +71,27 @@
   - Scope: 139 files staged/committed (seed 스크립트 포함)
 - [Git push blocker] 현재 세션에서는 GitHub HTTPS 인증 부재로 push 실패(`could not read Username`).
 - [Next] 사용자 로컬 터미널(WSL 또는 Windows PowerShell)에서 인증 후 `git push origin main` 진행 필요.
+
+## 2026-03-01 (Billing/Inventory updates)
+
+- [Request] Applied inventory/billing behavior updates and wording changes from latest discussion.
+- [API] Inbound stock application is now state-driven (`received` only).
+  - Inbound item create/update/delete now apply stock txn only when order status is `received`.
+  - Inbound order status transition now applies/rolls back stock effects on enter/exit of `received`.
+- [API] Settlement event timing/status rules tightened.
+  - Outbound billing events are active only for `shipped`/`delivered`.
+  - Inbound billing events are active only for `received`.
+  - Event date now uses `shipped_at` (outbound) / `received_at` (inbound) when present.
+- [UI] Billing screens terminology updated.
+  - Changed action text from `Filter` to `Search` on billing list pages.
+- [Transparency] Added original THB visibility alongside KRW in invoice list/detail.
+  - API returns `subtotal_thb` computed from linked `billing_events`.
+  - Web invoice list/detail now show `Original THB`.
+- [Sample seed] Improved sample billing events generation UX/reliability.
+  - Avoids static reference IDs by using unique suffix.
+  - Handles warehouse-required schemas more robustly.
+  - UI toast now reports inserted count and where to verify.
+- [Verification]
+  - `node --check apps/api/src/routes/billingEngine.js` passed.
+  - `node --check` passed for modified API route/service files.
+  - `cd apps/web && npm run typecheck` passed.
