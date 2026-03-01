@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -8,16 +8,27 @@ import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/ui/DataTable";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { BillingTabs } from "@/components/billing/BillingTabs";
 import {
+  cleanupSampleBillingEvents,
   generateBillingInvoice,
   issueBillingInvoice,
+  listBillingEvents,
   listBillingInvoices,
   markBillingInvoicePaid,
   seedBillingEvents,
   type BillingInvoice,
 } from "@/features/billing/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -25,6 +36,12 @@ function today() {
 function thisMonth() {
   return new Date().toISOString().slice(0, 7);
 }
+
+type PendingInvoiceAction = {
+  type: "issue" | "markPaid";
+  id: number;
+  invoiceNo: string;
+} | null;
 
 export function BillingInvoicesPage() {
   const { pushToast } = useToast();
@@ -39,11 +56,30 @@ export function BillingInvoicesPage() {
   const [status, setStatus] = useState("");
   const [actingId, setActingId] = useState<number | null>(null);
 
+  const [seedConfirmOpen, setSeedConfirmOpen] = useState(false);
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false);
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
+  const [actionConfirmOpen, setActionConfirmOpen] = useState(false);
+
+  const [seedLoading, setSeedLoading] = useState(false);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const [sampleRemovableCount, setSampleRemovableCount] = useState(0);
+  const [sampleCountLoading, setSampleCountLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingInvoiceAction>(null);
+
   const reload = async () => {
     setLoading(true);
     setError(null);
     try {
-      setRows(await listBillingInvoices({ client_id: clientId, invoice_month: invoiceMonth, status: status || undefined }));
+      setRows(
+        await listBillingInvoices({
+          client_id: clientId,
+          invoice_month: invoiceMonth,
+          status: status || undefined,
+        })
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : t("Failed to load invoices."));
     } finally {
@@ -64,9 +100,17 @@ export function BillingInvoicesPage() {
         regenerate_draft: regenerateDraft,
       });
       if (result.reused) {
-        pushToast({ title: t("Draft already exists"), variant: "info" });
+        pushToast({
+          title: t("Draft already exists"),
+          description: `client=${clientId}, month=${invoiceMonth} draft reused.`,
+          variant: "info",
+        });
       } else {
-        pushToast({ title: t("Invoice generated"), variant: "success" });
+        pushToast({
+          title: t("Invoice generated"),
+          description: `client=${clientId}, month=${invoiceMonth} invoice generated.`,
+          variant: "success",
+        });
       }
       await reload();
     } catch (e) {
@@ -75,40 +119,95 @@ export function BillingInvoicesPage() {
   };
 
   const onSeed = async () => {
+    setSeedLoading(true);
     try {
       const result = await seedBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
       pushToast({
         title: t("Sample events created"),
         description: `Inserted ${Number(result.inserted_count ?? 0)} events. Check Billing Events with month=${invoiceMonth}, client=${clientId}.`,
-        variant: "success"
+        variant: "success",
       });
+      setSeedConfirmOpen(false);
     } catch (e) {
       pushToast({ title: t("Seed failed"), description: e instanceof Error ? e.message : "", variant: "error" });
+    } finally {
+      setSeedLoading(false);
     }
   };
 
-  const onIssue = async (id: number) => {
-    setActingId(id);
+  const openCleanupConfirm = async () => {
+    setCleanupConfirmOpen(true);
+    setSampleCountLoading(true);
     try {
-      await issueBillingInvoice(id);
-      pushToast({ title: t("Invoice issued"), variant: "success" });
-      await reload();
-    } catch (e) {
-      pushToast({ title: t("Issue failed"), description: e instanceof Error ? e.message : "", variant: "error" });
+      const eventRows = await listBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
+      const count = eventRows.filter(
+        (row) => String(row.reference_id || "").startsWith("SAMPLE-") && row.invoice_id == null
+      ).length;
+      setSampleRemovableCount(count);
+    } catch {
+      setSampleRemovableCount(0);
     } finally {
-      setActingId(null);
+      setSampleCountLoading(false);
     }
   };
 
-  const onMarkPaid = async (id: number) => {
-    setActingId(id);
+  const onCleanupSample = async () => {
+    setCleanupLoading(true);
     try {
-      await markBillingInvoicePaid(id);
-      pushToast({ title: t("Invoice marked paid"), variant: "success" });
-      await reload();
+      const result = await cleanupSampleBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
+      pushToast({
+        title: "Sample cleanup completed",
+        description: `Removed ${Number(result.removed_count ?? 0)} events for month=${invoiceMonth}, client=${clientId}.`,
+        variant: "success",
+      });
+      setCleanupConfirmOpen(false);
     } catch (e) {
-      pushToast({ title: t("Mark paid failed"), description: e instanceof Error ? e.message : "", variant: "error" });
+      pushToast({ title: "Sample cleanup failed", description: e instanceof Error ? e.message : "", variant: "error" });
     } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const openInvoiceActionConfirm = (type: "issue" | "markPaid", id: number, invoiceNo: string) => {
+    setPendingAction({ type, id, invoiceNo });
+    setActionConfirmOpen(true);
+  };
+
+  const runIssue = async (id: number) => {
+    setActingId(id);
+    await issueBillingInvoice(id);
+    pushToast({ title: t("Invoice issued"), variant: "success" });
+    await reload();
+    setActingId(null);
+  };
+
+  const runMarkPaid = async (id: number) => {
+    setActingId(id);
+    await markBillingInvoicePaid(id);
+    pushToast({ title: t("Invoice marked paid"), variant: "success" });
+    await reload();
+    setActingId(null);
+  };
+
+  const onConfirmInvoiceAction = async () => {
+    if (!pendingAction) return;
+    setActionLoading(true);
+    try {
+      if (pendingAction.type === "issue") {
+        await runIssue(pendingAction.id);
+      } else {
+        await runMarkPaid(pendingAction.id);
+      }
+      setActionConfirmOpen(false);
+      setPendingAction(null);
+    } catch (e) {
+      pushToast({
+        title: pendingAction.type === "issue" ? t("Issue failed") : t("Mark paid failed"),
+        description: e instanceof Error ? e.message : "",
+        variant: "error",
+      });
+    } finally {
+      setActionLoading(false);
       setActingId(null);
     }
   };
@@ -137,10 +236,85 @@ export function BillingInvoicesPage() {
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={() => void onGenerate(0)}>{t("Generate")}</Button>
-          <Button variant="secondary" onClick={() => void onGenerate(1)}>{t("Re-generate Draft")}</Button>
-          <Button variant="ghost" onClick={() => void onSeed()}>{t("Create Sample Events")}</Button>
+          <Button variant="secondary" onClick={() => setRegenConfirmOpen(true)}>{t("Re-generate Draft")}</Button>
+          <Button variant="ghost" onClick={() => setSeedConfirmOpen(true)}>{t("Create Sample Events")}</Button>
+          <Button variant="ghost" onClick={() => void openCleanupConfirm()}>Sample Data Cleanup</Button>
         </div>
       </div>
+
+      <Dialog open={seedConfirmOpen} onOpenChange={setSeedConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sample Event Generation</DialogTitle>
+            <DialogDescription>
+              This will create sample billing events for client={clientId}, month={invoiceMonth}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setSeedConfirmOpen(false)} disabled={seedLoading}>Cancel</Button>
+            <Button onClick={() => void onSeed()} disabled={seedLoading}>{seedLoading ? "Generating..." : "Confirm Generate"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={regenConfirmOpen} onOpenChange={setRegenConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Draft Re-generation</DialogTitle>
+            <DialogDescription>
+              This will re-calculate the existing draft for client={clientId}, month={invoiceMonth}. Existing draft lines may change.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setRegenConfirmOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                setRegenConfirmOpen(false);
+                void onGenerate(1);
+              }}
+            >
+              Confirm Re-generate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cleanupConfirmOpen} onOpenChange={setCleanupConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sample Data Cleanup</DialogTitle>
+            <DialogDescription>
+              This removes only non-invoiced SAMPLE events for client={clientId}, month={invoiceMonth}.
+              {sampleCountLoading ? " Counting targets..." : ` Target rows: ${sampleRemovableCount}`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setCleanupConfirmOpen(false)} disabled={cleanupLoading}>Cancel</Button>
+            <Button onClick={() => void onCleanupSample()} disabled={cleanupLoading}>{cleanupLoading ? "Cleaning..." : "Confirm Cleanup"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={actionConfirmOpen} onOpenChange={setActionConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingAction?.type === "issue" ? "Issue Confirmation" : "Mark Paid Confirmation"}
+            </DialogTitle>
+            <DialogDescription>
+              {pendingAction
+                ? `Invoice ${pendingAction.invoiceNo} (${pendingAction.id}) action: ${pendingAction.type === "issue" ? "issue" : "mark paid"}.`
+                : "Please confirm action."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setActionConfirmOpen(false)} disabled={actionLoading}>Cancel</Button>
+            <Button onClick={() => void onConfirmInvoiceAction()} disabled={actionLoading}>
+              {actionLoading ? "Processing..." : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="rounded-xl border bg-white p-6">
         {error ? (
@@ -165,12 +339,22 @@ export function BillingInvoicesPage() {
                 render: (row) => (
                   <div className="flex gap-2">
                     {row.status === "draft" && (
-                      <Button size="sm" variant="secondary" onClick={() => void onIssue(row.id)} disabled={actingId === row.id}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openInvoiceActionConfirm("issue", row.id, row.invoice_no)}
+                        disabled={actingId === row.id || actionLoading}
+                      >
                         Issue
                       </Button>
                     )}
                     {row.status === "issued" && (
-                      <Button size="sm" variant="secondary" onClick={() => void onMarkPaid(row.id)} disabled={actingId === row.id}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openInvoiceActionConfirm("markPaid", row.id, row.invoice_no)}
+                        disabled={actingId === row.id || actionLoading}
+                      >
                         Mark Paid
                       </Button>
                     )}
@@ -184,6 +368,3 @@ export function BillingInvoicesPage() {
     </section>
   );
 }
-
-
-

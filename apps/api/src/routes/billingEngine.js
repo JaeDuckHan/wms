@@ -1068,6 +1068,42 @@ router.post("/billing/events/sample", async (req, res) => {
   }
 });
 
+router.post("/billing/events/sample/cleanup", async (req, res) => {
+  const clientId = Number(req.body?.client_id || 1);
+  const month = String(req.body?.invoice_month || "2026-01");
+  const [year, monthNum] = month.split("-").map(Number);
+  const from = `${month}-01`;
+  const to =
+    monthNum === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(monthNum + 1).padStart(2, "0")}-01`;
+
+  try {
+    const [result] = await getPool().query(
+      `UPDATE billing_events
+       SET deleted_at = NOW()
+       WHERE client_id = ?
+         AND event_date >= ?
+         AND event_date < ?
+         AND reference_id LIKE 'SAMPLE-%'
+         AND invoice_id IS NULL
+         AND deleted_at IS NULL`,
+      [clientId, from, to]
+    );
+
+    return res.json({
+      ok: true,
+      data: {
+        client_id: clientId,
+        invoice_month: month,
+        removed_count: Number(result.affectedRows || 0)
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
 router.post("/billing/invoices/generate", validate(generateInvoiceSchema), async (req, res) => {
   try {
     const result = await withTransaction(async (conn) => {

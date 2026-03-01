@@ -555,6 +555,34 @@ export async function seedBillingEvents(input: { client_id: number; invoice_mont
   );
 }
 
+export async function cleanupSampleBillingEvents(
+  input: { client_id: number; invoice_month: string },
+  options?: RequestOptions
+) {
+  return withFallback(
+    options,
+    () =>
+      requestJson<{ removed_count: number }>(
+        "/billing/events/sample/cleanup",
+        { method: "POST", body: JSON.stringify(input) },
+        options
+      ),
+    () => {
+      let removed = 0;
+      for (let i = eventsDb.length - 1; i >= 0; i -= 1) {
+        const row = eventsDb[i];
+        if (row.client_id !== input.client_id) continue;
+        if (!row.event_date.startsWith(input.invoice_month)) continue;
+        if (!String(row.reference_id || "").startsWith("SAMPLE-")) continue;
+        if (row.invoice_id != null) continue;
+        eventsDb.splice(i, 1);
+        removed += 1;
+      }
+      return { removed_count: removed };
+    }
+  );
+}
+
 export async function listBillingEvents(
   query?: { client_id?: number; invoice_month?: string; status?: "PENDING" | "INVOICED"; service_code?: string },
   options?: RequestOptions
