@@ -18,7 +18,7 @@ export function Sidebar() {
     { href: "/inbounds", label: "nav.inbounds", icon: Download },
     { href: "/outbounds", label: "nav.outbounds", icon: Send },
     { href: "/inventory", label: "nav.inventory", icon: Boxes },
-    { href: "/billing", label: "nav.billing", icon: FileText },
+    { href: "/billing/events", label: "nav.billing", icon: FileText },
     { href: "/dashboard", label: "nav.dashboard", icon: House },
     { href: "/settings", label: "nav.settings", icon: Settings },
   ];
@@ -38,7 +38,7 @@ export function Sidebar() {
       </Link>
       <nav className="space-y-1">
         {items.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active = item.label === "nav.billing" ? pathname.startsWith("/billing") : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link
