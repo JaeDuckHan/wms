@@ -33,28 +33,15 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function currentYearText() {
-  return String(new Date().getFullYear());
+function startOfYearIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-01-01`;
 }
 
-function currentMonthDay() {
-  return new Date().toISOString().slice(5, 10);
-}
-
-function normalizeMonthDay(value: string) {
+function normalizeDate(value: string) {
   const text = String(value || "").trim();
-  if (!/^\d{2}-\d{2}$/.test(text)) return null;
-  const [mm, dd] = text.split("-").map(Number);
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
   return text;
-}
-
-function toDateFromYearMd(year: string, md: string) {
-  const normalizedYear = /^\d{4}$/.test(year) ? year : currentYearText();
-  const normalizedMd = normalizeMonthDay(md);
-  if (!normalizedMd) return null;
-  const result = `${normalizedYear}-${normalizedMd}`;
-  return /^\d{4}-\d{2}-\d{2}$/.test(result) ? result : null;
 }
 
 type PendingInvoiceAction = {
@@ -71,9 +58,8 @@ export function BillingInvoicesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [clientId, setClientId] = useState(1);
-  const [year, setYear] = useState(currentYearText());
-  const [fromMd, setFromMd] = useState("01-01");
-  const [toMd, setToMd] = useState(currentMonthDay());
+  const [fromDateInput, setFromDateInput] = useState(startOfYearIso());
+  const [toDateInput, setToDateInput] = useState(todayIso());
   const [status, setStatus] = useState("");
 
   const [actingId, setActingId] = useState<number | null>(null);
@@ -92,12 +78,12 @@ export function BillingInvoicesPage() {
   const [pendingAction, setPendingAction] = useState<PendingInvoiceAction>(null);
 
   const dateRange = useMemo(() => {
-    const fromDate = toDateFromYearMd(year, fromMd);
-    const toDate = toDateFromYearMd(year, toMd);
-    if (!fromDate || !toDate) return { fromDate: null, toDate: null, valid: false, message: "MM-DD 형식으로 입력하세요." };
+    const fromDate = normalizeDate(fromDateInput);
+    const toDate = normalizeDate(toDateInput);
+    if (!fromDate || !toDate) return { fromDate: null, toDate: null, valid: false, message: "날짜를 달력에서 선택하세요." };
     if (fromDate > toDate) return { fromDate, toDate, valid: false, message: "시작일은 종료일보다 클 수 없습니다." };
     return { fromDate, toDate, valid: true, message: "" };
-  }, [year, fromMd, toMd]);
+  }, [fromDateInput, toDateInput]);
 
   const derivedInvoiceDate = dateRange.toDate || todayIso();
   const derivedInvoiceMonth = derivedInvoiceDate.slice(0, 7);
@@ -261,16 +247,15 @@ export function BillingInvoicesPage() {
       <PageHeader
         breadcrumbs={[{ label: "Billing" }, { label: "Invoices" }]}
         title="Invoices"
-        subtitle="Search by year + MM-DD range. Invoice generation uses end-date month and end-date FX basis."
+        subtitle="Search by date range with calendar picker. Invoice generation uses end-date month and end-date FX basis."
       />
       <BillingTabs />
 
       <div className="mb-4 rounded-xl border bg-white p-4">
         <div className="grid gap-3 md:grid-cols-6">
           <Input type="number" placeholder="Client ID" value={clientId} onChange={(e) => setClientId(Number(e.target.value || 0))} />
-          <Input type="number" placeholder="Year (YYYY)" value={year} onChange={(e) => setYear(e.target.value)} />
-          <Input placeholder="From MM-DD" value={fromMd} onChange={(e) => setFromMd(e.target.value)} />
-          <Input placeholder="To MM-DD" value={toMd} onChange={(e) => setToMd(e.target.value)} />
+          <Input type="date" value={fromDateInput} onChange={(e) => setFromDateInput(e.target.value)} />
+          <Input type="date" value={toDateInput} onChange={(e) => setToDateInput(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">{t("All status")}</option>
             <option value="draft">{t("draft")}</option>
