@@ -29,6 +29,8 @@ wms-web/
 3pl.txt
 docs/
 sql/
+!apps/api/sql/
+!apps/api/sql/**
 tests/
 schema_v1.sql
 seed_testpack_base.sql

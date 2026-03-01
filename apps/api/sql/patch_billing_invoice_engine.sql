@@ -1,11 +1,38 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
-ALTER TABLE service_catalog
-  ADD COLUMN IF NOT EXISTS service_name VARCHAR(255) NULL AFTER service_name_kr,
-  ADD COLUMN IF NOT EXISTS billing_unit ENUM('ORDER','SKU','BOX','CBM','PALLET','EVENT','MONTH') NULL AFTER billing_basis,
-  ADD COLUMN IF NOT EXISTS pricing_policy ENUM('THB_BASED','KRW_FIXED') NOT NULL DEFAULT 'KRW_FIXED' AFTER billing_unit,
-  ADD COLUMN IF NOT EXISTS default_rate DECIMAL(18,4) NULL AFTER default_currency;
+-- service_catalog extension (MySQL 5.7/8.x compatible)
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'service_catalog' AND column_name = 'service_name') = 0,
+  'ALTER TABLE service_catalog ADD COLUMN service_name VARCHAR(255) NULL AFTER service_name_kr',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'service_catalog' AND column_name = 'billing_unit') = 0,
+  'ALTER TABLE service_catalog ADD COLUMN billing_unit ENUM(''ORDER'',''SKU'',''BOX'',''CBM'',''PALLET'',''EVENT'',''MONTH'') NULL AFTER billing_basis',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'service_catalog' AND column_name = 'pricing_policy') = 0,
+  'ALTER TABLE service_catalog ADD COLUMN pricing_policy ENUM(''THB_BASED'',''KRW_FIXED'') NOT NULL DEFAULT ''KRW_FIXED'' AFTER billing_unit',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'service_catalog' AND column_name = 'default_rate') = 0,
+  'ALTER TABLE service_catalog ADD COLUMN default_rate DECIMAL(18,4) NULL AFTER default_currency',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 UPDATE service_catalog
 SET service_name = COALESCE(service_name, service_name_kr)
@@ -24,18 +51,86 @@ UPDATE service_catalog
 SET default_rate = 0
 WHERE default_rate IS NULL;
 
-ALTER TABLE exchange_rates
-  ADD COLUMN IF NOT EXISTS source ENUM('manual','api') NOT NULL DEFAULT 'manual' AFTER rate,
-  ADD COLUMN IF NOT EXISTS locked TINYINT(1) NOT NULL DEFAULT 0 AFTER source;
+-- exchange_rates extension
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'exchange_rates' AND column_name = 'source') = 0,
+  'ALTER TABLE exchange_rates ADD COLUMN source ENUM(''manual'',''api'') NOT NULL DEFAULT ''manual'' AFTER rate',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-ALTER TABLE invoices
-  MODIFY settlement_batch_id BIGINT UNSIGNED NULL,
-  ADD COLUMN IF NOT EXISTS invoice_month CHAR(7) NULL AFTER client_id,
-  ADD COLUMN IF NOT EXISTS invoice_date DATE NULL AFTER issue_date,
-  ADD COLUMN IF NOT EXISTS fx_rate_thbkrw DECIMAL(18,6) NULL AFTER currency,
-  ADD COLUMN IF NOT EXISTS subtotal_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER fx_rate_thbkrw,
-  ADD COLUMN IF NOT EXISTS vat_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER subtotal_krw,
-  ADD COLUMN IF NOT EXISTS total_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER vat_krw;
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'exchange_rates' AND column_name = 'locked') = 0,
+  'ALTER TABLE exchange_rates ADD COLUMN locked TINYINT(1) NOT NULL DEFAULT 0 AFTER source',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- invoices extension
+SET @sql := IF(
+  (
+    SELECT CASE
+      WHEN COUNT(*) = 0 THEN 0
+      WHEN MAX(IS_NULLABLE = 'NO') = 1 THEN 1
+      ELSE 0
+    END
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'settlement_batch_id'
+  ) = 1,
+  'ALTER TABLE invoices MODIFY settlement_batch_id BIGINT UNSIGNED NULL',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'invoice_month') = 0,
+  'ALTER TABLE invoices ADD COLUMN invoice_month CHAR(7) NULL AFTER client_id',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'invoice_date') = 0,
+  'ALTER TABLE invoices ADD COLUMN invoice_date DATE NULL AFTER issue_date',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'fx_rate_thbkrw') = 0,
+  'ALTER TABLE invoices ADD COLUMN fx_rate_thbkrw DECIMAL(18,6) NULL AFTER currency',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'subtotal_krw') = 0,
+  'ALTER TABLE invoices ADD COLUMN subtotal_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER fx_rate_thbkrw',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'vat_krw') = 0,
+  'ALTER TABLE invoices ADD COLUMN vat_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER subtotal_krw',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'total_krw') = 0,
+  'ALTER TABLE invoices ADD COLUMN total_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER vat_krw',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS client_contract_rates (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
