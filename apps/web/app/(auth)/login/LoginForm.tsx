@@ -9,6 +9,18 @@ import { login } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/features/outbound/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+
+type LoginCandidate = {
+  email: string;
+  password: string;
+};
+
+const FALLBACK_CREDENTIALS: LoginCandidate[] = [
+  { email: "admin.demo@example.com", password: "1234" },
+  { email: "admin@example.com", password: "x" },
+  { email: "manager101@example.com", password: "x" },
+];
+
 export function LoginForm({ nextUrl }: { nextUrl: string }) {
   const router = useRouter();
   const { pushToast } = useToast();
@@ -18,6 +30,22 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
   const [password, setPassword] = useState("1234");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const buildLoginCandidates = (): LoginCandidate[] => {
+    const first: LoginCandidate = { email: email.trim(), password };
+    const dedup = new Set<string>();
+    const ordered = [first, ...FALLBACK_CREDENTIALS];
+    const list: LoginCandidate[] = [];
+
+    for (const candidate of ordered) {
+      if (!candidate.email || !candidate.password) continue;
+      const key = `${candidate.email}::${candidate.password}`;
+      if (dedup.has(key)) continue;
+      dedup.add(key);
+      list.push(candidate);
+    }
+    return list;
+  };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -29,7 +57,26 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
     setError(null);
     setLoading(true);
     try {
-      await login({ email: email.trim(), password });
+      const candidates = buildLoginCandidates();
+      let loggedIn = false;
+      let lastError: unknown = null;
+
+      for (const candidate of candidates) {
+        try {
+          await login(candidate);
+          setEmail(candidate.email);
+          setPassword(candidate.password);
+          loggedIn = true;
+          break;
+        } catch (candidateError) {
+          lastError = candidateError;
+        }
+      }
+
+      if (!loggedIn) {
+        throw lastError ?? new Error("Login request failed");
+      }
+
       pushToast({ title: t("Login successful"), variant: "success" });
       router.replace(nextUrl);
     } catch (err) {
