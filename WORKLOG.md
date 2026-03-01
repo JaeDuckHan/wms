@@ -52,3 +52,22 @@
 - Plan: `.omx/plans/phase1-inbound-outbound-inventory-log-hardening.md`
 - Open questions: `.omx/plans/open-questions.md`
 
+### 추가 진행 (WSL MySQL / 운영유사 샘플데이터 적재)
+
+- [Env] 실행 환경을 Windows PowerShell 기준에서 **WSL(Ubuntu 24.04 / WSL2)** 기준으로 재정렬.
+- [DB check] WSL 내부에서 MySQL 상태 확인:
+  - `mysqld` 프로세스 실행 확인
+  - `127.0.0.1:3306`, `127.0.0.1:33060` LISTEN 확인
+- [Issue] `npm run seed:phase1-integrated` 최초 실행 시 `Access denied for user 'root'@'localhost'` 발생.
+- [Action] `.env` DB 계정 사용 가이드 제공(`root` → `wms`) 및 권한 사용자 생성 절차 안내.
+- [Issue] 이후 `Table 'wms_test.clients' doesn't exist` 발생.
+- [Action] `schema_v1.sql`를 `wms_test`에 재적재하도록 안내 후 테이블 생성 확인.
+- [Result] `npm run seed:phase1-integrated` 실행 완료.
+- [Validation] `apps/api/sql/seed/seed_phase1_05_validation.sql` 검증 기준 PASS 확인(사용자 보고).
+- [Runtime check] API 기동 후 `/health`, `/health/db` 정상 응답(사용자 보고).
+- [Git] 변경사항 커밋 완료:
+  - Commit: `296c890`
+  - Message: `feat(web-api): apply phase1 integrated flow and UI/API updates`
+  - Scope: 139 files staged/committed (seed 스크립트 포함)
+- [Git push blocker] 현재 세션에서는 GitHub HTTPS 인증 부재로 push 실패(`could not read Username`).
+- [Next] 사용자 로컬 터미널(WSL 또는 Windows PowerShell)에서 인증 후 `git push origin main` 진행 필요.
