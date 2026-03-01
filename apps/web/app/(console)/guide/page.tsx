@@ -6,10 +6,18 @@ export default function GuidePage() {
       <PageHeader
         breadcrumbs={[{ label: "설정" }, { label: "사용 가이드" }]}
         title="사용 가이드"
-        subtitle="이 페이지에서 사용 흐름과 전체 QA 체크리스트를 확인할 수 있습니다."
+        subtitle="이 페이지에서 메뉴별 사용설명서와 전체 QA 체크리스트를 확인할 수 있습니다."
       />
 
       <div className="rounded-xl border bg-white p-6 text-sm text-slate-700">
+        <h2 className="text-base font-semibold text-slate-900">0. 빠른 사용설명서</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>로그인 후 입고, 출고, 재고, 정산, 설정 메뉴를 순서대로 열어 전체 흐름을 확인합니다.</li>
+          <li>각 목록에서 1건을 클릭해 상세(개요/품목/타임라인) 화면이 정상 표시되는지 확인합니다.</li>
+          <li>설정(거래처/상품/창고)에서 1건씩 생성, 수정, 삭제를 실행해 기본 CRUD 흐름을 익힙니다.</li>
+          <li>정산에서 청구서 생성, 발행, 수납 처리까지 상태 전환 흐름을 확인합니다.</li>
+        </ol>
+
         <h2 className="text-base font-semibold text-slate-900">1. 메뉴</h2>
         <p className="mt-2">
           입고, 출고, 재고, 정산, 설정 메뉴에서 핵심 기능을 테스트할 수 있습니다.
