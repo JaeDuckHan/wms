@@ -95,3 +95,55 @@
   - `node --check apps/api/src/routes/billingEngine.js` passed.
   - `node --check` passed for modified API route/service files.
   - `cd apps/web && npm run typecheck` passed.
+
+## 2026-03-01 (Billing UX hardening + CI follow-up)
+
+- [CI fix] Resolved `web:check` i18n token failure (`Search`) on billing pages.
+  - Updated billing list buttons to avoid unknown i18n token path in `i18n:check`.
+- [Billing transparency] Added THB-origin amount exposure in invoice list/detail.
+  - API includes `subtotal_thb` from linked `billing_events`.
+  - Web shows `Original THB` next to KRW amounts.
+- [Sample event reliability] Hardened sample seed behavior in API.
+  - Uses unique `SAMPLE-*` reference IDs to avoid collisions.
+  - Handles warehouse-required schema cases more safely.
+  - Returns inserted count for UI feedback.
+- [Sample cleanup] Added sample cleanup API and UI action.
+  - Endpoint: `POST /billing/events/sample/cleanup`
+  - Scope: `client_id + invoice_month`, `reference_id LIKE 'SAMPLE-%'`, `invoice_id IS NULL` only.
+- [Confirmation UX] Added confirmation dialogs across similar billing actions.
+  - Sample generation, draft regeneration, sample cleanup now require confirm.
+  - Invoice row actions `Issue` and `Mark Paid` now require confirm.
+  - Dialog copy includes client/month context and target count where applicable.
+- [Verification]
+  - `apps/web`: `npm run typecheck` passed.
+  - `apps/web`: `npm run i18n:check` passed.
+  - API changed routes passed `node --check`.
+
+### Commits
+
+- `f2f41da` feat(api-web): align settlement transparency and status-based stock/billing logic
+- `785461c` fix(web): avoid missing i18n token for billing search button
+- `bc95563` feat(billing): add sample cleanup flow and confirmation dialogs
+
+## 2026-03-01 (Billing range search + guide sync)
+
+- [Request] Updated billing invoice search to year + MM-DD range style.
+- [Web] Replaced month/date-centric search inputs with:
+  - `Year (YYYY)`
+  - `From MM-DD`
+  - `To MM-DD`
+- [Behavior] Search now queries invoice date range (`invoice_date_from` ~ `invoice_date_to`).
+- [Behavior] Invoice generate/re-generate now derives:
+  - `invoice_date` from end date (`To`)
+  - `invoice_month` from end date month
+- [Validation] Added range guard (`from > to` invalid) and user-facing message.
+- [API] `/billing/invoices` now accepts and applies `invoice_date_from`, `invoice_date_to` filters.
+- [Guide] Updated guide page to include latest billing admin operations and confirmation-flow notes.
+- [Verification]
+  - `apps/web`: `npm run typecheck` passed.
+  - `apps/web`: `npm run i18n:check` passed.
+  - API route syntax check passed.
+
+### Commit
+
+- `c093316` feat(billing): support year+day-range search and update admin guide
