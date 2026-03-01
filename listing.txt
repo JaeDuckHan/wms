@@ -1,0 +1,53 @@
+total 462348
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Mar  1 06:27 .
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 28 20:38 ..
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 26 10:45 .git
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 25 21:29 .github
+-rwxrwxrwx 1 kowinsblue kowinsblue       502 Feb 23 04:16 .gitignore
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 15 11:08 3pl
+-rwxrwxrwx 1 kowinsblue kowinsblue      6027 Feb 14 22:13 3pl.txt
+-rwxrwxrwx 1 kowinsblue kowinsblue      2432 Feb 26 02:52 AGENTS.md
+-rwxrwxrwx 1 kowinsblue kowinsblue      1199 Feb 26 10:42 WORKLOG.md
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 23 04:10 apps
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 26 09:33 docs
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 23 07:31 lib
+-rwxrwxrwx 1 kowinsblue kowinsblue         0 Mar  1  2026 listing.txt
+-rwxrwxrwx 1 kowinsblue kowinsblue        98 Feb 14 17:36 package-lock.json
+-rwxrwxrwx 1 kowinsblue kowinsblue       121 Feb 14 15:39 run_mysql_import.cmd
+-rwxrwxrwx 1 kowinsblue kowinsblue      4808 Feb 14 16:49 run_testpack.ps1
+-rwxrwxrwx 1 kowinsblue kowinsblue      5230 Feb 14 16:58 run_testpackbom.ps1
+-rwxrwxrwx 1 kowinsblue kowinsblue     27551 Feb 14 10:24 schema_v1.sql
+-rwxrwxrwx 1 kowinsblue kowinsblue 461636188 Feb 20 08:36 schema_v1.zip
+-rwxrwxrwx 1 kowinsblue kowinsblue      3056 Feb 14 17:06 seed_testpack_base.sql
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 18 11:40 sql
+-rwxrwxrwx 1 kowinsblue kowinsblue     19911 Feb 14 08:15 testpack_db.zip
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 26 03:26 tests
+-rwxrwxrwx 1 kowinsblue kowinsblue     70281 Feb 18 11:19 tests.zip
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 18 15:20 wms-api
+-rwxrwxrwx 1 kowinsblue kowinsblue  11637700 Feb 18 11:19 wms-api.zip
+drwxrwxrwx 1 kowinsblue kowinsblue      4096 Feb 23 07:48 wms-web
+
+===== GitHub/프로젝트 정리 (요청하신 1~4번) =====
+1) GitHub 연결 상태
+- 원격 저장소: origin = https://github.com/JaeDuckHan/wms.git
+- 현재 브랜치: main
+- main ↔ origin/main 커밋 차이: 0 / 0 (동기화)
+
+2) GitHub(추적 중) 핵심 소스/폴더
+- .github/
+- apps/
+  - apps/api (백엔드)
+  - apps/web (프론트)
+- docs/
+- WORKLOG.md
+- .gitignore
+
+3) .gitignore 기준 로컬 무시 대상(주요)
+- node_modules/, dist/, build/, coverage/
+- *.log, .env*
+- wms-api/, wms-web/, 3pl/, sql/, tests/
+- schema_v1.sql, *.zip 등
+
+4) 특이사항
+- apps/api/.npm-cache 가 대량 변경 추적 중
+- docs/는 ignore 규칙이 있어도 이미 추적된 파일은 계속 관리됨
