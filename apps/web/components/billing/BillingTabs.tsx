@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 const tabs = [
-  { href: "/billing", label: "Invoices" },
   { href: "/billing/events", label: "Billing Events" },
+  { href: "/billing", label: "Invoices" },
 ];
 
 export function BillingTabs() {
