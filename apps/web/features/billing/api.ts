@@ -772,12 +772,20 @@ export async function generateBillingInvoice(
 }
 
 export async function listBillingInvoices(
-  query?: { client_id?: number; invoice_month?: string; status?: string },
+  query?: {
+    client_id?: number;
+    invoice_month?: string;
+    invoice_date_from?: string;
+    invoice_date_to?: string;
+    status?: string;
+  },
   options?: RequestOptions
 ) {
   const params = new URLSearchParams();
   if (query?.client_id) params.set("client_id", String(query.client_id));
   if (query?.invoice_month) params.set("invoice_month", query.invoice_month);
+  if (query?.invoice_date_from) params.set("invoice_date_from", query.invoice_date_from);
+  if (query?.invoice_date_to) params.set("invoice_date_to", query.invoice_date_to);
   if (query?.status) params.set("status", query.status);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return withFallback(
@@ -788,6 +796,8 @@ export async function listBillingInvoices(
       return invoicesDb.filter((row) => {
         if (query?.client_id && row.client_id !== query.client_id) return false;
         if (query?.invoice_month && row.invoice_month !== query.invoice_month) return false;
+        if (query?.invoice_date_from && row.invoice_date < query.invoice_date_from) return false;
+        if (query?.invoice_date_to && row.invoice_date > query.invoice_date_to) return false;
         if (query?.status && row.status !== query.status) return false;
         return true;
       });

@@ -1449,7 +1449,7 @@ router.post("/billing/invoices/:id/duplicate-admin", async (req, res) => {
 });
 
 router.get("/billing/invoices", async (req, res) => {
-  const { client_id, invoice_month } = req.query;
+  const { client_id, invoice_month, invoice_date_from, invoice_date_to } = req.query;
   const status = normalizeInvoiceStatus(req.query.status);
 
   try {
@@ -1491,6 +1491,14 @@ router.get("/billing/invoices", async (req, res) => {
     if (invoice_month) {
       query += ` AND ${monthExpr} = ?`;
       params.push(invoice_month);
+    }
+    if (invoice_date_from && /^\d{4}-\d{2}-\d{2}$/.test(String(invoice_date_from))) {
+      query += ` AND ${dateExpr} >= ?`;
+      params.push(String(invoice_date_from));
+    }
+    if (invoice_date_to && /^\d{4}-\d{2}-\d{2}$/.test(String(invoice_date_to))) {
+      query += ` AND ${dateExpr} <= ?`;
+      params.push(String(invoice_date_to));
     }
     if (status) {
       query += " AND i.status = ?";

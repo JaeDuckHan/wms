@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,12 +29,32 @@ import {
 } from "@/features/billing/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
-function today() {
+function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function thisMonth() {
-  return new Date().toISOString().slice(0, 7);
+function currentYearText() {
+  return String(new Date().getFullYear());
+}
+
+function currentMonthDay() {
+  return new Date().toISOString().slice(5, 10);
+}
+
+function normalizeMonthDay(value: string) {
+  const text = String(value || "").trim();
+  if (!/^\d{2}-\d{2}$/.test(text)) return null;
+  const [mm, dd] = text.split("-").map(Number);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  return text;
+}
+
+function toDateFromYearMd(year: string, md: string) {
+  const normalizedYear = /^\d{4}$/.test(year) ? year : currentYearText();
+  const normalizedMd = normalizeMonthDay(md);
+  if (!normalizedMd) return null;
+  const result = `${normalizedYear}-${normalizedMd}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(result) ? result : null;
 }
 
 type PendingInvoiceAction = {
@@ -51,9 +71,11 @@ export function BillingInvoicesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [clientId, setClientId] = useState(1);
-  const [invoiceMonth, setInvoiceMonth] = useState(thisMonth());
-  const [invoiceDate, setInvoiceDate] = useState(today());
+  const [year, setYear] = useState(currentYearText());
+  const [fromMd, setFromMd] = useState("01-01");
+  const [toMd, setToMd] = useState(currentMonthDay());
   const [status, setStatus] = useState("");
+
   const [actingId, setActingId] = useState<number | null>(null);
 
   const [seedConfirmOpen, setSeedConfirmOpen] = useState(false);
@@ -69,14 +91,31 @@ export function BillingInvoicesPage() {
   const [sampleCountLoading, setSampleCountLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingInvoiceAction>(null);
 
+  const dateRange = useMemo(() => {
+    const fromDate = toDateFromYearMd(year, fromMd);
+    const toDate = toDateFromYearMd(year, toMd);
+    if (!fromDate || !toDate) return { fromDate: null, toDate: null, valid: false, message: "MM-DD 형식으로 입력하세요." };
+    if (fromDate > toDate) return { fromDate, toDate, valid: false, message: "시작일은 종료일보다 클 수 없습니다." };
+    return { fromDate, toDate, valid: true, message: "" };
+  }, [year, fromMd, toMd]);
+
+  const derivedInvoiceDate = dateRange.toDate || todayIso();
+  const derivedInvoiceMonth = derivedInvoiceDate.slice(0, 7);
+
   const reload = async () => {
+    if (!dateRange.valid) {
+      setError(dateRange.message);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       setRows(
         await listBillingInvoices({
           client_id: clientId,
-          invoice_month: invoiceMonth,
+          invoice_date_from: dateRange.fromDate || undefined,
+          invoice_date_to: dateRange.toDate || undefined,
           status: status || undefined,
         })
       );
@@ -92,23 +131,28 @@ export function BillingInvoicesPage() {
   }, []);
 
   const onGenerate = async (regenerateDraft: 0 | 1) => {
+    if (!dateRange.valid) {
+      pushToast({ title: "기간 형식 오류", description: dateRange.message, variant: "error" });
+      return;
+    }
+
     try {
       const result = await generateBillingInvoice({
         client_id: clientId,
-        invoice_month: invoiceMonth,
-        invoice_date: invoiceDate,
+        invoice_month: derivedInvoiceMonth,
+        invoice_date: derivedInvoiceDate,
         regenerate_draft: regenerateDraft,
       });
       if (result.reused) {
         pushToast({
           title: t("Draft already exists"),
-          description: `client=${clientId}, month=${invoiceMonth} draft reused.`,
+          description: `client=${clientId}, month=${derivedInvoiceMonth} draft reused.`,
           variant: "info",
         });
       } else {
         pushToast({
           title: t("Invoice generated"),
-          description: `client=${clientId}, month=${invoiceMonth} invoice generated.`,
+          description: `client=${clientId}, month=${derivedInvoiceMonth}, invoice_date=${derivedInvoiceDate}`,
           variant: "success",
         });
       }
@@ -121,10 +165,10 @@ export function BillingInvoicesPage() {
   const onSeed = async () => {
     setSeedLoading(true);
     try {
-      const result = await seedBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
+      const result = await seedBillingEvents({ client_id: clientId, invoice_month: derivedInvoiceMonth });
       pushToast({
         title: t("Sample events created"),
-        description: `Inserted ${Number(result.inserted_count ?? 0)} events. Check Billing Events with month=${invoiceMonth}, client=${clientId}.`,
+        description: `Inserted ${Number(result.inserted_count ?? 0)} events. month=${derivedInvoiceMonth}, client=${clientId}`,
         variant: "success",
       });
       setSeedConfirmOpen(false);
@@ -139,7 +183,7 @@ export function BillingInvoicesPage() {
     setCleanupConfirmOpen(true);
     setSampleCountLoading(true);
     try {
-      const eventRows = await listBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
+      const eventRows = await listBillingEvents({ client_id: clientId, invoice_month: derivedInvoiceMonth });
       const count = eventRows.filter(
         (row) => String(row.reference_id || "").startsWith("SAMPLE-") && row.invoice_id == null
       ).length;
@@ -154,10 +198,10 @@ export function BillingInvoicesPage() {
   const onCleanupSample = async () => {
     setCleanupLoading(true);
     try {
-      const result = await cleanupSampleBillingEvents({ client_id: clientId, invoice_month: invoiceMonth });
+      const result = await cleanupSampleBillingEvents({ client_id: clientId, invoice_month: derivedInvoiceMonth });
       pushToast({
         title: "Sample cleanup completed",
-        description: `Removed ${Number(result.removed_count ?? 0)} events for month=${invoiceMonth}, client=${clientId}.`,
+        description: `Removed ${Number(result.removed_count ?? 0)} events. month=${derivedInvoiceMonth}, client=${clientId}`,
         variant: "success",
       });
       setCleanupConfirmOpen(false);
@@ -217,15 +261,16 @@ export function BillingInvoicesPage() {
       <PageHeader
         breadcrumbs={[{ label: "Billing" }, { label: "Invoices" }]}
         title="Invoices"
-        subtitle="KRW-only invoice generation with locked THB/KRW rate and VAT line item."
+        subtitle="Search by year + MM-DD range. Invoice generation uses end-date month and end-date FX basis."
       />
       <BillingTabs />
 
       <div className="mb-4 rounded-xl border bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-5">
+        <div className="grid gap-3 md:grid-cols-6">
           <Input type="number" placeholder="Client ID" value={clientId} onChange={(e) => setClientId(Number(e.target.value || 0))} />
-          <Input type="month" value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} />
-          <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+          <Input type="number" placeholder="Year (YYYY)" value={year} onChange={(e) => setYear(e.target.value)} />
+          <Input placeholder="From MM-DD" value={fromMd} onChange={(e) => setFromMd(e.target.value)} />
+          <Input placeholder="To MM-DD" value={toMd} onChange={(e) => setToMd(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">{t("All status")}</option>
             <option value="draft">{t("draft")}</option>
@@ -234,6 +279,12 @@ export function BillingInvoicesPage() {
           </select>
           <Button variant="secondary" onClick={() => void reload()}>Search</Button>
         </div>
+        <div className="mt-2 text-xs text-slate-500">
+          {dateRange.valid
+            ? `검색기간: ${dateRange.fromDate} ~ ${dateRange.toDate} | 생성기준일(종료일): ${derivedInvoiceDate}`
+            : dateRange.message}
+        </div>
+
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={() => void onGenerate(0)}>{t("Generate")}</Button>
           <Button variant="secondary" onClick={() => setRegenConfirmOpen(true)}>{t("Re-generate Draft")}</Button>
@@ -247,7 +298,7 @@ export function BillingInvoicesPage() {
           <DialogHeader>
             <DialogTitle>Sample Event Generation</DialogTitle>
             <DialogDescription>
-              This will create sample billing events for client={clientId}, month={invoiceMonth}.
+              This will create sample billing events for client={clientId}, month={derivedInvoiceMonth}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -262,7 +313,7 @@ export function BillingInvoicesPage() {
           <DialogHeader>
             <DialogTitle>Draft Re-generation</DialogTitle>
             <DialogDescription>
-              This will re-calculate the existing draft for client={clientId}, month={invoiceMonth}. Existing draft lines may change.
+              This will re-calculate the draft for client={clientId}, month={derivedInvoiceMonth}, invoice_date={derivedInvoiceDate}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -284,7 +335,7 @@ export function BillingInvoicesPage() {
           <DialogHeader>
             <DialogTitle>Sample Data Cleanup</DialogTitle>
             <DialogDescription>
-              This removes only non-invoiced SAMPLE events for client={clientId}, month={invoiceMonth}.
+              This removes only non-invoiced SAMPLE events for client={clientId}, month={derivedInvoiceMonth}.
               {sampleCountLoading ? " Counting targets..." : ` Target rows: ${sampleRemovableCount}`}
             </DialogDescription>
           </DialogHeader>
@@ -326,7 +377,7 @@ export function BillingInvoicesPage() {
             columns={[
               { key: "invoice_no", label: "Invoice No", render: (row) => <Link href={`/billing/${row.id}`} className="font-medium hover:underline">{row.invoice_no}</Link> },
               { key: "client", label: "Client", render: (row) => `${row.client_code} (${row.client_id})` },
-              { key: "month", label: "Month", render: (row) => row.invoice_month },
+              { key: "date", label: "Date", render: (row) => row.invoice_date },
               { key: "fx", label: "FX", render: (row) => Number(row.fx_rate_thbkrw).toFixed(4) },
               { key: "subtotal_thb", label: "Original THB", render: (row) => Number(row.subtotal_thb ?? 0).toLocaleString() },
               { key: "subtotal", label: "Subtotal", render: (row) => Number(row.subtotal_krw).toLocaleString() },
