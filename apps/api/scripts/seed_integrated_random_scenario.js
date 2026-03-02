@@ -471,7 +471,8 @@ async function main() {
       );
     }
 
-    if (await hasTable(conn, "billing_events")) {
+    const hasBillingEvents = await hasTable(conn, "billing_events");
+    if (hasBillingEvents) {
       const hasWarehouseId = await hasColumn(conn, "billing_events", "warehouse_id");
       const hasStatus = await hasColumn(conn, "billing_events", "status");
       const hasInvoiceId = await hasColumn(conn, "billing_events", "invoice_id");
@@ -575,6 +576,8 @@ async function main() {
           );
         }
       }
+    } else {
+      console.warn("[seed:scenario:integrated] billing_events table not found; billing event seed skipped.");
     }
 
     await conn.commit();
