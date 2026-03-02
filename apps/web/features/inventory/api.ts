@@ -3,7 +3,7 @@ import type { InventoryQuery, StockBalanceRow, StockTransactionRow } from "@/fea
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
+const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 const ENABLE_DEV_FALLBACK = process.env.NODE_ENV !== "production";
 
 type RequestOptions = { token?: string };
