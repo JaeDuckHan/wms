@@ -155,4 +155,4 @@ Seed default account:
 
 1. Email: `admin@example.com`
 2. Password: `x`
-3. Extra sample admin: `ops.admin@hanse-logistics.co.kr` / `1234`
+3. Extra sample admin: `ops.admin@amorepacific-partner.co.kr` / `1234`

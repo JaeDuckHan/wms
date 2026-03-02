@@ -56,7 +56,7 @@ type RawInboundLog = {
   created_at: string;
 };
 
-type RawClient = { id: number; name_kr: string };
+type RawClient = { id: number; client_code?: string; name_kr?: string; name_en?: string };
 type RawProduct = { id: number; barcode_full: string; name_kr: string };
 type RawLot = { id: number; lot_no: string };
 type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
@@ -246,6 +246,14 @@ function mapInboundOrder(
   };
 }
 
+function formatClientLabel(client?: RawClient): string {
+  if (!client) return "";
+  const code = (client.client_code ?? "").trim();
+  const name = (client.name_kr ?? client.name_en ?? "").trim();
+  if (code && name) return `${code} | ${name}`;
+  return name || code;
+}
+
 function mapItems(rawItems: RawInboundItem[], products: RawProduct[], lots: RawLot[]): InboundItem[] {
   const productMap = new Map(products.map((product) => [product.id, product]));
   const lotMap = new Map(lots.map((lot) => [lot.id, lot]));
@@ -275,7 +283,7 @@ export async function getInboundOrders(query?: InboundListQuery, options?: Reque
       requestJson<RawInboundOrder[]>("/inbound-orders", undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
     ]);
-    const clientMap = new Map(clients.map((client) => [client.id, client.name_kr]));
+    const clientMap = new Map(clients.map((client) => [client.id, formatClientLabel(client)]));
     const mapped = orders.map((order) => mapInboundOrder(order, clientMap.get(order.client_id) ?? "", []));
     if (mapped.length === 0 && shouldUseFallback(token)) {
       return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
@@ -318,7 +326,7 @@ export async function getInboundOrderByNo(inboundNo: string, options?: RequestOp
     } catch (error) {
       if (!(error instanceof ApiError && error.status === 404)) throw error;
     }
-    const clientName = clients.find((client) => client.id === rawOrder.client_id)?.name_kr ?? "";
+    const clientName = formatClientLabel(clients.find((client) => client.id === rawOrder.client_id));
     const items = mapItems(rawItems, products, lots);
     return mapInboundOrder(rawOrder, clientName, items, mapInboundLogs(rawLogs));
   } catch (error) {
