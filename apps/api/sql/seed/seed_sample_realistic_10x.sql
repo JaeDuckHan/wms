@@ -1,4 +1,4 @@
-SET NAMES utf8mb4;
+SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 START TRANSACTION;
 
@@ -24,7 +24,7 @@ CREATE TEMPORARY TABLE tmp_seed_10x (
   tracking_no VARCHAR(120) NOT NULL,
   inbound_qty INT UNSIGNED NOT NULL,
   outbound_qty INT UNSIGNED NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 INSERT INTO tmp_seed_10x (
   row_no, client_code, client_name_kr, client_name_en, contact_name, phone, email, address,
