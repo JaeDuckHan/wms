@@ -80,10 +80,164 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "DB connected"
+            "description": "DB connected and billing schema ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "db",
+                    "serverTime",
+                    "billing"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "db": {
+                      "type": "string",
+                      "example": "wms_test"
+                    },
+                    "serverTime": {
+                      "type": "string",
+                      "example": "2026-03-02T10:00:00.000Z"
+                    },
+                    "billing": {
+                      "type": "object",
+                      "required": [
+                        "ready",
+                        "required_tables",
+                        "missing_tables",
+                        "table_presence"
+                      ],
+                      "properties": {
+                        "ready": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "required_tables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "missing_tables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "table_presence": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "DB connected but billing schema is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "db",
+                    "serverTime",
+                    "billing",
+                    "message"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "db": {
+                      "type": "string",
+                      "example": "wms_test"
+                    },
+                    "serverTime": {
+                      "type": "string",
+                      "example": "2026-03-02T10:00:00.000Z"
+                    },
+                    "billing": {
+                      "type": "object",
+                      "required": [
+                        "ready",
+                        "required_tables",
+                        "missing_tables",
+                        "table_presence"
+                      ],
+                      "properties": {
+                        "ready": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "required_tables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "missing_tables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "table_presence": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Billing schema is not ready. Apply billing patches and restart."
+                    }
+                  }
+                }
+              }
+            }
           },
           "500": {
-            "description": "DB connection failed"
+            "description": "DB connection failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "message",
+                    "error"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Database connection failed"
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Access denied for user"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

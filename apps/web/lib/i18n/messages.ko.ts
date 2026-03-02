@@ -25,7 +25,7 @@ export const messagesKo = {
     downloadCsv: "CSV 다운로드",
     savePng: "PNG 저장",
     demoMode: "데모 모드",
-    signedOut: "로그아웃되었습니다",
+    signedOut: "로그아웃됨",
   },
   sidebar: {
     product: "Kowinsblue 3PL",
@@ -37,7 +37,7 @@ export const messagesKo = {
     title: "대시보드",
     desc: "데모 가능한 보관 대시보드 모듈입니다.",
     trendCardDesc: "일/주/월 단위 CBM/팔레트/SKU 합계를 확인합니다.",
-    billingCardDesc: "창고/화주별 월 보관요금을 미리 계산합니다.",
+    billingCardDesc: "창고/고객별 월 보관 요금을 미리 계산합니다.",
     capacityCardDesc: "창고 사용률과 위험 알림을 확인합니다.",
   },
   trend: {
@@ -47,15 +47,23 @@ export const messagesKo = {
   },
   billing: {
     title: "보관 요금 미리보기",
-    desc: "월 보관요금 시뮬레이션입니다.",
+    desc: "월별 보관 요금 시뮬레이션입니다.",
     thisMonth: "이번 달",
+  },
+  billingInvoices: {
+    dateSelectRequired: "시작일과 종료일을 모두 선택하세요.",
+    dateRangeInvalid: "시작일은 종료일보다 늦을 수 없습니다.",
+    rangeErrorTitle: "기간 형식 오류",
+    subtitle: "캘린더 기간 검색을 사용합니다. 청구서 생성은 종료일의 월과 환율 기준을 사용합니다.",
+    rangePrefix: "검색기간",
+    baseDatePrefix: "생성기준일(종료일)",
   },
   capacity: {
     title: "창고 적재율",
-    desc: "위험 알림이 포함된 사용률 모니터링입니다.",
+    desc: "위험 알림 포함 사용률 모니터링입니다.",
   },
   demo: {
-    banner: "데모 모드가 활성화되어 프리셋과 데모 액션을 사용할 수 있습니다.",
+    banner: "데모 모드가 켜져 있어 프리셋과 데모 액션을 사용할 수 있습니다.",
     generateLast7days: "데모 스냅샷 생성 (최근 7일)",
     generating: "생성 중...",
   },
@@ -66,7 +74,6 @@ export const messagesKo = {
     month: "month YYYY-MM",
     warehouseId: "warehouseId",
     clientId: "clientId",
-    pressEnter: "Enter 키로 조회할 수 있습니다.",
+    pressEnter: "Enter로 조회합니다.",
   },
 } as const;
-

@@ -1,7 +1,7 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const swaggerUi = require("swagger-ui-express");
-const { pingDb } = require("./db");
+const { pingDb, getBillingSchemaReadiness } = require("./db");
 const { authenticateToken } = require("./middleware/auth");
 const { enforceWriteAccess } = require("./middleware/rbac");
 const authRouter = require("./routes/auth");
@@ -51,14 +51,28 @@ function createApp() {
 
   app.get("/health/db", async (_req, res) => {
     try {
-      const result = await pingDb();
-      res.json({
-        ok: true,
+      const [result, billingReadiness] = await Promise.all([
+        pingDb(),
+        getBillingSchemaReadiness()
+      ]);
+
+      const payload = {
+        ok: billingReadiness.ready,
         db: result.db,
-        serverTime: result.server_time
-      });
+        serverTime: result.server_time,
+        billing: billingReadiness
+      };
+
+      if (!billingReadiness.ready) {
+        return res.status(503).json({
+          ...payload,
+          message: "Billing schema is not ready. Apply billing patches and restart."
+        });
+      }
+
+      return res.json(payload);
     } catch (error) {
-      res.status(500).json({
+      return res.status(500).json({
         ok: false,
         message: "Database connection failed",
         error: error.message
@@ -118,13 +132,42 @@ function createApp() {
 }
 
 function startServer(port = Number(process.env.PORT || 3100), options = {}) {
-  const { startScheduler = true } = options;
+  const {
+    startScheduler = true,
+    billingSchemaGuardMode = process.env.BILLING_SCHEMA_GUARD_MODE || (process.env.NODE_ENV === "production" ? "strict" : "warn")
+  } = options;
   const app = createApp();
   const server = app.listen(port, () => {
     if (startScheduler) {
       startStorageSnapshotSchedule();
     }
     console.log(`wms-api listening on http://localhost:${port}`);
+    void (async () => {
+      try {
+        const readiness = await getBillingSchemaReadiness();
+        if (readiness.ready) {
+          console.log("[schema-guard] billing schema ready");
+          return;
+        }
+
+        const missing = readiness.missing_tables.join(", ");
+        console.error(`[schema-guard] missing billing tables: ${missing}`);
+        console.error("[schema-guard] apply patches:");
+        console.error("  1) apps/api/sql/patch_billing_invoice_engine.sql");
+        console.error("  2) apps/api/sql/patch_multi_warehouse_billing_storage.sql");
+
+        if (billingSchemaGuardMode === "strict") {
+          console.error("[schema-guard] strict mode enabled, shutting down API.");
+          server.close(() => {
+            if (require.main === module) {
+              process.exit(1);
+            }
+          });
+        }
+      } catch (error) {
+        console.error(`[schema-guard] check failed: ${error.message}`);
+      }
+    })();
   });
   return server;
 }

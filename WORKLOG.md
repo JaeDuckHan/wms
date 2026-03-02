@@ -173,3 +173,86 @@
 - `a0830f8` fix(web): reorder billing tabs to events before invoices
 - `9ea6283` fix(web): route billing nav entry to billing events by default
 - `9db065e` feat(api): apply outbound shipment status-driven stock and billing sync
+
+## 2026-03-02 (Docker deployment baseline + realistic sample data)
+
+- [Request] Switched deployment guidance to Docker-based operations for Ubuntu server (`3pl.kowinsblue.com`).
+- [DevOps] Added monorepo-level Docker Compose stack and app Dockerfiles.
+  - `web` (Next.js), `api` (Express), `db` (MySQL 8) as a single `docker compose` runtime.
+  - Host exposure policy: bind app ports to `127.0.0.1` and keep public access through host Nginx only.
+- [DevOps] Added deployment/env documentation for Docker flow.
+  - Introduced `docker.env.example` and `apps/web/DOCKER_DEPLOYMENT.md`.
+- [Data] Added new realistic sample seed for integrated operations.
+  - File: `apps/api/sql/seed/seed_sample_realistic_10x.sql`
+  - Includes minimum 10 records each for inbound/outbound/stock balance-linked flows.
+  - Updated to cosmetics-domain sample products and realistic order/tracking style IDs.
+- [UI/API alignment] Updated inbound client label rendering to include code + name.
+  - Inbound list/detail client text now uses `client_code | client_name`.
+- [Compatibility fix] Applied MySQL 8 collation compatibility in sample seed.
+  - `SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci`
+  - Temporary table collation explicitly set to `utf8mb4_0900_ai_ci`.
+- [Ops note] Existing DB volumes do not auto-rerun init scripts; sample seed can be applied manually via `cat ... | mysql` pipeline.
+
+### Commits
+
+- `9589c19` feat(devops): add docker compose deployment stack
+- `607fa19` feat(api): add realistic 10x sample seed for inbound outbound stock
+- `ba1e42e` chore(api): refine sample seed to realistic cosmetics data
+- `1d819f5` fix(api): align sample seed collation for mysql8 compatibility
+- `38eb0b6` feat(web): show inbound client code with realistic cosmetics sample clients
+
+## 2026-03-02 (Docker runtime validation + billing schema alignment)
+
+- [Server feedback] Docker runtime on Ubuntu validated with HTTPS/Nginx already active, but app-side compose/table mismatch discovered during live bring-up.
+- [Issue] API container did not include `/app/scripts`, so scenario seed script required manual copy inside container.
+- [Issue] DB had `service_events` but lacked `billing_events`, while Billing Events UI/API (`/billing/events`) depends on `billing_events`.
+- [Impact] Billing Events tab remained empty even when inbound/outbound records existed in non-billable/billable statuses.
+- [Fix] Updated Docker/API packaging and DB init order to align billing schema automatically on fresh bootstrap.
+  - `apps/api/Dockerfile`: include `scripts/`, `sql/`, `.env.example`.
+  - `docker-compose.yml`: add init patches before sample seed:
+    1) `patch_billing_invoice_engine.sql`
+    2) `patch_multi_warehouse_billing_storage.sql`
+- [Fix] Updated runbook to include patch commands for already-running DB volumes.
+  - `apps/web/DOCKER_DEPLOYMENT.md` now includes explicit patch execution commands.
+- [Fix] Hardened integrated scenario seed script behavior when billing schema is absent.
+  - Added warning path: skip billing seed with clear log if `billing_events` table is missing.
+- [Ops confirmation] After patching, expected table ownership is:
+  - Billing tab/event engine: `billing_events`
+  - Legacy settlement flow linkage: `service_events`
+
+### Commits
+
+- `8636d15` feat(api): add integrated random scenario seed for end-to-end testing
+- `6ff37ef` fix(devops): include api scripts and billing schema patches in docker flow
+
+## 2026-03-02 (Billing contract hardening + health/openapi sync + i18n recovery)
+
+- [Request] `docs/worklog-based-feature-uiux-proposals-2026-03-02.md` 기준으로 우선순위 작업(P0 -> P1 -> OpenAPI sync)을 순차 적용.
+- [P0 API guard] Billing 필수 스키마 readiness 점검 추가.
+  - `apps/api/src/db.js`: Billing required tables + readiness 유틸 추가.
+  - `apps/api/src/server.js`: `/health/db`에 `billing.ready`, `missing_tables`, `table_presence` 포함.
+  - Billing schema 미준비 시 `/health/db`는 `503`으로 명시적 실패 반환.
+- [P0 startup safety] API 기동 시 스키마 가드 로그 추가.
+  - dev 기본 `warn`, production 기본 `strict`.
+  - `BILLING_SCHEMA_GUARD_MODE`로 오버라이드 가능.
+- [P0 Docker ops] 기존 volume 환경용 idempotent billing patch 스크립트 추가.
+  - `apps/api/scripts/run_docker_billing_patch_idempotent.sh`
+  - `apps/web/DOCKER_DEPLOYMENT.md`에 스크립트 기반 절차 반영.
+- [P1 UX contract] Billing invoice 기간 검증 메시지 클라이언트/서버 통일.
+  - 공통 메시지:
+    - `Please select both start and end dates.`
+    - `Start date cannot be later than end date.`
+  - API `/billing/invoices`에서 잘못된 range 요청을 `400 INVALID_DATE_RANGE`로 처리.
+  - Web 인보이스 페이지의 하드코딩 문구를 i18n 키 기반으로 정리.
+- [P1 i18n governance] `Search`, `Issue`, `Mark Paid`, `Original THB` 토큰을 i18n 사전에 등록해 체크 안정화.
+- [i18n recovery] `messages.ko.ts`가 파서 에러 상태였던 문제를 UTF-8 정상 구조 + 한국어 값으로 복구.
+  - 메뉴/화면 병기(`한글 / English`) 표시 동작 복원.
+- [P0 docs sync] `/health/db` 실제 응답(200/503/500) 스펙을 `apps/api/src/openapi.json`에 동기화.
+
+### Verification
+
+- `apps/api`: `node --check` (수정 라우트/서버/db) passed.
+- `apps/api`: `npm run build` passed.
+- `apps/api`: `npm run test:e2e:health-smoke` passed (`/health` 기준).
+- `apps/web`: `npm run i18n:check` passed.
+- `apps/web`: `npm run typecheck` passed.

@@ -80,10 +80,14 @@ export function BillingInvoicesPage() {
   const dateRange = useMemo(() => {
     const fromDate = normalizeDate(fromDateInput);
     const toDate = normalizeDate(toDateInput);
-    if (!fromDate || !toDate) return { fromDate: null, toDate: null, valid: false, message: "날짜를 달력에서 선택하세요." };
-    if (fromDate > toDate) return { fromDate, toDate, valid: false, message: "시작일은 종료일보다 클 수 없습니다." };
+    if (!fromDate || !toDate) {
+      return { fromDate: null, toDate: null, valid: false, message: t("billingInvoices.dateSelectRequired") };
+    }
+    if (fromDate > toDate) {
+      return { fromDate, toDate, valid: false, message: t("billingInvoices.dateRangeInvalid") };
+    }
     return { fromDate, toDate, valid: true, message: "" };
-  }, [fromDateInput, toDateInput]);
+  }, [fromDateInput, toDateInput, t]);
 
   const derivedInvoiceDate = dateRange.toDate || todayIso();
   const derivedInvoiceMonth = derivedInvoiceDate.slice(0, 7);
@@ -118,7 +122,7 @@ export function BillingInvoicesPage() {
 
   const onGenerate = async (regenerateDraft: 0 | 1) => {
     if (!dateRange.valid) {
-      pushToast({ title: "기간 형식 오류", description: dateRange.message, variant: "error" });
+      pushToast({ title: t("billingInvoices.rangeErrorTitle"), description: dateRange.message, variant: "error" });
       return;
     }
 
@@ -247,7 +251,7 @@ export function BillingInvoicesPage() {
       <PageHeader
         breadcrumbs={[{ label: "Billing" }, { label: "Invoices" }]}
         title="Invoices"
-        subtitle="Search by date range with calendar picker. Invoice generation uses end-date month and end-date FX basis."
+        subtitle={t("billingInvoices.subtitle")}
       />
       <BillingTabs />
 
@@ -262,11 +266,11 @@ export function BillingInvoicesPage() {
             <option value="issued">{t("issued")}</option>
             <option value="paid">{t("paid")}</option>
           </select>
-          <Button variant="secondary" onClick={() => void reload()}>Search</Button>
+          <Button variant="secondary" onClick={() => void reload()}>{t("Search")}</Button>
         </div>
         <div className="mt-2 text-xs text-slate-500">
           {dateRange.valid
-            ? `검색기간: ${dateRange.fromDate} ~ ${dateRange.toDate} | 생성기준일(종료일): ${derivedInvoiceDate}`
+            ? `${t("billingInvoices.rangePrefix")}: ${dateRange.fromDate} ~ ${dateRange.toDate} | ${t("billingInvoices.baseDatePrefix")}: ${derivedInvoiceDate}`
             : dateRange.message}
         </div>
 
@@ -364,7 +368,7 @@ export function BillingInvoicesPage() {
               { key: "client", label: "Client", render: (row) => `${row.client_code} (${row.client_id})` },
               { key: "date", label: "Date", render: (row) => row.invoice_date },
               { key: "fx", label: "FX", render: (row) => Number(row.fx_rate_thbkrw).toFixed(4) },
-              { key: "subtotal_thb", label: "Original THB", render: (row) => Number(row.subtotal_thb ?? 0).toLocaleString() },
+              { key: "subtotal_thb", label: t("Original THB"), render: (row) => Number(row.subtotal_thb ?? 0).toLocaleString() },
               { key: "subtotal", label: "Subtotal", render: (row) => Number(row.subtotal_krw).toLocaleString() },
               { key: "vat", label: "VAT 7%", render: (row) => Number(row.vat_krw).toLocaleString() },
               { key: "total", label: "Total KRW", render: (row) => <span className="font-semibold">{Number(row.total_krw).toLocaleString()}</span> },
@@ -381,7 +385,7 @@ export function BillingInvoicesPage() {
                         onClick={() => openInvoiceActionConfirm("issue", row.id, row.invoice_no)}
                         disabled={actingId === row.id || actionLoading}
                       >
-                        Issue
+                        {t("Issue")}
                       </Button>
                     )}
                     {row.status === "issued" && (
@@ -391,7 +395,7 @@ export function BillingInvoicesPage() {
                         onClick={() => openInvoiceActionConfirm("markPaid", row.id, row.invoice_no)}
                         disabled={actingId === row.id || actionLoading}
                       >
-                        Mark Paid
+                        {t("Mark Paid")}
                       </Button>
                     )}
                   </div>

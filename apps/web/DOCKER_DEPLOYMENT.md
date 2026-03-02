@@ -153,11 +153,14 @@ Apply billing schema patch on an already-running DB (required for Billing Events
 
 ```bash
 cd /var/www/wms
-cat apps/api/sql/patch_billing_invoice_engine.sql | docker compose --env-file .env.docker exec -T db \
-  sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+bash apps/api/scripts/run_docker_billing_patch_idempotent.sh .env.docker
+```
 
-cat apps/api/sql/patch_multi_warehouse_billing_storage.sql | docker compose --env-file .env.docker exec -T db \
-  sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+Manual fallback (same idempotent patches):
+
+```bash
+cat apps/api/sql/patch_billing_invoice_engine.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+cat apps/api/sql/patch_multi_warehouse_billing_storage.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
 ## 8) Default login

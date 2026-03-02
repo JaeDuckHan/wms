@@ -50,6 +50,14 @@ export const messagesEn = {
     desc: "Monthly storage billing simulation.",
     thisMonth: "This month",
   },
+  billingInvoices: {
+    dateSelectRequired: "Please select both start and end dates.",
+    dateRangeInvalid: "Start date cannot be later than end date.",
+    rangeErrorTitle: "Invalid date range",
+    subtitle: "Search by date range with calendar picker. Invoice generation uses end-date month and end-date FX basis.",
+    rangePrefix: "Search range",
+    baseDatePrefix: "Invoice generation base date (end date)",
+  },
   capacity: {
     title: "Warehouse Capacity",
     desc: "Usage monitoring with risk alerts.",

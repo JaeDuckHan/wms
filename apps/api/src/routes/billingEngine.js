@@ -96,6 +96,18 @@ function normalizeInvoiceStatus(status) {
   return null;
 }
 
+const BILLING_DATE_RANGE_MESSAGES = {
+  missing: "Please select both start and end dates.",
+  invalidOrder: "Start date cannot be later than end date."
+};
+
+function normalizeDateFilter(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  return text;
+}
+
 async function hasInvoiceMonthColumn(conn = getPool()) {
   if (hasInvoiceMonthColumnCache !== null) return hasInvoiceMonthColumnCache;
 
@@ -1451,6 +1463,24 @@ router.post("/billing/invoices/:id/duplicate-admin", async (req, res) => {
 router.get("/billing/invoices", async (req, res) => {
   const { client_id, invoice_month, invoice_date_from, invoice_date_to } = req.query;
   const status = normalizeInvoiceStatus(req.query.status);
+  const normalizedFromDate = normalizeDateFilter(invoice_date_from);
+  const normalizedToDate = normalizeDateFilter(invoice_date_to);
+
+  if ((invoice_date_from || invoice_date_to) && (!normalizedFromDate || !normalizedToDate)) {
+    return res.status(400).json({
+      ok: false,
+      code: "INVALID_DATE_RANGE",
+      message: BILLING_DATE_RANGE_MESSAGES.missing
+    });
+  }
+
+  if (normalizedFromDate && normalizedToDate && normalizedFromDate > normalizedToDate) {
+    return res.status(400).json({
+      ok: false,
+      code: "INVALID_DATE_RANGE",
+      message: BILLING_DATE_RANGE_MESSAGES.invalidOrder
+    });
+  }
 
   try {
     const hasInvoices = await hasTable("invoices");
@@ -1492,13 +1522,13 @@ router.get("/billing/invoices", async (req, res) => {
       query += ` AND ${monthExpr} = ?`;
       params.push(invoice_month);
     }
-    if (invoice_date_from && /^\d{4}-\d{2}-\d{2}$/.test(String(invoice_date_from))) {
+    if (normalizedFromDate) {
       query += ` AND ${dateExpr} >= ?`;
-      params.push(String(invoice_date_from));
+      params.push(normalizedFromDate);
     }
-    if (invoice_date_to && /^\d{4}-\d{2}-\d{2}$/.test(String(invoice_date_to))) {
+    if (normalizedToDate) {
       query += ` AND ${dateExpr} <= ?`;
-      params.push(String(invoice_date_to));
+      params.push(normalizedToDate);
     }
     if (status) {
       query += " AND i.status = ?";
