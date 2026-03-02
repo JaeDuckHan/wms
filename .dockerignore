@@ -1,0 +1,22 @@
+# Git
+.git
+.gitignore
+
+# Dependencies
+**/node_modules
+
+# Build outputs
+**/.next
+**/dist
+**/coverage
+
+# Env
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
