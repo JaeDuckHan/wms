@@ -141,9 +141,18 @@ docker compose --env-file .env.docker down -v
 docker compose --env-file .env.docker up -d --build
 ```
 
+Apply additional sample data to an already-running DB:
+
+```bash
+cd /var/www/wms
+cat apps/api/sql/seed/seed_sample_realistic_10x.sql | docker compose --env-file .env.docker exec -T db \
+  sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+```
+
 ## 8) Default login
 
 Seed default account:
 
 1. Email: `admin@example.com`
 2. Password: `x`
+3. Extra sample admin: `ops.admin@hanse-logistics.co.kr` / `1234`
