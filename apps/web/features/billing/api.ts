@@ -584,12 +584,19 @@ export async function cleanupSampleBillingEvents(
 }
 
 export async function listBillingEvents(
-  query?: { client_id?: number; invoice_month?: string; status?: "PENDING" | "INVOICED"; service_code?: string },
+  query?: {
+    client_id?: number;
+    invoice_month?: string;
+    invoice_year?: string;
+    status?: "PENDING" | "INVOICED";
+    service_code?: string;
+  },
   options?: RequestOptions
 ) {
   const params = new URLSearchParams();
   if (query?.client_id) params.set("client_id", String(query.client_id));
   if (query?.invoice_month) params.set("invoice_month", query.invoice_month);
+  if (!query?.invoice_month && query?.invoice_year) params.set("invoice_year", query.invoice_year);
   if (query?.status) params.set("status", query.status);
   if (query?.service_code) params.set("service_code", query.service_code);
   const suffix = params.toString() ? `?${params.toString()}` : "";
@@ -600,6 +607,7 @@ export async function listBillingEvents(
       return eventsDb.filter((row) => {
         if (query?.client_id && row.client_id !== query.client_id) return false;
         if (query?.invoice_month && !row.event_date.startsWith(query.invoice_month)) return false;
+        if (!query?.invoice_month && query?.invoice_year && !row.event_date.startsWith(query.invoice_year)) return false;
         if (query?.status && row.status !== query.status) return false;
         if (query?.service_code && row.service_code !== query.service_code) return false;
         return true;
@@ -634,12 +642,14 @@ export async function markBillingEventsPending(ids: number[], options?: RequestO
 export function billingEventsCsvUrl(query?: {
   client_id?: number;
   invoice_month?: string;
+  invoice_year?: string;
   status?: "PENDING" | "INVOICED";
   service_code?: string;
 }) {
   const params = new URLSearchParams();
   if (query?.client_id) params.set("client_id", String(query.client_id));
   if (query?.invoice_month) params.set("invoice_month", query.invoice_month);
+  if (!query?.invoice_month && query?.invoice_year) params.set("invoice_year", query.invoice_year);
   if (query?.status) params.set("status", query.status);
   if (query?.service_code) params.set("service_code", query.service_code);
   const suffix = params.toString() ? `?${params.toString()}` : "";

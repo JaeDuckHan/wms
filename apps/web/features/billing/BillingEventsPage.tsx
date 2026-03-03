@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -16,10 +16,14 @@ import {
   type BillingEvent,
 } from "@/features/billing/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-function thisMonth() {
-  return new Date().toISOString().slice(0, 7);
+
+function currentYear() {
+  return String(new Date().getFullYear());
 }
 
+function currentMonth2Digits() {
+  return String(new Date().getMonth() + 1).padStart(2, "0");
+}
 export function BillingEventsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
@@ -28,11 +32,14 @@ export function BillingEventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
-  const [month, setMonth] = useState(thisMonth());
+  const [year, setYear] = useState(currentYear());
+  const [month, setMonth] = useState(currentMonth2Digits());
   const [clientId, setClientId] = useState("");
   const [status, setStatus] = useState("");
   const [serviceCode, setServiceCode] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const normalizedYear = /^\d{4}$/.test(year) ? year : currentYear();
+  const selectedInvoiceMonth = month && /^\d{2}$/.test(month) ? `${normalizedYear}-${month}` : undefined;
 
   useEffect(() => {
     getMe().then((me) => setIsAdmin(me.role === "admin")).catch(() => setIsAdmin(false));
@@ -43,7 +50,8 @@ export function BillingEventsPage() {
     setError(null);
     try {
       const data = await listBillingEvents({
-        invoice_month: month || undefined,
+        invoice_month: selectedInvoiceMonth,
+        invoice_year: !selectedInvoiceMonth ? normalizedYear : undefined,
         client_id: clientId ? Number(clientId) : undefined,
         status: (status as "PENDING" | "INVOICED") || undefined,
         service_code: serviceCode || undefined,
@@ -64,12 +72,13 @@ export function BillingEventsPage() {
   const csvHref = useMemo(
     () =>
       billingEventsCsvUrl({
-        invoice_month: month || undefined,
+        invoice_month: selectedInvoiceMonth,
+        invoice_year: !selectedInvoiceMonth ? normalizedYear : undefined,
         client_id: clientId ? Number(clientId) : undefined,
         status: (status as "PENDING" | "INVOICED") || undefined,
         service_code: serviceCode || undefined,
       }),
-    [month, clientId, status, serviceCode]
+    [year, month, normalizedYear, selectedInvoiceMonth, clientId, status, serviceCode]
   );
 
   const toggleSelect = (id: number) => {
@@ -100,8 +109,19 @@ export function BillingEventsPage() {
       <BillingTabs />
 
       <div className="mb-4 rounded-xl border bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-5">
-          <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <div className="grid gap-3 md:grid-cols-6">
+          <Input type="number" placeholder="Year (YYYY)" value={year} onChange={(e) => setYear(e.target.value.slice(0, 4))} />
+          <select className="h-9 rounded-md border px-3 text-sm" value={month} onChange={(e) => setMonth(e.target.value)}>
+            <option value="">All months</option>
+            {Array.from({ length: 12 }, (_, idx) => {
+              const mm = String(idx + 1).padStart(2, "0");
+              return (
+                <option key={mm} value={mm}>
+                  {mm}
+                </option>
+              );
+            })}
+          </select>
           <Input placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">{t("All status")}</option>
@@ -111,6 +131,7 @@ export function BillingEventsPage() {
           <Input placeholder="Service code" value={serviceCode} onChange={(e) => setServiceCode(e.target.value.toUpperCase())} />
           <Button variant="secondary" onClick={() => void reload()}>Search</Button>
         </div>
+        <div className="mt-2 text-xs text-slate-500">기본 조회는 당월입니다. 년도 선택 + 월 비움이면 해당년도 전체를 조회합니다.</div>
         <div className="mt-3 flex flex-wrap gap-2">
           <a href={csvHref} className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50">{t("Export CSV")}</a>
           {isAdmin && (
@@ -156,6 +177,7 @@ export function BillingEventsPage() {
     </section>
   );
 }
+
 
 
 

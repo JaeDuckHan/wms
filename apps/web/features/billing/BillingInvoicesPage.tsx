@@ -57,7 +57,7 @@ export function BillingInvoicesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [clientId, setClientId] = useState(1);
+  const [clientIdInput, setClientIdInput] = useState("");
   const [fromDateInput, setFromDateInput] = useState(startOfYearIso());
   const [toDateInput, setToDateInput] = useState(todayIso());
   const [status, setStatus] = useState("");
@@ -76,6 +76,8 @@ export function BillingInvoicesPage() {
   const [sampleRemovableCount, setSampleRemovableCount] = useState(0);
   const [sampleCountLoading, setSampleCountLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingInvoiceAction>(null);
+  const parsedClientId = Number(clientIdInput || 0);
+  const selectedClientId = Number.isFinite(parsedClientId) && parsedClientId > 0 ? Math.trunc(parsedClientId) : null;
 
   const dateRange = useMemo(() => {
     const fromDate = normalizeDate(fromDateInput);
@@ -103,7 +105,7 @@ export function BillingInvoicesPage() {
     try {
       setRows(
         await listBillingInvoices({
-          client_id: clientId,
+          client_id: selectedClientId || undefined,
           invoice_date_from: dateRange.fromDate || undefined,
           invoice_date_to: dateRange.toDate || undefined,
           status: status || undefined,
@@ -125,10 +127,14 @@ export function BillingInvoicesPage() {
       pushToast({ title: t("billingInvoices.rangeErrorTitle"), description: dateRange.message, variant: "error" });
       return;
     }
+    if (!selectedClientId) {
+      pushToast({ title: "Client ID required", description: "인보이스 생성은 Client ID를 입력해야 합니다.", variant: "error" });
+      return;
+    }
 
     try {
       const result = await generateBillingInvoice({
-        client_id: clientId,
+        client_id: selectedClientId,
         invoice_month: derivedInvoiceMonth,
         invoice_date: derivedInvoiceDate,
         regenerate_draft: regenerateDraft,
@@ -136,13 +142,13 @@ export function BillingInvoicesPage() {
       if (result.reused) {
         pushToast({
           title: t("Draft already exists"),
-          description: `client=${clientId}, month=${derivedInvoiceMonth} draft reused.`,
+          description: `client=${selectedClientId}, month=${derivedInvoiceMonth} draft reused.`,
           variant: "info",
         });
       } else {
         pushToast({
           title: t("Invoice generated"),
-          description: `client=${clientId}, month=${derivedInvoiceMonth}, invoice_date=${derivedInvoiceDate}`,
+          description: `client=${selectedClientId}, month=${derivedInvoiceMonth}, invoice_date=${derivedInvoiceDate}`,
           variant: "success",
         });
       }
@@ -153,12 +159,16 @@ export function BillingInvoicesPage() {
   };
 
   const onSeed = async () => {
+    if (!selectedClientId) {
+      pushToast({ title: "Client ID required", description: "샘플 생성은 Client ID를 입력해야 합니다.", variant: "error" });
+      return;
+    }
     setSeedLoading(true);
     try {
-      const result = await seedBillingEvents({ client_id: clientId, invoice_month: derivedInvoiceMonth });
+      const result = await seedBillingEvents({ client_id: selectedClientId, invoice_month: derivedInvoiceMonth });
       pushToast({
         title: t("Sample events created"),
-        description: `Inserted ${Number(result.inserted_count ?? 0)} events. month=${derivedInvoiceMonth}, client=${clientId}`,
+        description: `Inserted ${Number(result.inserted_count ?? 0)} events. month=${derivedInvoiceMonth}, client=${selectedClientId}`,
         variant: "success",
       });
       setSeedConfirmOpen(false);
@@ -170,10 +180,14 @@ export function BillingInvoicesPage() {
   };
 
   const openCleanupConfirm = async () => {
+    if (!selectedClientId) {
+      pushToast({ title: "Client ID required", description: "정리 대상 확인은 Client ID를 입력해야 합니다.", variant: "error" });
+      return;
+    }
     setCleanupConfirmOpen(true);
     setSampleCountLoading(true);
     try {
-      const eventRows = await listBillingEvents({ client_id: clientId, invoice_month: derivedInvoiceMonth });
+      const eventRows = await listBillingEvents({ client_id: selectedClientId, invoice_month: derivedInvoiceMonth });
       const count = eventRows.filter(
         (row) => String(row.reference_id || "").startsWith("SAMPLE-") && row.invoice_id == null
       ).length;
@@ -186,12 +200,16 @@ export function BillingInvoicesPage() {
   };
 
   const onCleanupSample = async () => {
+    if (!selectedClientId) {
+      pushToast({ title: "Client ID required", description: "샘플 정리는 Client ID를 입력해야 합니다.", variant: "error" });
+      return;
+    }
     setCleanupLoading(true);
     try {
-      const result = await cleanupSampleBillingEvents({ client_id: clientId, invoice_month: derivedInvoiceMonth });
+      const result = await cleanupSampleBillingEvents({ client_id: selectedClientId, invoice_month: derivedInvoiceMonth });
       pushToast({
         title: "Sample cleanup completed",
-        description: `Removed ${Number(result.removed_count ?? 0)} events. month=${derivedInvoiceMonth}, client=${clientId}`,
+        description: `Removed ${Number(result.removed_count ?? 0)} events. month=${derivedInvoiceMonth}, client=${selectedClientId}`,
         variant: "success",
       });
       setCleanupConfirmOpen(false);
@@ -257,7 +275,7 @@ export function BillingInvoicesPage() {
 
       <div className="mb-4 rounded-xl border bg-white p-4">
         <div className="grid gap-3 md:grid-cols-6">
-          <Input type="number" placeholder="Client ID" value={clientId} onChange={(e) => setClientId(Number(e.target.value || 0))} />
+          <Input type="number" placeholder="Client ID (empty=all)" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)} />
           <Input type="date" value={fromDateInput} onChange={(e) => setFromDateInput(e.target.value)} />
           <Input type="date" value={toDateInput} onChange={(e) => setToDateInput(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -287,7 +305,7 @@ export function BillingInvoicesPage() {
           <DialogHeader>
             <DialogTitle>Sample Event Generation</DialogTitle>
             <DialogDescription>
-              This will create sample billing events for client={clientId}, month={derivedInvoiceMonth}.
+              This will create sample billing events for client={selectedClientId ?? "-"}, month={derivedInvoiceMonth}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -302,7 +320,7 @@ export function BillingInvoicesPage() {
           <DialogHeader>
             <DialogTitle>Draft Re-generation</DialogTitle>
             <DialogDescription>
-              This will re-calculate the draft for client={clientId}, month={derivedInvoiceMonth}, invoice_date={derivedInvoiceDate}.
+              This will re-calculate the draft for client={selectedClientId ?? "-"}, month={derivedInvoiceMonth}, invoice_date={derivedInvoiceDate}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -324,7 +342,7 @@ export function BillingInvoicesPage() {
           <DialogHeader>
             <DialogTitle>Sample Data Cleanup</DialogTitle>
             <DialogDescription>
-              This removes only non-invoiced SAMPLE events for client={clientId}, month={derivedInvoiceMonth}.
+              This removes only non-invoiced SAMPLE events for client={selectedClientId ?? "-"}, month={derivedInvoiceMonth}.
               {sampleCountLoading ? " Counting targets..." : ` Target rows: ${sampleRemovableCount}`}
             </DialogDescription>
           </DialogHeader>

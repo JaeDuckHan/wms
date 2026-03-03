@@ -337,6 +337,9 @@ function buildBillingEventsWhere(query, options = {}) {
   if (query.invoice_month && /^\d{4}-\d{2}$/.test(String(query.invoice_month))) {
     where += " AND DATE_FORMAT(be.event_date, '%Y-%m') = ?";
     params.push(String(query.invoice_month));
+  } else if (query.invoice_year && /^\d{4}$/.test(String(query.invoice_year))) {
+    where += " AND DATE_FORMAT(be.event_date, '%Y') = ?";
+    params.push(String(query.invoice_year));
   }
 
   return { where, params };
