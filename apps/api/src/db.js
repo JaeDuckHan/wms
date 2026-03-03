@@ -53,7 +53,9 @@ async function getTablePresence(tableNames) {
     normalized
   );
 
-  const existing = new Set(rows.map((row) => String(row.table_name)));
+  const existing = new Set(
+    rows.map((row) => String(row.table_name ?? row.TABLE_NAME ?? Object.values(row)[0] ?? ""))
+  );
   const result = {};
   for (const name of normalized) {
     result[name] = existing.has(name);
