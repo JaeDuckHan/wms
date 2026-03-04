@@ -24,6 +24,7 @@ export type ProductFormInput = {
   width_cm?: number | null;
   length_cm?: number | null;
   height_cm?: number | null;
+  cbm_m3?: number | null;
   min_storage_fee_month?: number | null;
   status?: ProductStatus;
 };

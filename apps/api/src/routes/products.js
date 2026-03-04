@@ -17,6 +17,7 @@ const baseProductSchema = z.object({
   width_cm: z.coerce.number().positive().nullable().optional(),
   length_cm: z.coerce.number().positive().nullable().optional(),
   height_cm: z.coerce.number().positive().nullable().optional(),
+  cbm_m3: z.coerce.number().positive().nullable().optional(),
   min_storage_fee_month: z.coerce.number().nonnegative().nullable().optional(),
   unit: z.string().max(30).nullable().optional(),
   status: z.enum(["active", "inactive"]).default("active")
@@ -165,6 +166,7 @@ router.post("/", validate(productCreateSchema), async (req, res) => {
     width_cm = null,
     length_cm = null,
     height_cm = null,
+    cbm_m3 = null,
     min_storage_fee_month = 0,
     unit = null,
     status = "active"
@@ -186,7 +188,11 @@ router.post("/", validate(productCreateSchema), async (req, res) => {
     const widthCm = toNullableNumber(width_cm);
     const lengthCm = toNullableNumber(length_cm);
     const heightCm = toNullableNumber(height_cm);
-    const cbmM3 = computeCbmM3(widthCm, lengthCm, heightCm);
+    const requestedCbmM3 = toNullableNumber(cbm_m3);
+    const cbmM3 =
+      requestedCbmM3 != null && requestedCbmM3 > 0
+        ? Number(requestedCbmM3.toFixed(6))
+        : computeCbmM3(widthCm, lengthCm, heightCm);
     const minStorageFeeMonth = toNullableNumber(min_storage_fee_month);
 
     const [result] = await getPool().query(
@@ -243,6 +249,7 @@ router.put("/:id", validate(productUpdateSchema), async (req, res) => {
     width_cm,
     length_cm,
     height_cm,
+    cbm_m3,
     min_storage_fee_month,
     unit,
     status
@@ -264,7 +271,11 @@ router.put("/:id", validate(productUpdateSchema), async (req, res) => {
     const widthCm = toNullableNumber(width_cm);
     const lengthCm = toNullableNumber(length_cm);
     const heightCm = toNullableNumber(height_cm);
-    const cbmM3 = computeCbmM3(widthCm, lengthCm, heightCm);
+    const requestedCbmM3 = toNullableNumber(cbm_m3);
+    const cbmM3 =
+      requestedCbmM3 != null && requestedCbmM3 > 0
+        ? Number(requestedCbmM3.toFixed(6))
+        : computeCbmM3(widthCm, lengthCm, heightCm);
     const minStorageFeeMonth = toNullableNumber(min_storage_fee_month);
 
     const [result] = await getPool().query(

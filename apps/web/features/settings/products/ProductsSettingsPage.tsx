@@ -29,6 +29,7 @@ type FormState = {
   width_cm: string;
   length_cm: string;
   height_cm: string;
+  cbm_m3: string;
   min_storage_fee_month: string;
   status: ProductStatus;
 };
@@ -43,6 +44,7 @@ const initialForm: FormState = {
   width_cm: "",
   length_cm: "",
   height_cm: "",
+  cbm_m3: "",
   min_storage_fee_month: "",
   status: "active",
 };
@@ -170,6 +172,7 @@ export function ProductsSettingsPage() {
       width_cm: row.width_cm == null ? "" : String(row.width_cm),
       length_cm: row.length_cm == null ? "" : String(row.length_cm),
       height_cm: row.height_cm == null ? "" : String(row.height_cm),
+      cbm_m3: row.cbm_m3 == null ? "" : String(row.cbm_m3),
       min_storage_fee_month: row.min_storage_fee_month == null ? "" : String(row.min_storage_fee_month),
       status: row.status,
     });
@@ -198,6 +201,7 @@ export function ProductsSettingsPage() {
       width_cm: parseOptionalPositiveDecimal(form.width_cm),
       length_cm: parseOptionalPositiveDecimal(form.length_cm),
       height_cm: parseOptionalPositiveDecimal(form.height_cm),
+      cbm_m3: parseOptionalPositiveDecimal(form.cbm_m3),
       min_storage_fee_month: parseOptionalNonNegativeDecimal(form.min_storage_fee_month),
       status: form.status,
     };
@@ -400,8 +404,17 @@ export function ProductsSettingsPage() {
                 inputMode="decimal"
               />
             </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">CBM (m³) - Optional Manual</label>
+              <Input
+                value={form.cbm_m3}
+                onChange={(e) => setForm((prev) => ({ ...prev, cbm_m3: normalizeDecimalInput(e.target.value) }))}
+                inputMode="decimal"
+                placeholder="비우면 가로/세로/높이로 자동 계산"
+              />
+            </div>
             <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">CBM (Auto)</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">CBM (Auto Preview)</p>
               <p className="mt-1 font-mono text-slate-700">{cbmPreview == null ? "-" : cbmPreview.toFixed(6)}</p>
             </div>
             <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">

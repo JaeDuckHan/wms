@@ -78,6 +78,7 @@ function validateInput(input: ProductFormInput) {
   const width_cm = parseOptionalPositiveNumber(input.width_cm, "width_cm");
   const length_cm = parseOptionalPositiveNumber(input.length_cm, "length_cm");
   const height_cm = parseOptionalPositiveNumber(input.height_cm, "height_cm");
+  const cbm_m3 = parseOptionalPositiveNumber(input.cbm_m3, "cbm_m3");
   const min_storage_fee_month = parseOptionalNonNegativeNumber(input.min_storage_fee_month, "min_storage_fee_month");
 
   if (!client_code) throw new Error("Client code is required.");
@@ -99,6 +100,7 @@ function validateInput(input: ProductFormInput) {
     width_cm,
     length_cm,
     height_cm,
+    cbm_m3,
     min_storage_fee_month,
   };
 }
@@ -146,7 +148,7 @@ async function listProductsFromMock(): Promise<Product[]> {
 async function createProductInMock(input: ProductFormInput): Promise<Product> {
   const validated = validateInput(input);
   assertUnique(validated.client_code, validated.barcode_raw);
-  const cbm = computeCbmM3(validated.width_cm, validated.length_cm, validated.height_cm);
+  const cbm = validated.cbm_m3 ?? computeCbmM3(validated.width_cm, validated.length_cm, validated.height_cm);
   const created: Product = {
     id: `prd-${Date.now()}`,
     client_id: validated.client_id,
@@ -171,7 +173,7 @@ async function updateProductInMock(id: string, input: ProductFormInput): Promise
   if (idx < 0) throw new Error("Product not found.");
   const validated = validateInput(input);
   assertUnique(validated.client_code, validated.barcode_raw, id);
-  const cbm = computeCbmM3(validated.width_cm, validated.length_cm, validated.height_cm);
+  const cbm = validated.cbm_m3 ?? computeCbmM3(validated.width_cm, validated.length_cm, validated.height_cm);
   const updated: Product = {
     ...mockDb[idx],
     client_id: validated.client_id,
@@ -240,6 +242,7 @@ export async function createProduct(input: ProductFormInput, options?: RequestOp
           width_cm: validated.width_cm,
           length_cm: validated.length_cm,
           height_cm: validated.height_cm,
+          cbm_m3: validated.cbm_m3,
           min_storage_fee_month: validated.min_storage_fee_month,
           status: validated.status,
         }),
@@ -273,6 +276,7 @@ export async function updateProduct(id: string, input: ProductFormInput, options
           width_cm: validated.width_cm,
           length_cm: validated.length_cm,
           height_cm: validated.height_cm,
+          cbm_m3: validated.cbm_m3,
           min_storage_fee_month: validated.min_storage_fee_month,
           status: validated.status,
         }),
@@ -308,6 +312,7 @@ export async function toggleProductStatus(id: string, options?: RequestOptions):
           width_cm: current.width_cm,
           length_cm: current.length_cm,
           height_cm: current.height_cm,
+          cbm_m3: current.cbm_m3,
           min_storage_fee_month: current.min_storage_fee_month ?? 0,
         }),
       },
