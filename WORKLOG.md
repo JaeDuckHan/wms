@@ -307,3 +307,15 @@
 
 - `apps/web`: `npm run typecheck` passed.
 - `apps/api`: `node --check src/routes/products.js` passed.
+
+## 2026-03-05 (Remote safety hardening)
+
+- [Request] 잘못된 저장소 푸시 재발 방지를 위해 분리 저장소 remote 비활성화 요청.
+- [Action] 다음 저장소에서 `origin` remote를 `origin-disabled`로 변경.
+  - `/mnt/d/_작업폴더_codex/wms-web`
+  - `/mnt/d/_작업폴더_codex/wms-api`
+- [Result] 실사용 monorepo(`/mnt/d/_작업폴더_codex`)의 `origin = https://github.com/JaeDuckHan/wms.git`는 유지.
+- [Current remotes]
+  - `wms-web`: `origin-disabled(3pl.git)`, `wms(wms.git)`
+  - `wms-api`: `origin-disabled(wms-api.git)`
+
