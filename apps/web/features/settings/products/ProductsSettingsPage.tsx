@@ -353,7 +353,7 @@ export function ProductsSettingsPage() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? t("Edit product") : t("New product")}</DialogTitle>
             <DialogDescription>{t("Unique key: client_code + barcode_raw.")}</DialogDescription>
@@ -397,20 +397,20 @@ export function ProductsSettingsPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Min Storage Fee / Month</label>
-              <Input
-                value={form.min_storage_fee_month}
-                onChange={(e) => setForm((prev) => ({ ...prev, min_storage_fee_month: normalizeDecimalInput(e.target.value) }))}
-                inputMode="decimal"
-              />
-            </div>
-            <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">CBM (m³) - Optional Manual</label>
               <Input
                 value={form.cbm_m3}
                 onChange={(e) => setForm((prev) => ({ ...prev, cbm_m3: normalizeDecimalInput(e.target.value) }))}
                 inputMode="decimal"
                 placeholder="비우면 가로/세로/높이로 자동 계산"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Min Storage Fee / Month</label>
+              <Input
+                value={form.min_storage_fee_month}
+                onChange={(e) => setForm((prev) => ({ ...prev, min_storage_fee_month: normalizeDecimalInput(e.target.value) }))}
+                inputMode="decimal"
               />
             </div>
             <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
