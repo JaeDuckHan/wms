@@ -11,13 +11,21 @@ async function forward(request: NextRequest, params: { path: string[] }) {
   const target = `${API_BASE_URL}/api/dashboard/${joinedPath}${query}`;
 
   const headers = new Headers();
+  const contentType = request.headers.get("content-type");
   const incomingAuth = request.headers.get("authorization");
+  if (contentType) headers.set("content-type", contentType);
   if (incomingAuth) headers.set("authorization", incomingAuth);
   else if (token) headers.set("authorization", `Bearer ${token}`);
+
+  const body =
+    request.method === "GET" || request.method === "HEAD"
+      ? undefined
+      : await request.text();
 
   const response = await fetch(target, {
     method: request.method,
     headers,
+    body,
     cache: "no-store",
   });
 
@@ -31,5 +39,9 @@ async function forward(request: NextRequest, params: { path: string[] }) {
 }
 
 export async function GET(request: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  return forward(request, await ctx.params);
+}
+
+export async function POST(request: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   return forward(request, await ctx.params);
 }

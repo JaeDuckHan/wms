@@ -85,6 +85,11 @@ CREATE TABLE products (
   name_kr VARCHAR(255) NOT NULL,
   name_en VARCHAR(255) NULL,
   volume_ml INT UNSIGNED NULL,
+  width_cm DECIMAL(10,2) NULL,
+  length_cm DECIMAL(10,2) NULL,
+  height_cm DECIMAL(10,2) NULL,
+  cbm_m3 DECIMAL(18,6) NULL,
+  min_storage_fee_month DECIMAL(18,4) NOT NULL DEFAULT 0,
   unit VARCHAR(30) NULL,
   status ENUM('active','inactive') NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -361,6 +366,25 @@ CREATE TABLE storage_snapshots (
   KEY idx_storage_snapshot_client_date (client_id, snapshot_date),
   CONSTRAINT fk_storage_snapshot_wh FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
   CONSTRAINT fk_storage_snapshot_client FOREIGN KEY (client_id) REFERENCES clients(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE storage_rate_settings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  warehouse_id BIGINT UNSIGNED NULL,
+  client_id BIGINT UNSIGNED NULL,
+  rate_cbm DECIMAL(18,4) NOT NULL DEFAULT 0,
+  rate_pallet DECIMAL(18,4) NOT NULL DEFAULT 0,
+  currency VARCHAR(10) NOT NULL DEFAULT 'THB',
+  effective_from DATE NOT NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_srs_scope_effective (warehouse_id, client_id, effective_from, status, deleted_at),
+  KEY idx_srs_effective_status (effective_from, status, deleted_at),
+  CONSTRAINT fk_srs_warehouse FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+  CONSTRAINT fk_srs_client FOREIGN KEY (client_id) REFERENCES clients(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE service_events (

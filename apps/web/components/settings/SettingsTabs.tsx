@@ -10,6 +10,7 @@ const tabs = [
   { href: "/settings/warehouses", label: "Warehouses" },
   { href: "/settings/service-rates", label: "Service Rates" },
   { href: "/settings/contract-rates", label: "Contract Rates" },
+  { href: "/settings/storage-rates", label: "Storage Rates" },
   { href: "/settings/exchange-rates", label: "Exchange Rates" },
 ];
 

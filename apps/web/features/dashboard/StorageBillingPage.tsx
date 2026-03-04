@@ -52,7 +52,7 @@ function isNonNegativeNumber(value: string) {
   return value === "" || (!Number.isNaN(Number(value)) && Number(value) >= 0);
 }
 
-type BillingSortKey = "days_count" | "avg_cbm" | "avg_pallet" | "amount_total";
+type BillingSortKey = "days_count" | "avg_cbm" | "rate_cbm" | "amount_cbm" | "amount_total";
 
 type BillingFilters = {
   month: string;
@@ -67,7 +67,9 @@ const billingColumns = [
   { key: "client_id", label: "client_id" },
   { key: "days_count", label: "days_count" },
   { key: "avg_cbm", label: "avg_cbm" },
-  { key: "avg_pallet", label: "avg_pallet" },
+  { key: "rate_cbm", label: "rate_cbm" },
+  { key: "amount_cbm", label: "amount_cbm" },
+  { key: "warnings", label: "warnings" },
   { key: "amount_total", label: "amount_total" },
 ] satisfies CsvColumn<Record<string, unknown>>[];
 
@@ -272,7 +274,9 @@ export function StorageBillingPage() {
       client_id: safeNumber(row.client_id),
       days_count: safeNumber(row.days_count),
       avg_cbm: safeNumber(row.avg_cbm),
-      avg_pallet: safeNumber(row.avg_pallet),
+      rate_cbm: safeNumber(row.rate_cbm ?? 0),
+      amount_cbm: safeNumber(row.amount_cbm),
+      warnings: (row.warning_messages ?? []).join("; "),
       amount_total: safeNumber(row.amount_total),
     }));
     const csv = toCsv(rows, billingColumns);
@@ -288,7 +292,9 @@ export function StorageBillingPage() {
         client_id: safeNumber(row.client_id),
         days_count: safeNumber(row.days_count),
         avg_cbm: safeNumber(row.avg_cbm),
-        avg_pallet: safeNumber(row.avg_pallet),
+        rate_cbm: safeNumber(row.rate_cbm ?? 0),
+        amount_cbm: safeNumber(row.amount_cbm),
+        warnings: (row.warning_messages ?? []).join("; "),
         amount_total: safeNumber(row.amount_total),
       }));
       await copyToClipboard(toTsv(rows, billingColumns));
@@ -406,6 +412,21 @@ export function StorageBillingPage() {
             <CardContent className="text-2xl font-semibold">{formatMoney(data?.summary.amount_pallet ?? 0)}</CardContent>
           </Card>
           </div>
+          {(data?.alerts?.insufficient_snapshot_days_count || data?.alerts?.missing_cbm_scope_count) ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Warnings</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                {(data?.alerts?.insufficient_snapshot_days_count ?? 0) > 0 ? (
+                  <Badge variant="warning">{`${t("insufficient snapshot days")}: ${data?.alerts?.insufficient_snapshot_days_count}`}</Badge>
+                ) : null}
+                {(data?.alerts?.missing_cbm_scope_count ?? 0) > 0 ? (
+                  <Badge variant="warning">{`missing CBM values: ${data?.alerts?.missing_cbm_scope_count}`}</Badge>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -438,7 +459,7 @@ export function StorageBillingPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <TableSkeleton rows={8} cols={6} />
+            <TableSkeleton rows={8} cols={8} />
           ) : !tableRows.length ? (
             <EmptyState
               title="No billing lines"
@@ -474,11 +495,18 @@ export function StorageBillingPage() {
                       </button>
                     </TableHead>
                     <TableHead className={`${stickyHeaderClass} text-right`}>
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("avg_pallet")}>
-                        avg_pallet
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("rate_cbm")}>
+                        rate_cbm
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("amount_cbm")}>
+                        amount_cbm
+                        <ArrowDownUp className="h-3.5 w-3.5" />
+                      </button>
+                    </TableHead>
+                    <TableHead className={`${stickyHeaderClass}`}>warnings</TableHead>
                     <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("amount_total")}>
                         amount_total
@@ -499,7 +527,16 @@ export function StorageBillingPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">{formatCbm(row.avg_cbm)}</TableCell>
-                      <TableCell className="text-right">{formatCbm(row.avg_pallet)}</TableCell>
+                      <TableCell className="text-right">{formatMoney(row.rate_cbm ?? 0)}</TableCell>
+                      <TableCell className="text-right">{formatMoney(row.amount_cbm)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {(row.warning_messages ?? []).map((message) => (
+                            <Badge key={`${row.warehouse_id}-${row.client_id}-${message}`} variant="warning">{message}</Badge>
+                          ))}
+                          {(row.warning_messages ?? []).length === 0 ? "-" : null}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">{formatMoney(row.amount_total)}</TableCell>
                     </TableRow>
                   ))}

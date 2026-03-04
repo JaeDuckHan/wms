@@ -15,16 +15,32 @@ export type StorageTrendResponse = {
 export type StorageBillingResponse = {
   ok: true;
   month: string;
-  summary: { amount_total: number; amount_cbm: number; amount_pallet: number };
+  summary: {
+    amount_total: number;
+    amount_cbm: number;
+    amount_pallet: number;
+    insufficient_snapshot_days_count?: number;
+    missing_cbm_scope_count?: number;
+  };
+  alerts?: {
+    insufficient_snapshot_days_count: number;
+    missing_cbm_scope_count: number;
+  };
   lines: Array<{
     warehouse_id: number;
     client_id: number;
     days_count: number;
     avg_cbm: number;
     avg_pallet: number;
+    rate_cbm?: number;
+    rate_pallet?: number;
+    currency?: string;
     amount_total: number;
     amount_cbm: number;
     amount_pallet: number;
+    missing_product_cbm_count?: number;
+    warning_codes?: string[];
+    warning_messages?: string[];
   }>;
 };
 
@@ -203,17 +219,31 @@ function billingFallback(query?: Record<string, string | number | undefined>): S
       const days_count = 24 + ((wi + ci) % 6);
       const avg_cbm = Number((15 + wi * 2.5 + ci * 1.7).toFixed(2));
       const avg_pallet = Number((avg_cbm * 0.7).toFixed(2));
-      const amount_cbm = Math.round(avg_cbm * days_count * (Number.isFinite(rateCbm) ? rateCbm : 1200));
-      const amount_pallet = Math.round(avg_pallet * days_count * (Number.isFinite(ratePallet) ? ratePallet : 800));
+      const resolvedRateCbm = Number.isFinite(rateCbm) ? rateCbm : 1200;
+      const resolvedRatePallet = Number.isFinite(ratePallet) ? ratePallet : 800;
+      const amount_cbm = Math.round(avg_cbm * resolvedRateCbm);
+      const amount_pallet = Math.round(avg_pallet * resolvedRatePallet);
+      const warningCodes: string[] = [];
+      const warningMessages: string[] = [];
+      if (days_count < 20) {
+        warningCodes.push("insufficient_snapshot_days");
+        warningMessages.push("insufficient snapshot days");
+      }
       return {
         warehouse_id: warehouseId,
         client_id: clientId,
         days_count,
         avg_cbm,
         avg_pallet,
+        rate_cbm: resolvedRateCbm,
+        rate_pallet: resolvedRatePallet,
+        currency: "THB",
         amount_total: amount_cbm + amount_pallet,
         amount_cbm,
         amount_pallet,
+        missing_product_cbm_count: 0,
+        warning_codes: warningCodes,
+        warning_messages: warningMessages,
       };
     })
   );
@@ -222,10 +252,31 @@ function billingFallback(query?: Record<string, string | number | undefined>): S
       amount_total: acc.amount_total + row.amount_total,
       amount_cbm: acc.amount_cbm + row.amount_cbm,
       amount_pallet: acc.amount_pallet + row.amount_pallet,
+      insufficient_snapshot_days_count:
+        acc.insufficient_snapshot_days_count +
+        (row.warning_codes?.includes("insufficient_snapshot_days") ? 1 : 0),
+      missing_cbm_scope_count:
+        acc.missing_cbm_scope_count +
+        (row.warning_codes?.includes("missing_cbm_values") ? 1 : 0),
     }),
-    { amount_total: 0, amount_cbm: 0, amount_pallet: 0 }
+    {
+      amount_total: 0,
+      amount_cbm: 0,
+      amount_pallet: 0,
+      insufficient_snapshot_days_count: 0,
+      missing_cbm_scope_count: 0,
+    }
   );
-  return { ok: true, month, summary, lines };
+  return {
+    ok: true,
+    month,
+    summary,
+    alerts: {
+      insufficient_snapshot_days_count: summary.insufficient_snapshot_days_count,
+      missing_cbm_scope_count: summary.missing_cbm_scope_count,
+    },
+    lines,
+  };
 }
 
 function capacityFallback(query?: Record<string, string | number | undefined>): StorageCapacityResponse {

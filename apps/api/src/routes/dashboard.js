@@ -3,6 +3,8 @@ const { getPool } = require("../db");
 
 const router = express.Router();
 const PALLET_CBM = 1.2;
+const MIN_SNAPSHOT_DAYS_WARN = 20;
+const schemaTableCache = new Map();
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -83,6 +85,64 @@ function parseOptionalNonNegativeNumber(value, fieldName, defaultValue = 0) {
   }
 
   return { ok: true, value: parsed };
+}
+
+function toFixedNumber(value, digits = 4) {
+  return Number(Number(value || 0).toFixed(digits));
+}
+
+function monthStartToMonthEnd(monthStart) {
+  const [year, month] = String(monthStart).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month, 0));
+  return date.toISOString().slice(0, 10);
+}
+
+function monthStartToNextMonthStart(monthStart) {
+  const [year, month] = String(monthStart).split("-").map(Number);
+  if (month === 12) {
+    return `${year + 1}-01-01`;
+  }
+  return `${year}-${String(month + 1).padStart(2, "0")}-01`;
+}
+
+function getMissingCbmCondition(alias = "p") {
+  return `(
+    COALESCE(${alias}.cbm_m3, 0) <= 0
+    AND (
+      ${alias}.volume_ml IS NULL
+      OR ${alias}.volume_ml <= 0
+    )
+  )`;
+}
+
+function getEffectiveCbmExpression(alias = "p") {
+  return `COALESCE(
+    NULLIF(${alias}.cbm_m3, 0),
+    CASE
+      WHEN ${alias}.volume_ml IS NOT NULL AND ${alias}.volume_ml > 0
+      THEN (${alias}.volume_ml / 1000000)
+      ELSE 0
+    END
+  )`;
+}
+
+async function hasTable(tableName) {
+  const key = String(tableName || "").trim();
+  if (!key) return false;
+  if (schemaTableCache.has(key)) {
+    return schemaTableCache.get(key);
+  }
+
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.tables
+     WHERE table_schema = DATABASE()
+       AND table_name = ?`,
+    [key]
+  );
+  const result = Number(rows[0]?.cnt || 0) > 0;
+  schemaTableCache.set(key, result);
+  return result;
 }
 
 function resolveFilters(query = {}, body = {}) {
@@ -170,6 +230,7 @@ function getCapacityStatus(usagePctCbm) {
 async function upsertStorageSnapshots(snapshotDate, filters) {
   const pool = getPool();
   const params = [snapshotDate, PALLET_CBM];
+  const cbmExpr = getEffectiveCbmExpression("p");
   const where = appendInventoryFilter(
     " WHERE sb.deleted_at IS NULL AND p.deleted_at IS NULL AND sb.available_qty > 0",
     params,
@@ -183,8 +244,8 @@ async function upsertStorageSnapshots(snapshotDate, filters) {
       sb.warehouse_id,
       sb.client_id,
       ? AS snapshot_date,
-      ROUND(SUM((sb.available_qty * COALESCE(p.volume_ml, 0)) / 1000000), 4) AS total_cbm,
-      ROUND(SUM((sb.available_qty * COALESCE(p.volume_ml, 0)) / 1000000 / ?), 4) AS total_pallet,
+      ROUND(SUM(sb.available_qty * ${cbmExpr}), 4) AS total_cbm,
+      ROUND(SUM(sb.available_qty * ${cbmExpr} / ?), 4) AS total_pallet,
       COUNT(DISTINCT sb.product_id) AS total_sku
      FROM stock_balances sb
      JOIN products p ON p.id = sb.product_id
@@ -201,8 +262,9 @@ async function upsertStorageSnapshots(snapshotDate, filters) {
 async function fetchMissingCbmAlerts(filters) {
   const pool = getPool();
   const params = [];
+  const missingCbmCondition = getMissingCbmCondition("p");
   const where = appendInventoryFilter(
-    " WHERE sb.deleted_at IS NULL AND p.deleted_at IS NULL AND sb.available_qty > 0 AND (p.volume_ml IS NULL OR p.volume_ml <= 0)",
+    ` WHERE sb.deleted_at IS NULL AND p.deleted_at IS NULL AND sb.available_qty > 0 AND ${missingCbmCondition}`,
     params,
     filters
   );
@@ -214,16 +276,138 @@ async function fetchMissingCbmAlerts(filters) {
       p.id AS product_id,
       p.sku_code,
       p.name_kr AS product_name,
+      p.width_cm,
+      p.length_cm,
+      p.height_cm,
+      p.cbm_m3,
       SUM(sb.available_qty) AS available_qty
      FROM stock_balances sb
      JOIN products p ON p.id = sb.product_id
      ${where}
-     GROUP BY sb.warehouse_id, sb.client_id, p.id, p.sku_code, p.name_kr
+     GROUP BY sb.warehouse_id, sb.client_id, p.id, p.sku_code, p.name_kr, p.width_cm, p.length_cm, p.height_cm, p.cbm_m3
      ORDER BY sb.warehouse_id ASC, sb.client_id ASC, p.id ASC`,
     params
   );
 
   return rows;
+}
+
+async function fetchMissingCbmCountByScope(filters) {
+  const pool = getPool();
+  const params = [];
+  const missingCbmCondition = getMissingCbmCondition("p");
+  const where = appendInventoryFilter(
+    ` WHERE sb.deleted_at IS NULL AND p.deleted_at IS NULL AND sb.available_qty > 0 AND ${missingCbmCondition}`,
+    params,
+    filters
+  );
+
+  const [rows] = await pool.query(
+    `SELECT
+      sb.warehouse_id,
+      sb.client_id,
+      COUNT(DISTINCT p.id) AS missing_product_cbm_count
+     FROM stock_balances sb
+     JOIN products p ON p.id = sb.product_id
+     ${where}
+     GROUP BY sb.warehouse_id, sb.client_id`,
+    params
+  );
+
+  const map = new Map();
+  for (const row of rows) {
+    map.set(
+      `${row.warehouse_id}-${row.client_id}`,
+      Number(row.missing_product_cbm_count || 0)
+    );
+  }
+  return map;
+}
+
+async function resolveStorageRateSettingForScope(monthStart, warehouseId, clientId) {
+  const exists = await hasTable("storage_rate_settings");
+  if (!exists) {
+    return null;
+  }
+
+  const monthEnd = monthStartToMonthEnd(monthStart);
+  const params = [
+    monthEnd,
+    warehouseId,
+    clientId,
+    warehouseId,
+    clientId
+  ];
+
+  const [rows] = await getPool().query(
+    `SELECT
+      id,
+      warehouse_id,
+      client_id,
+      rate_cbm,
+      rate_pallet,
+      currency,
+      effective_from
+     FROM storage_rate_settings srs
+     WHERE srs.deleted_at IS NULL
+       AND srs.status = 'active'
+       AND srs.effective_from <= ?
+       AND (
+         (srs.warehouse_id = ? AND srs.client_id = ?)
+         OR (srs.warehouse_id = ? AND srs.client_id IS NULL)
+         OR (srs.warehouse_id IS NULL AND srs.client_id = ?)
+         OR (srs.warehouse_id IS NULL AND srs.client_id IS NULL)
+       )
+     ORDER BY
+       CASE
+         WHEN srs.warehouse_id = ? AND srs.client_id = ? THEN 1
+         WHEN srs.warehouse_id = ? AND srs.client_id IS NULL THEN 2
+         WHEN srs.warehouse_id IS NULL AND srs.client_id = ? THEN 3
+         ELSE 4
+       END ASC,
+       srs.effective_from DESC,
+       srs.id DESC
+     LIMIT 1`,
+    [...params, warehouseId, clientId, warehouseId, clientId]
+  );
+
+  if (rows.length === 0) {
+    return null;
+  }
+  return rows[0];
+}
+
+async function fetchSkuMonthlyFloorAmount(warehouseId, clientId, rateCbm) {
+  const pool = getPool();
+  const cbmExpr = getEffectiveCbmExpression("p");
+
+  const [rows] = await pool.query(
+    `SELECT
+      p.id AS product_id,
+      SUM(sb.available_qty) AS available_qty,
+      ${cbmExpr} AS cbm_m3,
+      COALESCE(p.min_storage_fee_month, 0) AS min_storage_fee_month
+     FROM stock_balances sb
+     JOIN products p ON p.id = sb.product_id
+     WHERE sb.deleted_at IS NULL
+       AND p.deleted_at IS NULL
+       AND sb.available_qty > 0
+       AND sb.warehouse_id = ?
+       AND sb.client_id = ?
+     GROUP BY p.id, ${cbmExpr}, p.min_storage_fee_month`,
+    [warehouseId, clientId]
+  );
+
+  let floorAmount = 0;
+  for (const row of rows) {
+    const availableQty = Number(row.available_qty || 0);
+    const cbm = Number(row.cbm_m3 || 0);
+    const minFee = Number(row.min_storage_fee_month || 0);
+    const calculated = availableQty * cbm * rateCbm;
+    floorAmount += Math.max(calculated, minFee);
+  }
+
+  return toFixedNumber(floorAmount);
 }
 
 async function fetchStorageBreakdown(snapshotDate, filters) {
@@ -426,34 +610,29 @@ async function getStorageBillingPreview(req, res) {
   }
 
   try {
+    const hasRateCbmOverride = req.query.rateCbm != null && req.query.rateCbm !== "";
+    const hasRatePalletOverride = req.query.ratePallet != null && req.query.ratePallet !== "";
     const filters = filtersResult.value;
     const month = monthResult.value;
     const monthStart = `${month}-01`;
+    const monthEndExclusive = monthStartToNextMonthStart(monthStart);
     const pool = getPool();
 
-    const params = [rateCbmResult.value, ratePalletResult.value, rateCbmResult.value, ratePalletResult.value, monthStart, monthStart];
+    const params = [monthStart, monthEndExclusive];
     const where = appendSnapshotFilter(
-      " WHERE ss.snapshot_date >= ? AND ss.snapshot_date < DATE_ADD(?, INTERVAL 1 MONTH)",
+      " WHERE ss.snapshot_date >= ? AND ss.snapshot_date < ?",
       params,
       filters,
       "ss"
     );
 
-    const [lines] = await pool.query(
+    const [rawLines] = await pool.query(
       `SELECT
         ss.warehouse_id,
         ss.client_id,
         COUNT(DISTINCT ss.snapshot_date) AS days_count,
         ROUND(SUM(ss.total_cbm) / NULLIF(COUNT(DISTINCT ss.snapshot_date), 0), 4) AS avg_cbm,
-        ROUND(SUM(ss.total_pallet) / NULLIF(COUNT(DISTINCT ss.snapshot_date), 0), 4) AS avg_pallet,
-        ROUND((SUM(ss.total_cbm) / NULLIF(COUNT(DISTINCT ss.snapshot_date), 0)) * ?, 4) AS amount_cbm,
-        ROUND((SUM(ss.total_pallet) / NULLIF(COUNT(DISTINCT ss.snapshot_date), 0)) * ?, 4) AS amount_pallet,
-        ROUND(
-          ((SUM(ss.total_cbm) / NULLIF(COUNT(DISTINCT ss.snapshot_date), 0)) * ?)
-          +
-          ((SUM(ss.total_pallet) / NULLIF(COUNT(DISTINCT ss.snapshot_date), 0)) * ?),
-          4
-        ) AS amount_total
+        ROUND(SUM(ss.total_pallet) / NULLIF(COUNT(DISTINCT ss.snapshot_date), 0), 4) AS avg_pallet
        FROM storage_snapshots ss
        ${where}
        GROUP BY ss.warehouse_id, ss.client_id
@@ -461,22 +640,93 @@ async function getStorageBillingPreview(req, res) {
       params
     );
 
+    const missingCbmCountByScope = await fetchMissingCbmCountByScope(filters);
+
+    const lines = [];
+    for (const row of rawLines) {
+      const warehouseId = Number(row.warehouse_id);
+      const clientId = Number(row.client_id);
+      const daysCount = Number(row.days_count || 0);
+      const avgCbm = Number(row.avg_cbm || 0);
+      const avgPallet = Number(row.avg_pallet || 0);
+      const scopeKey = `${warehouseId}-${clientId}`;
+      const missingCbmCount = Number(missingCbmCountByScope.get(scopeKey) || 0);
+      const selectedRate = await resolveStorageRateSettingForScope(monthStart, warehouseId, clientId);
+
+      const rateCbm = hasRateCbmOverride
+        ? rateCbmResult.value
+        : Number(selectedRate?.rate_cbm || 0);
+      const ratePallet = hasRatePalletOverride
+        ? ratePalletResult.value
+        : Number(selectedRate?.rate_pallet || 0);
+      const currency = selectedRate?.currency || "THB";
+
+      const amountCbmRaw = avgCbm * rateCbm;
+      const skuMinFloorAmount = await fetchSkuMonthlyFloorAmount(warehouseId, clientId, rateCbm);
+      const amountCbm = Math.max(amountCbmRaw, skuMinFloorAmount);
+      const amountPallet = avgPallet * ratePallet;
+      const amountTotal = amountCbm + amountPallet;
+      const warningCodes = [];
+      const warningMessages = [];
+
+      if (daysCount < MIN_SNAPSHOT_DAYS_WARN) {
+        warningCodes.push("insufficient_snapshot_days");
+        warningMessages.push("insufficient snapshot days");
+      }
+      if (missingCbmCount > 0) {
+        warningCodes.push("missing_cbm_values");
+        warningMessages.push("missing CBM values");
+      }
+
+      lines.push({
+        warehouse_id: warehouseId,
+        client_id: clientId,
+        days_count: daysCount,
+        avg_cbm: toFixedNumber(avgCbm),
+        avg_pallet: toFixedNumber(avgPallet),
+        rate_cbm: toFixedNumber(rateCbm),
+        rate_pallet: toFixedNumber(ratePallet),
+        currency,
+        amount_cbm_raw: toFixedNumber(amountCbmRaw),
+        amount_cbm: toFixedNumber(amountCbm),
+        amount_pallet: toFixedNumber(amountPallet),
+        amount_total: toFixedNumber(amountTotal),
+        sku_min_floor_amount: toFixedNumber(skuMinFloorAmount),
+        missing_product_cbm_count: missingCbmCount,
+        warning_codes: warningCodes,
+        warning_messages: warningMessages
+      });
+    }
+
     const summary = lines.reduce(
       (acc, row) => {
         acc.amount_cbm += Number(row.amount_cbm || 0);
         acc.amount_pallet += Number(row.amount_pallet || 0);
         acc.amount_total += Number(row.amount_total || 0);
+        if (row.warning_codes?.includes("insufficient_snapshot_days")) {
+          acc.insufficient_snapshot_days_count += 1;
+        }
+        if (row.warning_codes?.includes("missing_cbm_values")) {
+          acc.missing_cbm_scope_count += 1;
+        }
         return acc;
       },
-      { amount_total: 0, amount_cbm: 0, amount_pallet: 0 }
+      {
+        amount_total: 0,
+        amount_cbm: 0,
+        amount_pallet: 0,
+        insufficient_snapshot_days_count: 0,
+        missing_cbm_scope_count: 0
+      }
     );
 
     return res.json({
       ok: true,
       month,
       rates: {
-        rateCbm: rateCbmResult.value,
-        ratePallet: ratePalletResult.value
+        rateCbm: hasRateCbmOverride ? rateCbmResult.value : null,
+        ratePallet: hasRatePalletOverride ? ratePalletResult.value : null,
+        source: hasRateCbmOverride || hasRatePalletOverride ? "query_override" : "storage_rate_settings_priority"
       },
       filters: {
         warehouseId: filters.warehouseId,
@@ -485,7 +735,13 @@ async function getStorageBillingPreview(req, res) {
       summary: {
         amount_total: Number(summary.amount_total.toFixed(4)),
         amount_cbm: Number(summary.amount_cbm.toFixed(4)),
-        amount_pallet: Number(summary.amount_pallet.toFixed(4))
+        amount_pallet: Number(summary.amount_pallet.toFixed(4)),
+        insufficient_snapshot_days_count: summary.insufficient_snapshot_days_count,
+        missing_cbm_scope_count: summary.missing_cbm_scope_count
+      },
+      alerts: {
+        insufficient_snapshot_days_count: summary.insufficient_snapshot_days_count,
+        missing_cbm_scope_count: summary.missing_cbm_scope_count
       },
       lines
     });

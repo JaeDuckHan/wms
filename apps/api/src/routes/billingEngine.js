@@ -277,6 +277,16 @@ const clientRateSchema = z.object({
   effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 });
 
+const storageRateSettingSchema = z.object({
+  warehouse_id: z.coerce.number().int().positive().nullable().optional(),
+  client_id: z.coerce.number().int().positive().nullable().optional(),
+  rate_cbm: z.coerce.number().nonnegative(),
+  rate_pallet: z.coerce.number().nonnegative(),
+  currency: z.string().trim().min(1).max(10).default("THB"),
+  effective_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  status: z.enum(["active", "inactive"]).default("active")
+});
+
 const exchangeRateSchema = z.object({
   rate_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   rate: z.coerce.number().positive(),
@@ -578,6 +588,167 @@ router.delete("/billing/settings/client-contract-rates/:id", async (req, res) =>
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ ok: false, message: "Contract rate not found" });
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+router.get("/billing/settings/storage-rates", async (req, res) => {
+  const { warehouse_id, client_id, effective_from } = req.query;
+  try {
+    const exists = await hasTable("storage_rate_settings");
+    if (!exists) {
+      return res.json({ ok: true, data: [] });
+    }
+
+    let query = `SELECT
+                  id,
+                  warehouse_id,
+                  client_id,
+                  rate_cbm,
+                  rate_pallet,
+                  currency,
+                  effective_from,
+                  status,
+                  created_at,
+                  updated_at
+                 FROM storage_rate_settings
+                 WHERE deleted_at IS NULL`;
+    const params = [];
+
+    if (warehouse_id != null && warehouse_id !== "") {
+      query += " AND warehouse_id = ?";
+      params.push(Number(warehouse_id));
+    }
+    if (client_id != null && client_id !== "") {
+      query += " AND client_id = ?";
+      params.push(Number(client_id));
+    }
+    if (effective_from && /^\d{4}-\d{2}-\d{2}$/.test(String(effective_from))) {
+      query += " AND effective_from <= ?";
+      params.push(String(effective_from));
+    }
+
+    query += ` ORDER BY
+                COALESCE(warehouse_id, 0) DESC,
+                COALESCE(client_id, 0) DESC,
+                effective_from DESC,
+                id DESC`;
+
+    const [rows] = await getPool().query(query, params);
+    return res.json({ ok: true, data: rows });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+router.post("/billing/settings/storage-rates", validate(storageRateSettingSchema), async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const exists = await hasTable("storage_rate_settings");
+    if (!exists) {
+      return res.status(503).json({ ok: false, message: "storage_rate_settings table is not ready" });
+    }
+
+    const payload = req.body;
+    const [result] = await getPool().query(
+      `INSERT INTO storage_rate_settings
+        (warehouse_id, client_id, rate_cbm, rate_pallet, currency, effective_from, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        payload.warehouse_id ?? null,
+        payload.client_id ?? null,
+        payload.rate_cbm,
+        payload.rate_pallet,
+        payload.currency.toUpperCase(),
+        payload.effective_from,
+        payload.status
+      ]
+    );
+
+    const [rows] = await getPool().query(
+      `SELECT
+        id, warehouse_id, client_id, rate_cbm, rate_pallet, currency, effective_from, status, created_at, updated_at
+       FROM storage_rate_settings
+       WHERE id = ?`,
+      [result.insertId]
+    );
+    return res.status(201).json({ ok: true, data: rows[0] });
+  } catch (error) {
+    if (error.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ ok: false, message: "Duplicate storage rate setting" });
+    }
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+router.put("/billing/settings/storage-rates/:id", validate(storageRateSettingSchema), async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const exists = await hasTable("storage_rate_settings");
+    if (!exists) {
+      return res.status(503).json({ ok: false, message: "storage_rate_settings table is not ready" });
+    }
+
+    const payload = req.body;
+    const [result] = await getPool().query(
+      `UPDATE storage_rate_settings
+       SET warehouse_id = ?,
+           client_id = ?,
+           rate_cbm = ?,
+           rate_pallet = ?,
+           currency = ?,
+           effective_from = ?,
+           status = ?
+       WHERE id = ? AND deleted_at IS NULL`,
+      [
+        payload.warehouse_id ?? null,
+        payload.client_id ?? null,
+        payload.rate_cbm,
+        payload.rate_pallet,
+        payload.currency.toUpperCase(),
+        payload.effective_from,
+        payload.status,
+        req.params.id
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ ok: false, message: "Storage rate setting not found" });
+    }
+
+    const [rows] = await getPool().query(
+      `SELECT
+        id, warehouse_id, client_id, rate_cbm, rate_pallet, currency, effective_from, status, created_at, updated_at
+       FROM storage_rate_settings
+       WHERE id = ? AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    return res.json({ ok: true, data: rows[0] });
+  } catch (error) {
+    if (error.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ ok: false, message: "Duplicate storage rate setting" });
+    }
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+router.delete("/billing/settings/storage-rates/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const exists = await hasTable("storage_rate_settings");
+    if (!exists) {
+      return res.status(503).json({ ok: false, message: "storage_rate_settings table is not ready" });
+    }
+
+    const [result] = await getPool().query(
+      "UPDATE storage_rate_settings SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",
+      [req.params.id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ ok: false, message: "Storage rate setting not found" });
     }
     return res.json({ ok: true });
   } catch (error) {

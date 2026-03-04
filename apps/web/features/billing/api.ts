@@ -38,6 +38,17 @@ export type ExchangeRate = {
   used_invoice_count?: number;
 };
 
+export type StorageRateSetting = {
+  id: number;
+  warehouse_id: number | null;
+  client_id: number | null;
+  rate_cbm: number;
+  rate_pallet: number;
+  currency: string;
+  effective_from: string;
+  status: "active" | "inactive";
+};
+
 export type BillingInvoice = {
   id: number;
   client_id: number;
@@ -107,6 +118,7 @@ function trunc100(value: number) {
 let nextServiceRateId = 21;
 let nextContractRateId = 21;
 let nextExchangeRateId = 21;
+let nextStorageRateSettingId = 21;
 let nextEventId = 21;
 let nextInvoiceId = 21;
 let nextInvoiceItemId = 121;
@@ -153,6 +165,22 @@ const exchangeRatesDb: ExchangeRate[] = Array.from({ length: 20 }, (_, index) =>
     locked: seq % 7 === 0 ? 1 : 0,
     status: seq % 6 === 0 ? "draft" : seq % 5 === 0 ? "superseded" : "active",
     used_invoice_count: 0,
+  };
+});
+
+const storageRateSettingsDb: StorageRateSetting[] = Array.from({ length: 20 }, (_, index) => {
+  const seq = index + 1;
+  const warehouseScoped = seq % 2 === 0;
+  const clientScoped = seq % 3 === 0;
+  return {
+    id: seq,
+    warehouse_id: warehouseScoped ? ((seq % 5) + 1) : null,
+    client_id: clientScoped ? ((seq % 10) + 1) : null,
+    rate_cbm: 200 + seq * 10,
+    rate_pallet: 120 + seq * 8,
+    currency: seq % 2 === 0 ? "THB" : "KRW",
+    effective_from: `2026-${pad2(((seq - 1) % 12) + 1)}-01`,
+    status: seq % 7 === 0 ? "inactive" : "active",
   };
 });
 
@@ -421,6 +449,97 @@ export async function deleteClientContractRate(id: number, options?: RequestOpti
       const idx = contractRatesDb.findIndex((row) => row.id === id);
       if (idx < 0) throw new Error("Contract rate not found.");
       contractRatesDb.splice(idx, 1);
+      return { ok: true as const };
+    }
+  );
+}
+
+export async function listStorageRateSettings(
+  query?: { warehouse_id?: number; client_id?: number; effective_from?: string },
+  options?: RequestOptions
+) {
+  const warehouseId = query?.warehouse_id;
+  const clientId = query?.client_id;
+  const effectiveFrom = query?.effective_from;
+  const params = new URLSearchParams();
+  if (warehouseId) params.set("warehouse_id", String(warehouseId));
+  if (clientId) params.set("client_id", String(clientId));
+  if (effectiveFrom) params.set("effective_from", effectiveFrom);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+
+  return withFallback(
+    options,
+    () => requestJson<StorageRateSetting[]>(`/billing/settings/storage-rates${suffix}`, undefined, options),
+    () => {
+      let rows = storageRateSettingsDb;
+      if (warehouseId) rows = rows.filter((row) => row.warehouse_id === warehouseId);
+      if (clientId) rows = rows.filter((row) => row.client_id === clientId);
+      if (effectiveFrom) rows = rows.filter((row) => row.effective_from <= effectiveFrom);
+      return rows;
+    }
+  );
+}
+
+export async function createStorageRateSetting(
+  input: Omit<StorageRateSetting, "id">,
+  options?: RequestOptions
+) {
+  return withFallback(
+    options,
+    () =>
+      requestJson<StorageRateSetting>(
+        "/billing/settings/storage-rates",
+        { method: "POST", body: JSON.stringify(input) },
+        options
+      ),
+    () => {
+      const created: StorageRateSetting = {
+        id: nextStorageRateSettingId++,
+        ...input,
+        currency: input.currency.toUpperCase(),
+      };
+      storageRateSettingsDb.unshift(created);
+      return created;
+    }
+  );
+}
+
+export async function updateStorageRateSetting(
+  id: number,
+  input: Omit<StorageRateSetting, "id">,
+  options?: RequestOptions
+) {
+  return withFallback(
+    options,
+    () =>
+      requestJson<StorageRateSetting>(
+        `/billing/settings/storage-rates/${id}`,
+        { method: "PUT", body: JSON.stringify(input) },
+        options
+      ),
+    () => {
+      const idx = storageRateSettingsDb.findIndex((row) => row.id === id);
+      if (idx < 0) throw new Error("Storage rate setting not found.");
+      const updated: StorageRateSetting = {
+        ...storageRateSettingsDb[idx],
+        ...input,
+        id,
+        currency: input.currency.toUpperCase(),
+      };
+      storageRateSettingsDb[idx] = updated;
+      return updated;
+    }
+  );
+}
+
+export async function deleteStorageRateSetting(id: number, options?: RequestOptions) {
+  return withFallback(
+    options,
+    () => requestJson<{ ok: true }>(`/billing/settings/storage-rates/${id}`, { method: "DELETE" }, options),
+    () => {
+      const idx = storageRateSettingsDb.findIndex((row) => row.id === id);
+      if (idx < 0) throw new Error("Storage rate setting not found.");
+      storageRateSettingsDb.splice(idx, 1);
       return { ok: true as const };
     }
   );

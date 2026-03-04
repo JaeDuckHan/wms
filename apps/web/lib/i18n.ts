@@ -62,6 +62,7 @@ const koByEn: Record<string, string> = {
   "Warehouse Capacity": "창고 용량",
   "Storage Billing Preview": "보관 요금 미리보기",
   "Service Rates": "서비스 요율",
+  "Storage Rates": "보관 요율",
   "Exchange Rates": "환율",
   "Client Contract Rates": "고객사 계약 요율",
   "Inbound order queue overview": "입고 오더 대기열 개요",
