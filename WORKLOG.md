@@ -279,3 +279,31 @@
 - `apps/api`: `node --check apps/api/src/routes/billingEngine.js` passed.
 - `apps/web`: `npm run typecheck` passed.
 - `apps/web`: `npm run i18n:check` passed.
+
+## 2026-03-05 (Push recovery + Product modal/DB compatibility follow-up)
+
+- [Network] WSL 세션에서 `github.com` DNS 해석 실패(`Could not resolve host`) 재현 확인.
+- [Push retry] 네트워크 권한 이슈 분리 확인 후 푸시 재시도 성공:
+  - `wms-web`: `main -> main` (`3d1e8f6`)
+  - `wms-api`: `backup/pre-monorepo` 신규 브랜치 푸시 (`790d4bb`)
+- [Repo alignment] 실사용 저장소를 monorepo `wms`로 재확인하고 `origin/main` 동기화 상태 점검.
+- [Fix/web] 상품 등록 모달에서 CBM 필드 가시성 개선.
+  - 모달 스크롤 가능하도록 조정(`max-h` + `overflow-y-auto`)
+  - `CBM (m³)` 입력 노출 순서 상향
+- [Fix/web] 상품 등록 모달 치수 입력 UX 개선.
+  - `Width/Length/Height`를 단일 라인(`W/L/H`) 입력으로 변경.
+- [Fix/api] 구버전 DB 스키마 호환 처리.
+  - `products` 테이블의 선택 컬럼(`width_cm`, `length_cm`, `height_cm`, `cbm_m3`, `min_storage_fee_month`) 존재 여부를 조회해 동적 SELECT/INSERT/UPDATE 적용.
+  - 에러 `Unknown column 'p.width_cm' in 'field list'` 회피.
+- [DB check] 현재 확인 환경의 `wms_test.products`에서 치수/CBM 컬럼 존재 확인.
+  - `width_cm`, `length_cm`, `height_cm`, `cbm_m3`, `min_storage_fee_month`
+
+### Commits
+
+- `ad27d5d` fix(web): ensure cbm field is visible in product modal
+- `e786a14` fix(api-web): support legacy product schema and compact dimension inputs
+
+### Verification
+
+- `apps/web`: `npm run typecheck` passed.
+- `apps/api`: `node --check src/routes/products.js` passed.
