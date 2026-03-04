@@ -373,28 +373,30 @@ export function ProductsSettingsPage() {
               </datalist>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Width (cm)</label>
-              <Input
-                value={form.width_cm}
-                onChange={(e) => setForm((prev) => ({ ...prev, width_cm: normalizeDecimalInput(e.target.value) }))}
-                inputMode="decimal"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Length (cm)</label>
-              <Input
-                value={form.length_cm}
-                onChange={(e) => setForm((prev) => ({ ...prev, length_cm: normalizeDecimalInput(e.target.value) }))}
-                inputMode="decimal"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Height (cm)</label>
-              <Input
-                value={form.height_cm}
-                onChange={(e) => setForm((prev) => ({ ...prev, height_cm: normalizeDecimalInput(e.target.value) }))}
-                inputMode="decimal"
-              />
+              <label className="text-xs font-medium text-slate-600">Dimensions (cm)</label>
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  value={form.width_cm}
+                  onChange={(e) => setForm((prev) => ({ ...prev, width_cm: normalizeDecimalInput(e.target.value) }))}
+                  inputMode="decimal"
+                  placeholder="W"
+                  aria-label="Width (cm)"
+                />
+                <Input
+                  value={form.length_cm}
+                  onChange={(e) => setForm((prev) => ({ ...prev, length_cm: normalizeDecimalInput(e.target.value) }))}
+                  inputMode="decimal"
+                  placeholder="L"
+                  aria-label="Length (cm)"
+                />
+                <Input
+                  value={form.height_cm}
+                  onChange={(e) => setForm((prev) => ({ ...prev, height_cm: normalizeDecimalInput(e.target.value) }))}
+                  inputMode="decimal"
+                  placeholder="H"
+                  aria-label="Height (cm)"
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">CBM (m³) - Optional Manual</label>

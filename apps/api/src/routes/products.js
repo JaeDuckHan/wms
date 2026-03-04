@@ -51,26 +51,60 @@ const productUpdateSchema = baseProductSchema
     }
   });
 
-const productSelectColumns = `
-  p.id,
-  p.client_id,
-  c.client_code,
-  p.sku_code,
-  p.barcode_raw,
-  p.barcode_full,
-  p.name_kr,
-  p.name_en,
-  p.volume_ml,
-  p.width_cm,
-  p.length_cm,
-  p.height_cm,
-  p.cbm_m3,
-  p.min_storage_fee_month,
-  p.unit,
-  p.status,
-  p.created_at,
-  p.updated_at
-`;
+const OPTIONAL_PRODUCT_COLUMNS = [
+  "width_cm",
+  "length_cm",
+  "height_cm",
+  "cbm_m3",
+  "min_storage_fee_month"
+];
+const OPTIONAL_COLUMNS_CACHE_TTL_MS = 60 * 1000;
+let optionalProductColumnsCache = null;
+let optionalProductColumnsCachedAt = 0;
+
+async function getAvailableOptionalProductColumns() {
+  const now = Date.now();
+  if (optionalProductColumnsCache && now - optionalProductColumnsCachedAt < OPTIONAL_COLUMNS_CACHE_TTL_MS) {
+    return optionalProductColumnsCache;
+  }
+
+  const placeholders = OPTIONAL_PRODUCT_COLUMNS.map(() => "?").join(", ");
+  const [rows] = await getPool().query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'products'
+       AND column_name IN (${placeholders})`,
+    OPTIONAL_PRODUCT_COLUMNS
+  );
+
+  optionalProductColumnsCache = new Set(rows.map((row) => String(row.column_name)));
+  optionalProductColumnsCachedAt = now;
+  return optionalProductColumnsCache;
+}
+
+function buildProductSelectColumns(availableColumns) {
+  const optionalSelects = OPTIONAL_PRODUCT_COLUMNS.map((column) =>
+    availableColumns.has(column) ? `p.${column}` : `NULL AS ${column}`
+  );
+
+  return `
+    p.id,
+    p.client_id,
+    c.client_code,
+    p.sku_code,
+    p.barcode_raw,
+    p.barcode_full,
+    p.name_kr,
+    p.name_en,
+    p.volume_ml,
+    ${optionalSelects.join(",\n    ")},
+    p.unit,
+    p.status,
+    p.created_at,
+    p.updated_at
+  `;
+}
 
 function isMysqlDuplicate(error) {
   return error && error.code === "ER_DUP_ENTRY";
@@ -122,6 +156,8 @@ async function resolveClientId(inputClientId, inputClientCode) {
 
 router.get("/", async (_req, res) => {
   try {
+    const availableColumns = await getAvailableOptionalProductColumns();
+    const productSelectColumns = buildProductSelectColumns(availableColumns);
     const [rows] = await getPool().query(
       `SELECT ${productSelectColumns}
        FROM products p
@@ -137,6 +173,8 @@ router.get("/", async (_req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const availableColumns = await getAvailableOptionalProductColumns();
+    const productSelectColumns = buildProductSelectColumns(availableColumns);
     const [rows] = await getPool().query(
       `SELECT ${productSelectColumns}
        FROM products p
@@ -184,6 +222,7 @@ router.post("/", validate(productCreateSchema), async (req, res) => {
     if (!clientId) {
       return res.status(400).json({ ok: false, message: "Invalid client_id/client_code" });
     }
+    const availableColumns = await getAvailableOptionalProductColumns();
 
     const widthCm = toNullableNumber(width_cm);
     const lengthCm = toNullableNumber(length_cm);
@@ -195,28 +234,57 @@ router.post("/", validate(productCreateSchema), async (req, res) => {
         : computeCbmM3(widthCm, lengthCm, heightCm);
     const minStorageFeeMonth = toNullableNumber(min_storage_fee_month);
 
+    const insertColumns = [
+      "client_id",
+      "sku_code",
+      "barcode_raw",
+      "barcode_full",
+      "name_kr",
+      "name_en",
+      "volume_ml"
+    ];
+    const insertValues = [
+      clientId,
+      sku_code,
+      barcode_raw,
+      barcode_full,
+      name_kr,
+      name_en,
+      volume_ml
+    ];
+
+    if (availableColumns.has("width_cm")) {
+      insertColumns.push("width_cm");
+      insertValues.push(widthCm);
+    }
+    if (availableColumns.has("length_cm")) {
+      insertColumns.push("length_cm");
+      insertValues.push(lengthCm);
+    }
+    if (availableColumns.has("height_cm")) {
+      insertColumns.push("height_cm");
+      insertValues.push(heightCm);
+    }
+    if (availableColumns.has("cbm_m3")) {
+      insertColumns.push("cbm_m3");
+      insertValues.push(cbmM3);
+    }
+    if (availableColumns.has("min_storage_fee_month")) {
+      insertColumns.push("min_storage_fee_month");
+      insertValues.push(minStorageFeeMonth == null ? 0 : minStorageFeeMonth);
+    }
+
+    insertColumns.push("unit", "status");
+    insertValues.push(unit, status);
+
     const [result] = await getPool().query(
       `INSERT INTO products
-        (client_id, sku_code, barcode_raw, barcode_full, name_kr, name_en, volume_ml, width_cm, length_cm, height_cm, cbm_m3, min_storage_fee_month, unit, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        clientId,
-        sku_code,
-        barcode_raw,
-        barcode_full,
-        name_kr,
-        name_en,
-        volume_ml,
-        widthCm,
-        lengthCm,
-        heightCm,
-        cbmM3,
-        minStorageFeeMonth == null ? 0 : minStorageFeeMonth,
-        unit,
-        status
-      ]
+        (${insertColumns.join(", ")})
+       VALUES (${insertColumns.map(() => "?").join(", ")})`,
+      insertValues
     );
 
+    const productSelectColumns = buildProductSelectColumns(availableColumns);
     const [rows] = await getPool().query(
       `SELECT ${productSelectColumns}
        FROM products p
@@ -267,6 +335,7 @@ router.put("/:id", validate(productUpdateSchema), async (req, res) => {
     if (!clientId) {
       return res.status(400).json({ ok: false, message: "Invalid client_id/client_code" });
     }
+    const availableColumns = await getAvailableOptionalProductColumns();
 
     const widthCm = toNullableNumber(width_cm);
     const lengthCm = toNullableNumber(length_cm);
@@ -278,34 +347,62 @@ router.put("/:id", validate(productUpdateSchema), async (req, res) => {
         : computeCbmM3(widthCm, lengthCm, heightCm);
     const minStorageFeeMonth = toNullableNumber(min_storage_fee_month);
 
+    const updateAssignments = [
+      "client_id = ?",
+      "sku_code = ?",
+      "barcode_raw = ?",
+      "barcode_full = ?",
+      "name_kr = ?",
+      "name_en = ?",
+      "volume_ml = ?"
+    ];
+    const updateValues = [
+      clientId,
+      sku_code || null,
+      barcode_raw,
+      barcode_full,
+      name_kr,
+      name_en || null,
+      volume_ml || null
+    ];
+
+    if (availableColumns.has("width_cm")) {
+      updateAssignments.push("width_cm = ?");
+      updateValues.push(widthCm);
+    }
+    if (availableColumns.has("length_cm")) {
+      updateAssignments.push("length_cm = ?");
+      updateValues.push(lengthCm);
+    }
+    if (availableColumns.has("height_cm")) {
+      updateAssignments.push("height_cm = ?");
+      updateValues.push(heightCm);
+    }
+    if (availableColumns.has("cbm_m3")) {
+      updateAssignments.push("cbm_m3 = ?");
+      updateValues.push(cbmM3);
+    }
+    if (availableColumns.has("min_storage_fee_month")) {
+      updateAssignments.push("min_storage_fee_month = ?");
+      updateValues.push(minStorageFeeMonth == null ? 0 : minStorageFeeMonth);
+    }
+
+    updateAssignments.push("unit = ?", "status = ?");
+    updateValues.push(unit || null, status);
+    updateValues.push(req.params.id);
+
     const [result] = await getPool().query(
       `UPDATE products
-       SET client_id = ?, sku_code = ?, barcode_raw = ?, barcode_full = ?, name_kr = ?, name_en = ?,
-           volume_ml = ?, width_cm = ?, length_cm = ?, height_cm = ?, cbm_m3 = ?, min_storage_fee_month = ?, unit = ?, status = ?
+       SET ${updateAssignments.join(", ")}
        WHERE id = ? AND deleted_at IS NULL`,
-      [
-        clientId,
-        sku_code || null,
-        barcode_raw,
-        barcode_full,
-        name_kr,
-        name_en || null,
-        volume_ml || null,
-        widthCm,
-        lengthCm,
-        heightCm,
-        cbmM3,
-        minStorageFeeMonth == null ? 0 : minStorageFeeMonth,
-        unit || null,
-        status,
-        req.params.id
-      ]
+      updateValues
     );
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ ok: false, message: "Product not found" });
     }
 
+    const productSelectColumns = buildProductSelectColumns(availableColumns);
     const [rows] = await getPool().query(
       `SELECT ${productSelectColumns}
        FROM products p
