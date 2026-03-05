@@ -5,6 +5,7 @@ const router = express.Router();
 const PALLET_CBM = 1.2;
 const MIN_SNAPSHOT_DAYS_WARN = 20;
 const schemaTableCache = new Map();
+const schemaColumnCache = new Map();
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -105,27 +106,6 @@ function monthStartToNextMonthStart(monthStart) {
   return `${year}-${String(month + 1).padStart(2, "0")}-01`;
 }
 
-function getMissingCbmCondition(alias = "p") {
-  return `(
-    COALESCE(${alias}.cbm_m3, 0) <= 0
-    AND (
-      ${alias}.volume_ml IS NULL
-      OR ${alias}.volume_ml <= 0
-    )
-  )`;
-}
-
-function getEffectiveCbmExpression(alias = "p") {
-  return `COALESCE(
-    NULLIF(${alias}.cbm_m3, 0),
-    CASE
-      WHEN ${alias}.volume_ml IS NOT NULL AND ${alias}.volume_ml > 0
-      THEN (${alias}.volume_ml / 1000000)
-      ELSE 0
-    END
-  )`;
-}
-
 async function hasTable(tableName) {
   const key = String(tableName || "").trim();
   if (!key) return false;
@@ -143,6 +123,66 @@ async function hasTable(tableName) {
   const result = Number(rows[0]?.cnt || 0) > 0;
   schemaTableCache.set(key, result);
   return result;
+}
+
+async function hasColumn(tableName, columnName) {
+  const table = String(tableName || "").trim();
+  const column = String(columnName || "").trim();
+  if (!table || !column) return false;
+  const key = `${table}.${column}`;
+  if (schemaColumnCache.has(key)) {
+    return schemaColumnCache.get(key);
+  }
+
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = ?
+       AND column_name = ?`,
+    [table, column]
+  );
+  const result = Number(rows[0]?.cnt || 0) > 0;
+  schemaColumnCache.set(key, result);
+  return result;
+}
+
+async function getCbmSqlParts(alias = "p") {
+  const hasCbmM3 = await hasColumn("products", "cbm_m3");
+  const hasVolumeMl = await hasColumn("products", "volume_ml");
+
+  let effectiveCbmExpr = "0";
+  let missingCbmCondition = "1 = 1";
+
+  if (hasCbmM3 && hasVolumeMl) {
+    effectiveCbmExpr = `COALESCE(
+      NULLIF(${alias}.cbm_m3, 0),
+      CASE
+        WHEN ${alias}.volume_ml IS NOT NULL AND ${alias}.volume_ml > 0
+        THEN (${alias}.volume_ml / 1000000)
+        ELSE 0
+      END
+    )`;
+    missingCbmCondition = `(
+      COALESCE(${alias}.cbm_m3, 0) <= 0
+      AND (
+        ${alias}.volume_ml IS NULL
+        OR ${alias}.volume_ml <= 0
+      )
+    )`;
+  } else if (hasCbmM3) {
+    effectiveCbmExpr = `COALESCE(NULLIF(${alias}.cbm_m3, 0), 0)`;
+    missingCbmCondition = `COALESCE(${alias}.cbm_m3, 0) <= 0`;
+  } else if (hasVolumeMl) {
+    effectiveCbmExpr = `CASE
+      WHEN ${alias}.volume_ml IS NOT NULL AND ${alias}.volume_ml > 0
+      THEN (${alias}.volume_ml / 1000000)
+      ELSE 0
+    END`;
+    missingCbmCondition = `(${alias}.volume_ml IS NULL OR ${alias}.volume_ml <= 0)`;
+  }
+
+  return { effectiveCbmExpr, missingCbmCondition };
 }
 
 function resolveFilters(query = {}, body = {}) {
@@ -230,7 +270,7 @@ function getCapacityStatus(usagePctCbm) {
 async function upsertStorageSnapshots(snapshotDate, filters) {
   const pool = getPool();
   const params = [snapshotDate, PALLET_CBM];
-  const cbmExpr = getEffectiveCbmExpression("p");
+  const { effectiveCbmExpr } = await getCbmSqlParts("p");
   const where = appendInventoryFilter(
     " WHERE sb.deleted_at IS NULL AND p.deleted_at IS NULL AND sb.available_qty > 0",
     params,
@@ -244,8 +284,8 @@ async function upsertStorageSnapshots(snapshotDate, filters) {
       sb.warehouse_id,
       sb.client_id,
       ? AS snapshot_date,
-      ROUND(SUM(sb.available_qty * ${cbmExpr}), 4) AS total_cbm,
-      ROUND(SUM(sb.available_qty * ${cbmExpr} / ?), 4) AS total_pallet,
+      ROUND(SUM(sb.available_qty * ${effectiveCbmExpr}), 4) AS total_cbm,
+      ROUND(SUM(sb.available_qty * ${effectiveCbmExpr} / ?), 4) AS total_pallet,
       COUNT(DISTINCT sb.product_id) AS total_sku
      FROM stock_balances sb
      JOIN products p ON p.id = sb.product_id
@@ -262,7 +302,26 @@ async function upsertStorageSnapshots(snapshotDate, filters) {
 async function fetchMissingCbmAlerts(filters) {
   const pool = getPool();
   const params = [];
-  const missingCbmCondition = getMissingCbmCondition("p");
+  const { missingCbmCondition } = await getCbmSqlParts("p");
+  const hasWidthCm = await hasColumn("products", "width_cm");
+  const hasLengthCm = await hasColumn("products", "length_cm");
+  const hasHeightCm = await hasColumn("products", "height_cm");
+  const hasCbmM3 = await hasColumn("products", "cbm_m3");
+  const widthSelect = hasWidthCm ? "p.width_cm" : "NULL AS width_cm";
+  const lengthSelect = hasLengthCm ? "p.length_cm" : "NULL AS length_cm";
+  const heightSelect = hasHeightCm ? "p.height_cm" : "NULL AS height_cm";
+  const cbmSelect = hasCbmM3 ? "p.cbm_m3" : "NULL AS cbm_m3";
+  const groupBy = [
+    "sb.warehouse_id",
+    "sb.client_id",
+    "p.id",
+    "p.sku_code",
+    "p.name_kr"
+  ];
+  if (hasWidthCm) groupBy.push("p.width_cm");
+  if (hasLengthCm) groupBy.push("p.length_cm");
+  if (hasHeightCm) groupBy.push("p.height_cm");
+  if (hasCbmM3) groupBy.push("p.cbm_m3");
   const where = appendInventoryFilter(
     ` WHERE sb.deleted_at IS NULL AND p.deleted_at IS NULL AND sb.available_qty > 0 AND ${missingCbmCondition}`,
     params,
@@ -276,15 +335,15 @@ async function fetchMissingCbmAlerts(filters) {
       p.id AS product_id,
       p.sku_code,
       p.name_kr AS product_name,
-      p.width_cm,
-      p.length_cm,
-      p.height_cm,
-      p.cbm_m3,
+      ${widthSelect},
+      ${lengthSelect},
+      ${heightSelect},
+      ${cbmSelect},
       SUM(sb.available_qty) AS available_qty
      FROM stock_balances sb
      JOIN products p ON p.id = sb.product_id
      ${where}
-     GROUP BY sb.warehouse_id, sb.client_id, p.id, p.sku_code, p.name_kr, p.width_cm, p.length_cm, p.height_cm, p.cbm_m3
+     GROUP BY ${groupBy.join(", ")}
      ORDER BY sb.warehouse_id ASC, sb.client_id ASC, p.id ASC`,
     params
   );
@@ -295,7 +354,7 @@ async function fetchMissingCbmAlerts(filters) {
 async function fetchMissingCbmCountByScope(filters) {
   const pool = getPool();
   const params = [];
-  const missingCbmCondition = getMissingCbmCondition("p");
+  const { missingCbmCondition } = await getCbmSqlParts("p");
   const where = appendInventoryFilter(
     ` WHERE sb.deleted_at IS NULL AND p.deleted_at IS NULL AND sb.available_qty > 0 AND ${missingCbmCondition}`,
     params,
@@ -379,14 +438,20 @@ async function resolveStorageRateSettingForScope(monthStart, warehouseId, client
 
 async function fetchSkuMonthlyFloorAmount(warehouseId, clientId, rateCbm) {
   const pool = getPool();
-  const cbmExpr = getEffectiveCbmExpression("p");
+  const { effectiveCbmExpr } = await getCbmSqlParts("p");
+  const hasMinStorageFee = await hasColumn("products", "min_storage_fee_month");
+  const minStorageFeeExpr = hasMinStorageFee ? "COALESCE(p.min_storage_fee_month, 0)" : "0";
+  const groupBy = [`p.id`, effectiveCbmExpr];
+  if (hasMinStorageFee) {
+    groupBy.push("p.min_storage_fee_month");
+  }
 
   const [rows] = await pool.query(
     `SELECT
       p.id AS product_id,
       SUM(sb.available_qty) AS available_qty,
-      ${cbmExpr} AS cbm_m3,
-      COALESCE(p.min_storage_fee_month, 0) AS min_storage_fee_month
+      ${effectiveCbmExpr} AS cbm_m3,
+      ${minStorageFeeExpr} AS min_storage_fee_month
      FROM stock_balances sb
      JOIN products p ON p.id = sb.product_id
      WHERE sb.deleted_at IS NULL
@@ -394,7 +459,7 @@ async function fetchSkuMonthlyFloorAmount(warehouseId, clientId, rateCbm) {
        AND sb.available_qty > 0
        AND sb.warehouse_id = ?
        AND sb.client_id = ?
-     GROUP BY p.id, ${cbmExpr}, p.min_storage_fee_month`,
+     GROUP BY ${groupBy.join(", ")}`,
     [warehouseId, clientId]
   );
 

@@ -444,3 +444,9 @@
 - [Hotfix/web] Disabled dashboard fallback unconditionally for storage pages to prevent silent fake billing values (`sku_count=0`, `rate_cbm=1200`) on API failure.
   - file: `apps/web/features/dashboard/api.ts`
   - policy: show real API error instead of synthetic fallback rows.
+- [API compatibility] Hardened dashboard storage billing/snapshot logic for legacy product schemas without `cbm_m3`.
+  - file: `apps/api/src/routes/dashboard.js`
+  - added dynamic column checks via information_schema (`hasColumn`) and runtime-safe CBM SQL parts.
+  - fallback order for CBM calc: `cbm_m3` -> `volume_ml` -> `0`.
+  - missing-CBM alerts now avoid selecting/grouping non-existent columns (`width_cm`, `length_cm`, `height_cm`, `cbm_m3`).
+  - SKU monthly floor calc now handles missing `min_storage_fee_month` safely.
