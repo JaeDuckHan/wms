@@ -4,6 +4,10 @@ export type Warehouse = {
   id: string;
   warehouse_code: string;
   name: string;
+  country: string;
+  timezone: string;
+  default_cbm_size: number;
+  default_cbm_rate: number;
   status: WarehouseStatus;
   created_at: string;
 };
@@ -11,5 +15,9 @@ export type Warehouse = {
 export type WarehouseFormInput = {
   warehouse_code: string;
   name: string;
+  country?: string;
+  timezone?: string;
+  default_cbm_size?: number;
+  default_cbm_rate?: number;
   status?: WarehouseStatus;
 };

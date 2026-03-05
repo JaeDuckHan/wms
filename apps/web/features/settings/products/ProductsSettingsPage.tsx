@@ -30,7 +30,6 @@ type FormState = {
   length_cm: string;
   height_cm: string;
   cbm_m3: string;
-  min_storage_fee_month: string;
   status: ProductStatus;
 };
 
@@ -45,7 +44,6 @@ const initialForm: FormState = {
   length_cm: "",
   height_cm: "",
   cbm_m3: "",
-  min_storage_fee_month: "",
   status: "active",
 };
 
@@ -62,14 +60,6 @@ function parseOptionalPositiveDecimal(value: string) {
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return parsed;
-}
-
-function parseOptionalNonNegativeDecimal(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
   return parsed;
 }
 
@@ -173,7 +163,6 @@ export function ProductsSettingsPage() {
       length_cm: row.length_cm == null ? "" : String(row.length_cm),
       height_cm: row.height_cm == null ? "" : String(row.height_cm),
       cbm_m3: row.cbm_m3 == null ? "" : String(row.cbm_m3),
-      min_storage_fee_month: row.min_storage_fee_month == null ? "" : String(row.min_storage_fee_month),
       status: row.status,
     });
     setFieldError(null);
@@ -202,7 +191,6 @@ export function ProductsSettingsPage() {
       length_cm: parseOptionalPositiveDecimal(form.length_cm),
       height_cm: parseOptionalPositiveDecimal(form.height_cm),
       cbm_m3: parseOptionalPositiveDecimal(form.cbm_m3),
-      min_storage_fee_month: parseOptionalNonNegativeDecimal(form.min_storage_fee_month),
       status: form.status,
     };
 
@@ -405,14 +393,6 @@ export function ProductsSettingsPage() {
                 onChange={(e) => setForm((prev) => ({ ...prev, cbm_m3: normalizeDecimalInput(e.target.value) }))}
                 inputMode="decimal"
                 placeholder="비우면 가로/세로/높이로 자동 계산"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">Min Storage Fee / Month</label>
-              <Input
-                value={form.min_storage_fee_month}
-                onChange={(e) => setForm((prev) => ({ ...prev, min_storage_fee_month: normalizeDecimalInput(e.target.value) }))}
-                inputMode="decimal"
               />
             </div>
             <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">

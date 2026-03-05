@@ -12,6 +12,10 @@ type RawWarehouse = {
   code?: string | null;
   name?: string | null;
   name_kr?: string | null;
+  country?: string | null;
+  timezone?: string | null;
+  default_cbm_size?: number | string | null;
+  default_cbm_rate?: number | string | null;
   status?: string | null;
   created_at?: string | null;
 };
@@ -35,14 +39,22 @@ function normalizeStatus(value?: string | null): WarehouseStatus {
 function validateInput(input: WarehouseFormInput) {
   const warehouse_code = normalizeCode(input.warehouse_code);
   const name = input.name.trim();
+  const country = (input.country ?? "KR").trim();
+  const timezone = (input.timezone ?? "Asia/Seoul").trim();
+  const default_cbm_size = Number(input.default_cbm_size ?? 0.1);
+  const default_cbm_rate = Number(input.default_cbm_rate ?? 5000);
   const status = input.status ?? "active";
 
   if (!warehouse_code) throw new Error("Warehouse code is required.");
   if (!CODE_REGEX.test(warehouse_code)) throw new Error("Warehouse code must be 2-30 chars (A-Z, 0-9, _, -).");
   if (!name) throw new Error("Warehouse name is required.");
   if (name.length > 80) throw new Error("Warehouse name must be 80 characters or less.");
+  if (!country) throw new Error("Country is required.");
+  if (!timezone) throw new Error("Timezone is required.");
+  if (!Number.isFinite(default_cbm_size) || default_cbm_size <= 0) throw new Error("default_cbm_size must be > 0.");
+  if (!Number.isFinite(default_cbm_rate) || default_cbm_rate < 0) throw new Error("default_cbm_rate must be >= 0.");
 
-  return { warehouse_code, name, status };
+  return { warehouse_code, name, country, timezone, default_cbm_size, default_cbm_rate, status };
 }
 
 function assertWarehouseCodeUnique(code: string, exceptId?: string) {
@@ -51,10 +63,16 @@ function assertWarehouseCodeUnique(code: string, exceptId?: string) {
 }
 
 function mapRawWarehouse(raw: RawWarehouse): Warehouse {
+  const defaultCbmSize = Number(raw.default_cbm_size);
+  const defaultCbmRate = Number(raw.default_cbm_rate);
   return {
     id: String(raw.id),
     warehouse_code: normalizeCode(raw.warehouse_code ?? raw.code ?? `WH-${raw.id}`),
     name: (raw.name_kr ?? raw.name ?? "").trim() || `Warehouse #${raw.id}`,
+    country: (raw.country ?? "KR").trim() || "KR",
+    timezone: (raw.timezone ?? "Asia/Seoul").trim() || "Asia/Seoul",
+    default_cbm_size: Number.isFinite(defaultCbmSize) && defaultCbmSize > 0 ? defaultCbmSize : 0.1,
+    default_cbm_rate: Number.isFinite(defaultCbmRate) && defaultCbmRate >= 0 ? defaultCbmRate : 5000,
     status: normalizeStatus(raw.status),
     created_at: raw.created_at ?? new Date().toISOString(),
   };
@@ -72,6 +90,10 @@ async function createWarehouseInMock(input: WarehouseFormInput): Promise<Warehou
     id: `wh-${Date.now()}`,
     warehouse_code: validated.warehouse_code,
     name: validated.name,
+    country: validated.country,
+    timezone: validated.timezone,
+    default_cbm_size: validated.default_cbm_size,
+    default_cbm_rate: validated.default_cbm_rate,
     status: validated.status,
     created_at: new Date().toISOString(),
   };
@@ -88,6 +110,10 @@ async function updateWarehouseInMock(id: string, input: WarehouseFormInput): Pro
     ...mockDb[idx],
     warehouse_code: validated.warehouse_code,
     name: validated.name,
+    country: validated.country,
+    timezone: validated.timezone,
+    default_cbm_size: validated.default_cbm_size,
+    default_cbm_rate: validated.default_cbm_rate,
     status: validated.status,
   };
   mockDb[idx] = updated;
@@ -139,6 +165,10 @@ export async function createWarehouse(input: WarehouseFormInput, options?: Reque
           code: validated.warehouse_code,
           name: validated.name,
           name_kr: validated.name,
+          country: validated.country,
+          timezone: validated.timezone,
+          default_cbm_size: validated.default_cbm_size,
+          default_cbm_rate: validated.default_cbm_rate,
           status: validated.status,
         }),
       },
@@ -166,6 +196,10 @@ export async function updateWarehouse(id: string, input: WarehouseFormInput, opt
           code: validated.warehouse_code,
           name: validated.name,
           name_kr: validated.name,
+          country: validated.country,
+          timezone: validated.timezone,
+          default_cbm_size: validated.default_cbm_size,
+          default_cbm_rate: validated.default_cbm_rate,
           status: validated.status,
         }),
       },
@@ -195,6 +229,10 @@ export async function toggleWarehouseStatus(id: string, options?: RequestOptions
           code: current.warehouse_code ?? current.code,
           name: current.name ?? current.name_kr,
           name_kr: current.name_kr ?? current.name,
+          country: current.country ?? "KR",
+          timezone: current.timezone ?? "Asia/Seoul",
+          default_cbm_size: current.default_cbm_size ?? 0.1,
+          default_cbm_rate: current.default_cbm_rate ?? 5000,
         }),
       },
       options

@@ -120,7 +120,9 @@ function mapRawProduct(raw: RawProduct): Product {
   const widthCm = raw.width_cm == null ? null : Number(raw.width_cm);
   const lengthCm = raw.length_cm == null ? null : Number(raw.length_cm);
   const heightCm = raw.height_cm == null ? null : Number(raw.height_cm);
-  const cbmM3 = raw.cbm_m3 == null ? computeCbmM3(widthCm, lengthCm, heightCm) : Number(raw.cbm_m3);
+  const sourceCbm = raw.cbm_m3 == null ? null : Number(raw.cbm_m3);
+  const computedCbm = computeCbmM3(widthCm, lengthCm, heightCm);
+  const cbmM3 = sourceCbm != null && Number.isFinite(sourceCbm) && sourceCbm > 0 ? sourceCbm : computedCbm;
   const minStorageFeeMonth = raw.min_storage_fee_month == null ? 0 : Number(raw.min_storage_fee_month);
 
   return {
@@ -243,7 +245,6 @@ export async function createProduct(input: ProductFormInput, options?: RequestOp
           length_cm: validated.length_cm,
           height_cm: validated.height_cm,
           cbm_m3: validated.cbm_m3,
-          min_storage_fee_month: validated.min_storage_fee_month,
           status: validated.status,
         }),
       },
@@ -277,7 +278,6 @@ export async function updateProduct(id: string, input: ProductFormInput, options
           length_cm: validated.length_cm,
           height_cm: validated.height_cm,
           cbm_m3: validated.cbm_m3,
-          min_storage_fee_month: validated.min_storage_fee_month,
           status: validated.status,
         }),
       },
@@ -312,8 +312,7 @@ export async function toggleProductStatus(id: string, options?: RequestOptions):
           width_cm: current.width_cm,
           length_cm: current.length_cm,
           height_cm: current.height_cm,
-          cbm_m3: current.cbm_m3,
-          min_storage_fee_month: current.min_storage_fee_month ?? 0,
+          cbm_m3: Number(current.cbm_m3) > 0 ? Number(current.cbm_m3) : null,
         }),
       },
       options

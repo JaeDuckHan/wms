@@ -24,6 +24,10 @@ import { useI18n } from "@/lib/i18n/I18nProvider";
 type FormState = {
   warehouse_code: string;
   name: string;
+  country: string;
+  timezone: string;
+  default_cbm_size: string;
+  default_cbm_rate: string;
   status: WarehouseStatus;
 };
 
@@ -33,6 +37,10 @@ type SortKey = "created_desc" | "created_asc" | "code_asc" | "name_asc";
 const initialForm: FormState = {
   warehouse_code: "",
   name: "",
+  country: "KR",
+  timezone: "Asia/Seoul",
+  default_cbm_size: "0.1",
+  default_cbm_rate: "5000",
   status: "active",
 };
 
@@ -112,6 +120,10 @@ export function WarehousesSettingsPage() {
     setForm({
       warehouse_code: row.warehouse_code,
       name: row.name,
+      country: row.country,
+      timezone: row.timezone,
+      default_cbm_size: String(row.default_cbm_size),
+      default_cbm_rate: String(row.default_cbm_rate),
       status: row.status,
     });
     setFieldError(null);
@@ -133,10 +145,26 @@ export function WarehousesSettingsPage() {
     setSaving(true);
     try {
       if (editingId) {
-        await updateWarehouse(editingId, form);
+        await updateWarehouse(editingId, {
+          warehouse_code: form.warehouse_code,
+          name: form.name,
+          country: form.country,
+          timezone: form.timezone,
+          default_cbm_size: Number(form.default_cbm_size || 0),
+          default_cbm_rate: Number(form.default_cbm_rate || 0),
+          status: form.status,
+        });
         pushToast({ title: t("Warehouse updated"), variant: "success" });
       } else {
-        await createWarehouse(form);
+        await createWarehouse({
+          warehouse_code: form.warehouse_code,
+          name: form.name,
+          country: form.country,
+          timezone: form.timezone,
+          default_cbm_size: Number(form.default_cbm_size || 0),
+          default_cbm_rate: Number(form.default_cbm_rate || 0),
+          status: form.status,
+        });
         pushToast({ title: t("Warehouse created"), variant: "success" });
       }
       await loadRows();
@@ -250,6 +278,8 @@ export function WarehousesSettingsPage() {
             columns={[
             { key: "warehouse_code", label: "Warehouse Code", render: (row) => <span className="font-medium">{row.warehouse_code}</span> },
             { key: "name", label: "Name", render: (row) => row.name },
+            { key: "default_cbm_size", label: "Default CBM", render: (row) => Number(row.default_cbm_size).toFixed(4) },
+            { key: "default_cbm_rate", label: "Default Price", render: (row) => Number(row.default_cbm_rate).toLocaleString() },
             { key: "status", label: "Status", render: (row) => <ActiveStatusBadge status={row.status} /> },
             {
               key: "actions",
@@ -290,6 +320,26 @@ export function WarehousesSettingsPage() {
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">{t("Name")}</label>
               <Input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Default CBM size</label>
+              <Input
+                type="number"
+                step="0.0001"
+                min="0.0001"
+                value={form.default_cbm_size}
+                onChange={(e) => setForm((prev) => ({ ...prev, default_cbm_size: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Default CBM price</label>
+              <Input
+                type="number"
+                step="1"
+                min="0"
+                value={form.default_cbm_rate}
+                onChange={(e) => setForm((prev) => ({ ...prev, default_cbm_rate: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">{t("Status")}</label>

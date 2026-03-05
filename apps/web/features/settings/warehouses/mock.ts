@@ -14,6 +14,10 @@ export const warehousesMock: Warehouse[] = Array.from({ length: 20 }, (_, index)
     id: `wh-${seq}`,
     warehouse_code: `WH-${pad2(seq)}`,
     name: `Sample Warehouse ${pad2(seq)}`,
+    country: "KR",
+    timezone: "Asia/Seoul",
+    default_cbm_size: 0.1,
+    default_cbm_rate: 5000,
     status: seq % 7 === 0 ? "inactive" : "active",
     created_at: date.toISOString(),
   };
