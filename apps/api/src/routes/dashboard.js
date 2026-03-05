@@ -4,8 +4,12 @@ const { getPool } = require("../db");
 const router = express.Router();
 const PALLET_CBM = 1.2;
 const MIN_SNAPSHOT_DAYS_WARN = 20;
+const DEFAULT_STORAGE_RATE_CBM_NORMAL = Number(process.env.DEFAULT_STORAGE_RATE_CBM_NORMAL || 4000);
+const DEFAULT_STORAGE_RATE_CBM_AIRCON = Number(process.env.DEFAULT_STORAGE_RATE_CBM_AIRCON || 5000);
+const DEFAULT_STORAGE_RATE_PALLET = Number(process.env.DEFAULT_STORAGE_RATE_PALLET || 0);
 const schemaTableCache = new Map();
 const schemaColumnCache = new Map();
+const warehouseRateCache = new Map();
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -145,6 +149,48 @@ async function hasColumn(tableName, columnName) {
   const result = Number(rows[0]?.cnt || 0) > 0;
   schemaColumnCache.set(key, result);
   return result;
+}
+
+function isAirconWarehouseName(text) {
+  const normalized = String(text || "").toLowerCase();
+  return normalized.includes("에어컨") || normalized.includes("aircon");
+}
+
+async function resolveWarehouseDefaultRateCbm(warehouseId) {
+  const key = Number(warehouseId || 0);
+  if (warehouseRateCache.has(key)) {
+    return warehouseRateCache.get(key);
+  }
+
+  let fallbackRate = DEFAULT_STORAGE_RATE_CBM_NORMAL;
+  const hasWarehouseTable = await hasTable("warehouses");
+  if (!hasWarehouseTable || !Number.isInteger(key) || key <= 0) {
+    warehouseRateCache.set(key, fallbackRate);
+    return fallbackRate;
+  }
+
+  const hasDefaultRateColumn = await hasColumn("warehouses", "default_cbm_rate");
+  const [rows] = await getPool().query(
+    `SELECT id, code, name${hasDefaultRateColumn ? ", default_cbm_rate" : ""}
+     FROM warehouses
+     WHERE id = ?
+       AND deleted_at IS NULL
+     LIMIT 1`,
+    [key]
+  );
+
+  const row = rows[0];
+  if (row) {
+    const rawDefault = Number(row.default_cbm_rate);
+    if (hasDefaultRateColumn && Number.isFinite(rawDefault) && rawDefault > 0) {
+      fallbackRate = rawDefault;
+    } else if (isAirconWarehouseName(row.name) || isAirconWarehouseName(row.code)) {
+      fallbackRate = DEFAULT_STORAGE_RATE_CBM_AIRCON;
+    }
+  }
+
+  warehouseRateCache.set(key, fallbackRate);
+  return fallbackRate;
 }
 
 async function getCbmSqlParts(alias = "p") {
@@ -677,6 +723,7 @@ async function getStorageBillingPreview(req, res) {
   try {
     const hasRateCbmOverride = req.query.rateCbm != null && req.query.rateCbm !== "";
     const hasRatePalletOverride = req.query.ratePallet != null && req.query.ratePallet !== "";
+    let usedDefaultRate = false;
     const filters = filtersResult.value;
     const month = monthResult.value;
     const monthStart = `${month}-01`;
@@ -740,14 +787,29 @@ async function getStorageBillingPreview(req, res) {
       const scopeKey = `${warehouseId}-${clientId}`;
       const missingCbmCount = Number(missingCbmCountByScope.get(scopeKey) || 0);
       const selectedRate = await resolveStorageRateSettingForScope(monthStart, warehouseId, clientId);
+      const selectedRateCbm = Number(selectedRate?.rate_cbm);
+      const selectedRatePallet = Number(selectedRate?.rate_pallet);
+      const hasSelectedRateCbm = Number.isFinite(selectedRateCbm) && selectedRateCbm >= 0;
+      const hasSelectedRatePallet = Number.isFinite(selectedRatePallet) && selectedRatePallet >= 0;
 
+      const defaultRateCbm = await resolveWarehouseDefaultRateCbm(warehouseId);
       const rateCbm = hasRateCbmOverride
         ? rateCbmResult.value
-        : Number(selectedRate?.rate_cbm || 0);
+        : hasSelectedRateCbm
+          ? selectedRateCbm
+          : defaultRateCbm;
       const ratePallet = hasRatePalletOverride
         ? ratePalletResult.value
-        : Number(selectedRate?.rate_pallet || 0);
+        : hasSelectedRatePallet
+          ? selectedRatePallet
+          : DEFAULT_STORAGE_RATE_PALLET;
       const currency = selectedRate?.currency || "THB";
+      if (!hasRateCbmOverride && !hasSelectedRateCbm) {
+        usedDefaultRate = true;
+      }
+      if (!hasRatePalletOverride && !hasSelectedRatePallet) {
+        usedDefaultRate = true;
+      }
 
       const amountCbmRaw = avgCbm * rateCbm;
       const skuMinFloorAmount = await fetchSkuMonthlyFloorAmount(warehouseId, clientId, rateCbm);
@@ -817,7 +879,11 @@ async function getStorageBillingPreview(req, res) {
       rates: {
         rateCbm: hasRateCbmOverride ? rateCbmResult.value : null,
         ratePallet: hasRatePalletOverride ? ratePalletResult.value : null,
-        source: hasRateCbmOverride || hasRatePalletOverride ? "query_override" : "storage_rate_settings_priority"
+        source: hasRateCbmOverride || hasRatePalletOverride
+          ? "query_override"
+          : usedDefaultRate
+            ? "default_fallback"
+            : "storage_rate_settings_priority"
       },
       filters: {
         warehouseId: filters.warehouseId,
