@@ -28,7 +28,10 @@ export type StorageBillingResponse = {
   };
   lines: Array<{
     warehouse_id: number;
+    warehouse_name?: string | null;
     client_id: number;
+    client_name?: string | null;
+    sku_count?: number;
     days_count: number;
     avg_cbm: number;
     avg_pallet: number;
@@ -49,11 +52,14 @@ export type StorageBillingSkuResponse = {
   month: string;
   warehouse_id: number;
   client_id: number;
+  warehouse_name?: string | null;
+  client_name?: string | null;
   rate_cbm: number;
   summary: {
     total_available_qty: number;
     total_amount_cbm: number;
     missing_cbm_count: number;
+    total_sku_count?: number;
   };
   lines: Array<{
     product_id: number;
@@ -254,7 +260,10 @@ function billingFallback(query?: Record<string, string | number | undefined>): S
       }
       return {
         warehouse_id: warehouseId,
+        warehouse_name: `WH-${warehouseId}`,
         client_id: clientId,
+        client_name: `CL-${clientId}`,
+        sku_count: 0,
         days_count,
         avg_cbm,
         avg_pallet,
@@ -391,19 +400,22 @@ function getFallback(path: string, query?: Record<string, string | number | unde
     const warehouseId = toInt(query?.warehouseId) ?? 101;
     const clientId = toInt(query?.clientId) ?? 1;
     const rate = Number(query?.rateCbm ?? 5000);
-    return {
-      ok: true,
-      month,
-      warehouse_id: warehouseId,
-      client_id: clientId,
-      rate_cbm: rate,
-      summary: {
-        total_available_qty: 0,
-        total_amount_cbm: 0,
-        missing_cbm_count: 0,
-      },
-      lines: [],
-    } satisfies StorageBillingSkuResponse;
+      return {
+        ok: true,
+        month,
+        warehouse_id: warehouseId,
+        client_id: clientId,
+        warehouse_name: `Warehouse ${warehouseId}`,
+        client_name: `Client ${clientId}`,
+        rate_cbm: rate,
+        summary: {
+          total_available_qty: 0,
+          total_amount_cbm: 0,
+          missing_cbm_count: 0,
+          total_sku_count: 0,
+        },
+        lines: [],
+      } satisfies StorageBillingSkuResponse;
   }
   if (path === "storage/capacity") return capacityFallback(query);
   return null;

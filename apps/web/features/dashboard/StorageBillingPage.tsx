@@ -69,7 +69,10 @@ type BillingFilters = {
 
 const billingColumns = [
   { key: "warehouse_id", label: "warehouse_id" },
+  { key: "warehouse_name", label: "warehouse_name" },
   { key: "client_id", label: "client_id" },
+  { key: "client_name", label: "client_name" },
+  { key: "sku_count", label: "sku_count" },
   { key: "days_count", label: "days_count" },
   { key: "avg_cbm", label: "avg_cbm" },
   { key: "rate_cbm", label: "rate_cbm" },
@@ -228,8 +231,15 @@ export function StorageBillingPage() {
     const filtered = keyword
       ? data.lines.filter((row) => {
           const warehouseText = String(row.warehouse_id).toLowerCase();
+          const warehouseName = String(row.warehouse_name ?? "").toLowerCase();
           const clientText = String(row.client_id).toLowerCase();
-          return warehouseText.includes(keyword) || clientText.includes(keyword);
+          const clientName = String(row.client_name ?? "").toLowerCase();
+          return (
+            warehouseText.includes(keyword) ||
+            warehouseName.includes(keyword) ||
+            clientText.includes(keyword) ||
+            clientName.includes(keyword)
+          );
         })
       : data.lines;
 
@@ -303,7 +313,10 @@ export function StorageBillingPage() {
   const exportCsv = () => {
     const rows = tableRows.map((row) => ({
       warehouse_id: safeNumber(row.warehouse_id),
+      warehouse_name: String(row.warehouse_name ?? ""),
       client_id: safeNumber(row.client_id),
+      client_name: String(row.client_name ?? ""),
+      sku_count: safeNumber(row.sku_count ?? 0),
       days_count: safeNumber(row.days_count),
       avg_cbm: safeNumber(row.avg_cbm),
       rate_cbm: safeNumber(row.rate_cbm ?? 0),
@@ -321,7 +334,10 @@ export function StorageBillingPage() {
     try {
       const rows = tableRows.map((row) => ({
         warehouse_id: safeNumber(row.warehouse_id),
+        warehouse_name: String(row.warehouse_name ?? ""),
         client_id: safeNumber(row.client_id),
+        client_name: String(row.client_name ?? ""),
+        sku_count: safeNumber(row.sku_count ?? 0),
         days_count: safeNumber(row.days_count),
         avg_cbm: safeNumber(row.avg_cbm),
         rate_cbm: safeNumber(row.rate_cbm ?? 0),
@@ -474,7 +490,7 @@ export function StorageBillingPage() {
           <CardTitle>Billing Lines</CardTitle>
           <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
             <Input
-              placeholder="Search warehouse_id/client_id"
+              placeholder="Search warehouse/client (id or name)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="md:w-64"
@@ -508,11 +524,14 @@ export function StorageBillingPage() {
               <Table className={stickyTableClass}>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className={`${stickyHeaderClass} ${stickyLeftClass} ${stickyIntersectionClass} left-0 w-32`}>
-                      warehouse_id
+                    <TableHead className={`${stickyHeaderClass} ${stickyLeftClass} ${stickyIntersectionClass} left-0 w-56`}>
+                      warehouse
                     </TableHead>
-                    <TableHead className={`${stickyHeaderClass} ${stickyLeftClass} ${stickyIntersectionClass} left-[8rem] w-32`}>
-                      client_id
+                    <TableHead className={`${stickyHeaderClass} ${stickyLeftClass} ${stickyIntersectionClass} left-[14rem] w-56`}>
+                      client
+                    </TableHead>
+                    <TableHead className={`${stickyHeaderClass} text-right`}>
+                      sku_count
                     </TableHead>
                     <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("days_count")}>
@@ -550,8 +569,19 @@ export function StorageBillingPage() {
                 <TableBody>
                   {tableRows.map((row) => (
                     <TableRow key={`${row.warehouse_id}-${row.client_id}`}>
-                      <TableCell className={`${stickyLeftClass} left-0 w-32`}>{row.warehouse_id}</TableCell>
-                      <TableCell className={`${stickyLeftClass} left-[8rem] w-32`}>{row.client_id}</TableCell>
+                      <TableCell className={`${stickyLeftClass} left-0 w-56`}>
+                        <div className="leading-tight">
+                          <div className="font-medium">{row.warehouse_name ?? "-"}</div>
+                          <div className="text-xs text-slate-500">ID {row.warehouse_id}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className={`${stickyLeftClass} left-[14rem] w-56`}>
+                        <div className="leading-tight">
+                          <div className="font-medium">{row.client_name ?? "-"}</div>
+                          <div className="text-xs text-slate-500">ID {row.client_id}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">{Number(row.sku_count ?? 0).toLocaleString()}</TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex items-center gap-2">
                           <span>{safeNumber(row.days_count).toLocaleString()}</span>
@@ -597,7 +627,10 @@ export function StorageBillingPage() {
             ) : (
               <div className="space-y-3">
                 <div className="text-sm text-slate-600">
+                  <span className="mr-4">warehouse: {skuData.warehouse_name ?? `ID ${skuData.warehouse_id}`}</span>
+                  <span className="mr-4">client: {skuData.client_name ?? `ID ${skuData.client_id}`}</span>
                   <span className="mr-4">rate_cbm: {formatMoney(skuData.rate_cbm)}</span>
+                  <span className="mr-4">sku: {Number(skuData.summary.total_sku_count ?? skuData.lines.length).toLocaleString()}</span>
                   <span className="mr-4">qty: {Number(skuData.summary.total_available_qty).toLocaleString()}</span>
                   <span>amount: {formatMoney(skuData.summary.total_amount_cbm)}</span>
                 </div>

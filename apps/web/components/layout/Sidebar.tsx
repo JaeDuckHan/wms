@@ -38,7 +38,10 @@ export function Sidebar() {
       </Link>
       <nav className="space-y-1">
         {items.map((item) => {
-          const active = item.label === "nav.billing" ? pathname.startsWith("/billing") : pathname.startsWith(item.href);
+          const active =
+            item.href === "/billing/events"
+              ? pathname === "/billing" || pathname.startsWith("/billing/events")
+              : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link
@@ -50,7 +53,7 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-4 w-4" />
-              <span className="whitespace-pre-line leading-tight">{toStackedLabel(t(item.label))}</span>
+              <span className="whitespace-pre-line leading-tight">{toStackedLabel(t(item.label ?? ""))}</span>
             </Link>
           );
         })}

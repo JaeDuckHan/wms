@@ -4,6 +4,7 @@ export const messagesEn = {
     outbounds: "Outbounds",
     inventory: "Inventory",
     billing: "Billing",
+    billingBasis: "Billing Basis",
     dashboard: "Dashboard",
     settings: "Settings",
     trend: "Storage Trend",
