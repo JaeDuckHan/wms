@@ -417,3 +417,27 @@
 - [UX/web] Storage billing page hides developer-oriented warning card/column for simpler non-technical view.
   - file: `apps/web/features/dashboard/StorageBillingPage.tsx`
   - retained: core amount columns and summary cards.
+
+## 2026-03-05 (Storage billing real-data verification + fallback hardening)
+
+- [Working folder] `D:\_작업폴더_codex`
+- [Runtime folder] `apps/api`, `apps/web`
+- [Finding] `sku_count=0` and uniform `rate_cbm=1200` pattern was caused by dashboard fallback response, not real billing computation.
+- [Root causes found during real run]
+  - API DB credential mismatch (`wms` denied) in local `.env` runtime.
+  - Missing table `storage_snapshots`.
+  - Missing product CBM columns (`cbm_m3`, `min_storage_fee_month`) before patch.
+- [DB actions for verification]
+  - Applied `apps/api/sql/patch_multi_warehouse_billing_storage.sql`.
+  - Applied `apps/api/sql/patch_storage_billing_cbm.sql`.
+  - Generated snapshot via `POST /api/dashboard/storage/snapshots/generate`.
+  - Inserted active storage rate (`warehouse_id=203`, `client_id=104`, `rate_cbm=5000`, `effective_from=2026-03-01`).
+- [Real API verification result]
+  - `/api/dashboard/storage/billing/preview?month=2026-03` returned
+    - `sku_count: 1`
+    - `avg_cbm: 0.012`
+    - `rate_cbm: 5000`
+    - `amount_total: 60`
+- [Fix/web] Hardened dashboard fallback switch.
+  - `apps/web/features/dashboard/api.ts`
+  - changed default from fallback ON to fallback OFF unless `NEXT_PUBLIC_DASHBOARD_FALLBACK=true` is explicitly set.
