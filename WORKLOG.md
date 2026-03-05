@@ -385,3 +385,29 @@
 - [Verification]
   - `wms-api`: `node --check src/routes/dashboard.js` passed.
   - `wms-web`: `npm run build` passed.
+
+## 2026-03-05 (Storage billing filter hint duplicate fix)
+
+- [Working folder] `D:\_작업폴더_codex`, `D:\_작업폴더_codex\wms-web`
+- [Runtime folder] `apps/web`, `wms-web/apps/web`
+- [Request] Storage billing filter area showed duplicate helper text under Load button.
+- [Fix/web] Removed duplicated `filter.pressEnter` render line in `FilterBar` for both runtime paths.
+  - `apps/web/components/dashboard/FilterBar.tsx`
+  - `wms-web/apps/web/components/dashboard/FilterBar.tsx`
+- [Note] If warehouse/client still appear as numeric-only, check which API/runtime path is actually running (`apps/*` monorepo vs `wms-web/wms-api`) and align deployment target.
+- [API sync/monorepo] `apps/api/src/routes/dashboard.js` billing preview now includes `warehouse_name`, `client_name`, `sku_count` so Storage Billing table can render name+ID instead of numeric-only in monorepo runtime too.
+
+## 2026-03-05 (Storage billing readability + duplicate hint hotfix, final)
+
+- [Working folder] `D:\_작업폴더_codex`
+- [Runtime folder] `apps/web`, `apps/api`
+- [Issue] Storage billing filter helper text (`filter.pressEnter`) rendered twice under Load/조회 button.
+- [Fix/web] Removed duplicated helper line in dashboard `FilterBar`.
+  - `apps/web/components/dashboard/FilterBar.tsx`
+- [Issue] In some runtime paths, billing lines showed ID-only values (`warehouse_id`, `client_id`) without names.
+- [Fix/api] Extended monorepo billing preview response to include human-readable fields:
+  - `warehouse_name`, `client_name`, `sku_count`
+  - file: `apps/api/src/routes/dashboard.js`
+- [Verification]
+  - `apps/web`: `npx --no-install tsc --noEmit --pretty false --incremental false` passed
+  - `apps/api`: `node --check src/routes/dashboard.js` passed
