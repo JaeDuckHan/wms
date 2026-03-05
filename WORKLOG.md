@@ -319,3 +319,52 @@
   - `wms-web`: `origin-disabled(3pl.git)`, `wms(wms.git)`
   - `wms-api`: `origin-disabled(wms-api.git)`
 
+
+## 2026-03-05 (Working folder definition to avoid confusion)
+
+- [Rule] Before starting work, record the exact target repository/folder first.
+- [Primary monorepo root]
+  - `D:\_작업폴더_codex`
+  - Targets: `apps/web`, `apps/api`, `sql`, `docs`, `tests`
+  - Remote: `origin = https://github.com/JaeDuckHan/wms.git`
+- [Legacy split repos under same workspace]
+  - `D:\_작업폴더_codex\wms-web` (web repo)
+  - `D:\_작업폴더_codex\wms-api` (api repo)
+- [Execution policy]
+  - If user does not specify, default working folder is `D:\_작업폴더_codex`.
+  - If runtime is from `wms-web` / `wms-api`, verify and apply same fixes there as needed.
+  - Before commit/push, always re-check target repo with `git -C <repo> status -sb`.
+- [Incident note]
+  - Warehouse edit error (`Invalid request body`) happened because runtime path was `wms-web/wms-api`, not `apps/*` monorepo path.
+  - From now on, each worklog entry will include both `working folder` and `runtime folder`.
+
+## 2026-03-05 (CBM display trim + Phase2 SKU billing preview)
+
+- [Working folder] `D:\_작업폴더_codex\wms-web`, `D:\_작업폴더_codex\wms-api`
+- [Runtime folder] `wms-web/apps/web`, `wms-api/src`
+- [Request] In Settings > Products, trim CBM display from `0.008000` to `0.008`; then continue phase2 work.
+- [Web/Product] Updated CBM display formatting to 3-decimal rounded compact output (trailing zeros removed).
+  - Affected: product list CBM column and auto preview text in product modal.
+- [API/Phase2] Added SKU-level CBM billing preview endpoint.
+  - New route: `GET /api/dashboard/storage/billing/sku-preview`
+  - Inputs: `month`, `warehouseId`, `clientId`, optional `rateCbm`
+  - Behavior: calculates per-SKU amount using `available_qty * cbm_m3 * rate_cbm`
+  - Rate source: query `rateCbm` override -> otherwise warehouse `default_cbm_rate` fallback (if column exists).
+- [API/Billing preview] Updated existing monthly billing preview to apply warehouse `default_cbm_rate` when `rateCbm` query override is omitted.
+- [Web/Dashboard] Added SKU CBM Billing Preview section in Storage Billing page when warehouse/client filters are set.
+  - Shows per-SKU rows: product, qty, cbm_m3, rate_cbm, amount_cbm.
+- [Stability] Resolved leftover merge-conflict markers in `Sidebar.tsx` and `PageHeader.tsx` that were blocking web build.
+- [Verification]
+  - `wms-api`: `node --check src/routes/dashboard.js` passed.
+  - `wms-web`: `npm run build` passed.
+
+## 2026-03-05 (User confirmation note: SKU CBM preview page)
+
+- [Working folder] `D:\_작업폴더_codex\wms-web`, `D:\_작업폴더_codex\wms-api`
+- [Runtime folder] `wms-web/apps/web`, `wms-api/src`
+- [Preview screen path] `/dashboard/storage-billing`
+- [How to view billing basis]
+  - Set `warehouseId` and `clientId` in filter.
+  - Check `SKU CBM Billing Preview` section for per-SKU rows.
+  - Monthly client total basis is `summary.total_amount_cbm` (sum of SKU `amount_cbm`).
+- [Note] Current implementation is preview/billing-basis, not invoice issuance.
