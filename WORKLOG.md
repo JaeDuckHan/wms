@@ -414,3 +414,6 @@
 - [Hotfix/web] Storage billing page now resolves warehouse/client names from Settings master lists when API line payload has ID only.
   - file: `apps/web/features/dashboard/StorageBillingPage.tsx`
   - effect: even if `warehouse_name/client_name` is missing, UI shows `Warehouse #id` / `Client #id` fallback and master-name mapping when available.
+- [UX/web] Storage billing page hides developer-oriented warning card/column for simpler non-technical view.
+  - file: `apps/web/features/dashboard/StorageBillingPage.tsx`
+  - retained: core amount columns and summary cards.

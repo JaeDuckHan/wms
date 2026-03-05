@@ -500,22 +500,6 @@ export function StorageBillingPage() {
             <CardContent className="text-2xl font-semibold">{formatMoney(data?.summary.amount_pallet ?? 0)}</CardContent>
           </Card>
           </div>
-          {(data?.alerts?.insufficient_snapshot_days_count || data?.alerts?.missing_cbm_scope_count) ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Warnings</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-2">
-                {(data?.alerts?.insufficient_snapshot_days_count ?? 0) > 0 ? (
-                  <Badge variant="warning">{`${t("insufficient snapshot days")}: ${data?.alerts?.insufficient_snapshot_days_count}`}</Badge>
-                ) : null}
-                {(data?.alerts?.missing_cbm_scope_count ?? 0) > 0 ? (
-                  <Badge variant="warning">{`missing CBM values: ${data?.alerts?.missing_cbm_scope_count}`}</Badge>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
-
           <Card>
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <CardTitle>Billing Lines</CardTitle>
@@ -597,7 +581,6 @@ export function StorageBillingPage() {
                         <ArrowDownUp className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className={`${stickyHeaderClass}`}>warnings</TableHead>
                     <TableHead className={`${stickyHeaderClass} text-right`}>
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("amount_total")}>
                         amount_total
@@ -631,14 +614,6 @@ export function StorageBillingPage() {
                       <TableCell className="text-right">{formatCbm(row.avg_cbm)}</TableCell>
                       <TableCell className="text-right">{formatMoney(row.rate_cbm ?? 0)}</TableCell>
                       <TableCell className="text-right">{formatMoney(row.amount_cbm)}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {(row.warning_messages ?? []).map((message) => (
-                            <Badge key={`${row.warehouse_id}-${row.client_id}-${message}`} variant="warning">{message}</Badge>
-                          ))}
-                          {(row.warning_messages ?? []).length === 0 ? "-" : null}
-                        </div>
-                      </TableCell>
                       <TableCell className="text-right">{formatMoney(row.amount_total)}</TableCell>
                     </TableRow>
                   ))}
