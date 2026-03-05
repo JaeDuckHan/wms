@@ -368,3 +368,20 @@
   - Check `SKU CBM Billing Preview` section for per-SKU rows.
   - Monthly client total basis is `summary.total_amount_cbm` (sum of SKU `amount_cbm`).
 - [Note] Current implementation is preview/billing-basis, not invoice issuance.
+
+## 2026-03-05 (Storage billing readability improvements)
+
+- [Working folder] `D:\_작업폴더_codex\wms-web`, `D:\_작업폴더_codex\wms-api`
+- [Runtime folder] `wms-web/apps/web`, `wms-api/src`
+- [Request] In storage billing page, IDs-only view is hard to understand.
+- [API] Added human-readable fields to billing preview response:
+  - `warehouse_name`, `client_name`, `sku_count` in monthly lines
+  - `warehouse_name`, `client_name`, `total_sku_count` in SKU preview summary
+- [Web] Updated storage billing UI:
+  - Warehouse/Client columns now show `name + ID`
+  - Added `sku_count` column
+  - Search supports name matching
+  - SKU preview summary shows warehouse/client names and total SKU count
+- [Verification]
+  - `wms-api`: `node --check src/routes/dashboard.js` passed.
+  - `wms-web`: `npm run build` passed.
