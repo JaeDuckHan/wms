@@ -23,7 +23,12 @@ import {
   StickyTableContainer,
 } from "@/components/dashboard/StickyTable";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getStorageBillingPreview, type StorageBillingResponse } from "@/features/dashboard/api";
+import {
+  getStorageBillingPreview,
+  getStorageBillingSkuPreview,
+  type StorageBillingResponse,
+  type StorageBillingSkuResponse
+} from "@/features/dashboard/api";
 import { captureElementToPng } from "@/features/dashboard/capture";
 import { normalizeInt, normalizeMonth } from "@/features/dashboard/input";
 import { useDashboardToast } from "@/features/dashboard/toast";
@@ -112,6 +117,9 @@ export function StorageBillingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<StorageBillingResponse | null>(null);
+  const [skuLoading, setSkuLoading] = useState(false);
+  const [skuError, setSkuError] = useState<string | null>(null);
+  const [skuData, setSkuData] = useState<StorageBillingSkuResponse | null>(null);
 
   const buildFilters = useCallback(
     (next?: Partial<BillingFilters>) => ({
@@ -142,6 +150,7 @@ export function StorageBillingPage() {
     if (!normalizedMonth) return;
     setLoading(true);
     setError(null);
+    setSkuError(null);
     try {
       const result = await getStorageBillingPreview({
         month: normalizedMonth,
@@ -151,6 +160,29 @@ export function StorageBillingPage() {
         ratePallet: filters.ratePallet ? Number(filters.ratePallet) : undefined,
       });
       setData(result);
+
+      const whId = filters.warehouseId ? Number(normalizeInt(filters.warehouseId)) : undefined;
+      const clId = filters.clientId ? Number(normalizeInt(filters.clientId)) : undefined;
+      if (whId && clId) {
+        setSkuLoading(true);
+        try {
+          const skuResult = await getStorageBillingSkuPreview({
+            month: normalizedMonth,
+            warehouseId: whId,
+            clientId: clId,
+            rateCbm: filters.rateCbm ? Number(filters.rateCbm) : undefined,
+          });
+          setSkuData(skuResult);
+        } catch (skuLoadError) {
+          const message = skuLoadError instanceof Error ? skuLoadError.message : "Failed to load SKU billing preview.";
+          setSkuError(message);
+          setSkuData(null);
+        } finally {
+          setSkuLoading(false);
+        }
+      } else {
+        setSkuData(null);
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load billing preview.";
       setError(message);
@@ -546,6 +578,62 @@ export function StorageBillingPage() {
           )}
         </CardContent>
       </Card>
+
+      {(warehouseId && clientId) ? (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>SKU CBM Billing Preview</CardTitle>
+            <p className="text-sm text-slate-500">
+              warehouse {warehouseId} / client {clientId} 기준 SKU별 CBM 금액입니다.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {skuError ? (
+              <ErrorState title="Failed to load SKU billing preview" message={skuError} onRetry={() => void load()} />
+            ) : skuLoading ? (
+              <TableSkeleton rows={5} cols={7} />
+            ) : !skuData || skuData.lines.length === 0 ? (
+              <EmptyState title="No SKU billing rows" description="해당 조건에 재고가 없습니다." />
+            ) : (
+              <div className="space-y-3">
+                <div className="text-sm text-slate-600">
+                  <span className="mr-4">rate_cbm: {formatMoney(skuData.rate_cbm)}</span>
+                  <span className="mr-4">qty: {Number(skuData.summary.total_available_qty).toLocaleString()}</span>
+                  <span>amount: {formatMoney(skuData.summary.total_amount_cbm)}</span>
+                </div>
+                <div className="overflow-x-auto rounded-xl border bg-white">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>product_id</TableHead>
+                        <TableHead>sku_code</TableHead>
+                        <TableHead>product_name</TableHead>
+                        <TableHead className="text-right">available_qty</TableHead>
+                        <TableHead className="text-right">cbm_m3</TableHead>
+                        <TableHead className="text-right">rate_cbm</TableHead>
+                        <TableHead className="text-right">amount_cbm</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {skuData.lines.map((row) => (
+                        <TableRow key={row.product_id}>
+                          <TableCell>{row.product_id}</TableCell>
+                          <TableCell>{row.sku_code ?? "-"}</TableCell>
+                          <TableCell>{row.product_name ?? "-"}</TableCell>
+                          <TableCell className="text-right">{Number(row.available_qty).toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{formatCbm(row.cbm_m3)}</TableCell>
+                          <TableCell className="text-right">{formatMoney(row.rate_cbm)}</TableCell>
+                          <TableCell className="text-right">{formatMoney(row.amount_cbm)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
     </section>
   );
 }

@@ -70,6 +70,12 @@ function computeCbmM3(widthCm: number | null, lengthCm: number | null, heightCm:
   return Number(((widthCm * lengthCm * heightCm) / 1000000).toFixed(6));
 }
 
+function formatCbmDisplay(value: number | null | undefined) {
+  if (value == null) return "-";
+  const rounded = Number(Number(value).toFixed(3));
+  return Number.isFinite(rounded) ? rounded.toString() : "-";
+}
+
 export function ProductsSettingsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
@@ -317,7 +323,7 @@ export function ProductsSettingsPage() {
             { key: "barcode_raw", label: "Barcode Raw", render: (row) => row.barcode_raw },
             { key: "barcode_full", label: "Barcode Full", render: (row) => row.barcode_full },
             { key: "name", label: "Name", render: (row) => row.name },
-            { key: "cbm_m3", label: "CBM(m³)", render: (row) => row.cbm_m3 == null ? "-" : Number(row.cbm_m3).toFixed(6) },
+            { key: "cbm_m3", label: "CBM(m³)", render: (row) => formatCbmDisplay(row.cbm_m3) },
             { key: "min_storage_fee_month", label: "Min Fee/Month", render: (row) => Number(row.min_storage_fee_month || 0).toLocaleString() },
             { key: "status", label: "Status", render: (row) => <ActiveStatusBadge status={row.status} /> },
             {
@@ -397,7 +403,7 @@ export function ProductsSettingsPage() {
             </div>
             <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">CBM (Auto Preview)</p>
-              <p className="mt-1 font-mono text-slate-700">{cbmPreview == null ? "-" : cbmPreview.toFixed(6)}</p>
+              <p className="mt-1 font-mono text-slate-700">{formatCbmDisplay(cbmPreview)}</p>
             </div>
             <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t("Barcode Full (Preview)")}</p>

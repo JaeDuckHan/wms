@@ -44,6 +44,29 @@ export type StorageBillingResponse = {
   }>;
 };
 
+export type StorageBillingSkuResponse = {
+  ok: true;
+  month: string;
+  warehouse_id: number;
+  client_id: number;
+  rate_cbm: number;
+  summary: {
+    total_available_qty: number;
+    total_amount_cbm: number;
+    missing_cbm_count: number;
+  };
+  lines: Array<{
+    product_id: number;
+    sku_code: string | null;
+    product_name: string | null;
+    available_qty: number;
+    cbm_m3: number;
+    amount_cbm: number;
+    rate_cbm: number;
+    warning: string | null;
+  }>;
+};
+
 export type StorageDashboardResponse = {
   ok: true;
   date: string;
@@ -363,6 +386,25 @@ function getFallback(path: string, query?: Record<string, string | number | unde
   if (path === "storage") return storageFallback(query);
   if (path === "storage/trend") return trendFallback(query);
   if (path === "storage/billing/preview") return billingFallback(query);
+  if (path === "storage/billing/sku-preview") {
+    const month = toMonthText(query?.month, new Date().toISOString().slice(0, 7));
+    const warehouseId = toInt(query?.warehouseId) ?? 101;
+    const clientId = toInt(query?.clientId) ?? 1;
+    const rate = Number(query?.rateCbm ?? 5000);
+    return {
+      ok: true,
+      month,
+      warehouse_id: warehouseId,
+      client_id: clientId,
+      rate_cbm: rate,
+      summary: {
+        total_available_qty: 0,
+        total_amount_cbm: 0,
+        missing_cbm_count: 0,
+      },
+      lines: [],
+    } satisfies StorageBillingSkuResponse;
+  }
   if (path === "storage/capacity") return capacityFallback(query);
   return null;
 }
@@ -438,6 +480,15 @@ export function getStorageBillingPreview(query: {
   ratePallet?: number;
 }) {
   return requestDashboard<StorageBillingResponse>("storage/billing/preview", query);
+}
+
+export function getStorageBillingSkuPreview(query: {
+  month: string;
+  warehouseId: number;
+  clientId: number;
+  rateCbm?: number;
+}) {
+  return requestDashboard<StorageBillingSkuResponse>("storage/billing/sku-preview", query);
 }
 
 export function getStorageCapacity(query: { date?: string; warehouseId?: number }) {
