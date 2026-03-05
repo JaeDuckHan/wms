@@ -132,7 +132,7 @@ export type GenerateSnapshotsResponse = {
   };
 };
 
-const DASHBOARD_FALLBACK_ENABLED = process.env.NEXT_PUBLIC_DASHBOARD_FALLBACK === "true";
+const DASHBOARD_FALLBACK_ENABLED = false;
 
 function toQuery(input: Record<string, string | number | undefined>) {
   const params = new URLSearchParams();

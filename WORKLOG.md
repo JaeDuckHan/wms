@@ -441,3 +441,6 @@
 - [Fix/web] Hardened dashboard fallback switch.
   - `apps/web/features/dashboard/api.ts`
   - changed default from fallback ON to fallback OFF unless `NEXT_PUBLIC_DASHBOARD_FALLBACK=true` is explicitly set.
+- [Hotfix/web] Disabled dashboard fallback unconditionally for storage pages to prevent silent fake billing values (`sku_count=0`, `rate_cbm=1200`) on API failure.
+  - file: `apps/web/features/dashboard/api.ts`
+  - policy: show real API error instead of synthetic fallback rows.
