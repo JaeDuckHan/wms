@@ -29,6 +29,8 @@ import {
   type StorageBillingResponse,
   type StorageBillingSkuResponse
 } from "@/features/dashboard/api";
+import { listClients } from "@/features/settings/clients/api";
+import { listWarehouses } from "@/features/settings/warehouses/api";
 import { captureElementToPng } from "@/features/dashboard/capture";
 import { normalizeInt, normalizeMonth } from "@/features/dashboard/input";
 import { useDashboardToast } from "@/features/dashboard/toast";
@@ -123,6 +125,8 @@ export function StorageBillingPage() {
   const [skuLoading, setSkuLoading] = useState(false);
   const [skuError, setSkuError] = useState<string | null>(null);
   const [skuData, setSkuData] = useState<StorageBillingSkuResponse | null>(null);
+  const [warehouseNameById, setWarehouseNameById] = useState<Record<number, string>>({});
+  const [clientNameById, setClientNameById] = useState<Record<number, string>>({});
 
   const buildFilters = useCallback(
     (next?: Partial<BillingFilters>) => ({
@@ -225,6 +229,34 @@ export function StorageBillingPage() {
     setBootstrapped(true);
   }, [bootstrapped, demoMode, demoReady, hasExplicitFilterQuery, load, loadWithFilters, pathname, router]);
 
+  useEffect(() => {
+    let mounted = true;
+    void Promise.all([listWarehouses(), listClients()])
+      .then(([warehouses, clients]) => {
+        if (!mounted) return;
+        const whMap: Record<number, string> = {};
+        for (const item of warehouses) {
+          const id = Number(item.id);
+          if (Number.isFinite(id)) whMap[id] = item.name;
+        }
+        const clMap: Record<number, string> = {};
+        for (const item of clients) {
+          const id = Number(item.id);
+          if (Number.isFinite(id)) clMap[id] = item.name;
+        }
+        setWarehouseNameById(whMap);
+        setClientNameById(clMap);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setWarehouseNameById({});
+        setClientNameById({});
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const tableRows = useMemo(() => {
     if (!data?.lines?.length) return [];
     const keyword = search.trim().toLowerCase();
@@ -247,6 +279,14 @@ export function StorageBillingPage() {
       return compareNumber(a[sortKey], b[sortKey], sortDirection);
     });
   }, [data?.lines, search, sortDirection, sortKey]);
+
+  const resolveWarehouseName = useCallback((warehouseId: number, warehouseName?: string | null) => {
+    return warehouseName ?? warehouseNameById[warehouseId] ?? `Warehouse #${warehouseId}`;
+  }, [warehouseNameById]);
+
+  const resolveClientName = useCallback((clientId: number, clientName?: string | null) => {
+    return clientName ?? clientNameById[clientId] ?? `Client #${clientId}`;
+  }, [clientNameById]);
 
   const reset = () => {
     const next = {
@@ -571,13 +611,13 @@ export function StorageBillingPage() {
                     <TableRow key={`${row.warehouse_id}-${row.client_id}`}>
                       <TableCell className={`${stickyLeftClass} left-0 w-56`}>
                         <div className="leading-tight">
-                          <div className="font-medium">{row.warehouse_name ?? "-"}</div>
+                          <div className="font-medium">{resolveWarehouseName(row.warehouse_id, row.warehouse_name)}</div>
                           <div className="text-xs text-slate-500">ID {row.warehouse_id}</div>
                         </div>
                       </TableCell>
                       <TableCell className={`${stickyLeftClass} left-[14rem] w-56`}>
                         <div className="leading-tight">
-                          <div className="font-medium">{row.client_name ?? "-"}</div>
+                          <div className="font-medium">{resolveClientName(row.client_id, row.client_name)}</div>
                           <div className="text-xs text-slate-500">ID {row.client_id}</div>
                         </div>
                       </TableCell>
@@ -627,8 +667,8 @@ export function StorageBillingPage() {
             ) : (
               <div className="space-y-3">
                 <div className="text-sm text-slate-600">
-                  <span className="mr-4">warehouse: {skuData.warehouse_name ?? `ID ${skuData.warehouse_id}`}</span>
-                  <span className="mr-4">client: {skuData.client_name ?? `ID ${skuData.client_id}`}</span>
+                  <span className="mr-4">warehouse: {resolveWarehouseName(skuData.warehouse_id, skuData.warehouse_name)}</span>
+                  <span className="mr-4">client: {resolveClientName(skuData.client_id, skuData.client_name)}</span>
                   <span className="mr-4">rate_cbm: {formatMoney(skuData.rate_cbm)}</span>
                   <span className="mr-4">sku: {Number(skuData.summary.total_sku_count ?? skuData.lines.length).toLocaleString()}</span>
                   <span className="mr-4">qty: {Number(skuData.summary.total_available_qty).toLocaleString()}</span>

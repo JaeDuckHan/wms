@@ -411,3 +411,6 @@
 - [Verification]
   - `apps/web`: `npx --no-install tsc --noEmit --pretty false --incremental false` passed
   - `apps/api`: `node --check src/routes/dashboard.js` passed
+- [Hotfix/web] Storage billing page now resolves warehouse/client names from Settings master lists when API line payload has ID only.
+  - file: `apps/web/features/dashboard/StorageBillingPage.tsx`
+  - effect: even if `warehouse_name/client_name` is missing, UI shows `Warehouse #id` / `Client #id` fallback and master-name mapping when available.

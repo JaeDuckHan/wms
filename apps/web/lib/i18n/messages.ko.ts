@@ -4,6 +4,7 @@ export const messagesKo = {
     outbounds: "출고",
     inventory: "재고",
     billing: "정산",
+    billingBasis: "청구 근거",
     dashboard: "대시보드",
     settings: "설정",
     trend: "보관 추이",
