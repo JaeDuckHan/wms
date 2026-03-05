@@ -2,7 +2,7 @@ import { ApiError } from "@/features/outbound/api";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
 const ENABLE_DEV_FALLBACK = process.env.NODE_ENV !== "production";
 
 type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
@@ -70,7 +70,7 @@ export async function requestVoid(path: string, init?: RequestInit, options?: Au
     const json = (await response.json()) as JsonResponse<unknown>;
     if (!json.ok) throw new ApiError(json.message ?? "Request failed", response.status);
   } catch {
-    // Accept empty body or non-JSON for endpoints that only return status code.
+    // allow empty/non-json body
   }
 }
 
