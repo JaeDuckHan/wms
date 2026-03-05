@@ -450,3 +450,24 @@
   - fallback order for CBM calc: `cbm_m3` -> `volume_ml` -> `0`.
   - missing-CBM alerts now avoid selecting/grouping non-existent columns (`width_cm`, `length_cm`, `height_cm`, `cbm_m3`).
   - SKU monthly floor calc now handles missing `min_storage_fee_month` safely.
+
+## 2026-03-05 (Storage billing diverse sample dataset for QA)
+
+- [Working folder] `D:\_작업폴더_codex`
+- [Runtime folder] `wms_test` MySQL + `apps/api` preview API
+- [Request] Add diverse sample data so storage billing preview can be tested with varying `sku_count` and `rate_cbm`.
+- [DB seed actions]
+  - Added warehouses: `WH-BILL-A`, `WH-BILL-B`, `WH-BILL-C`
+  - Added clients: `CL-BILL-A`, `CL-BILL-B`
+  - Added 10 products (5 per client), lots, and stock balances across 5 scopes.
+  - Added active storage rates for scope-priority test:
+    - `(WH-BILL-A, CL-BILL-A) => 4500`
+    - `(WH-BILL-B, NULL) => 3200`
+    - `(NULL, CL-BILL-B) => 5100`
+    - `(NULL, NULL) => 2800`
+  - Built last 5 days storage snapshots for all active stock scopes.
+- [Verification]
+  - Preview API (`/api/dashboard/storage/billing/preview?month=2026-03`) returned varied rows:
+    - `sku_count`: 1, 2, 3, 4
+    - `rate_cbm`: 2800, 3200, 4500, 5000, 5100
+  - Confirmed rate priority behavior (`scope > warehouse > client > global`).
