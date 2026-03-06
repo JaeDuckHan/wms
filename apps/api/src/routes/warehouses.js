@@ -46,7 +46,9 @@ async function getAvailableOptionalWarehouseColumns() {
     OPTIONAL_WAREHOUSE_COLUMNS
   );
 
-  optionalWarehouseColumnsCache = new Set(rows.map((row) => String(row.column_name)));
+  optionalWarehouseColumnsCache = new Set(
+    rows.map((row) => String(row.column_name ?? row.COLUMN_NAME ?? Object.values(row)[0] ?? ""))
+  );
   optionalWarehouseColumnsCachedAt = now;
   return optionalWarehouseColumnsCache;
 }
