@@ -25,4 +25,8 @@ docker compose --env-file "$ENV_FILE" exec -T db \
   sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
   < apps/api/sql/patch_multi_warehouse_billing_storage.sql
 
-echo "[ok] billing runtime patches applied (idempotent)."
+docker compose --env-file "$ENV_FILE" exec -T db \
+  sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
+  < apps/api/sql/patch_warehouse_default_cbm_rate.sql
+
+echo "[ok] runtime patches applied (idempotent): billing + warehouse default cbm columns."

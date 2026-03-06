@@ -79,6 +79,17 @@ function isMysqlDuplicate(error) {
   return error && error.code === "ER_DUP_ENTRY";
 }
 
+function findMissingRequestedOptionalColumns(body, availableColumns) {
+  const missing = [];
+  if (Object.prototype.hasOwnProperty.call(body, "default_cbm_size") && !availableColumns.has("default_cbm_size")) {
+    missing.push("default_cbm_size");
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "default_cbm_rate") && !availableColumns.has("default_cbm_rate")) {
+    missing.push("default_cbm_rate");
+  }
+  return missing;
+}
+
 router.get("/", async (_req, res) => {
   try {
     const availableColumns = await getAvailableOptionalWarehouseColumns();
@@ -126,6 +137,13 @@ router.post("/", validate(warehouseSchema), async (req, res) => {
 
   try {
     const availableColumns = await getAvailableOptionalWarehouseColumns();
+    const missingRequested = findMissingRequestedOptionalColumns(req.body, availableColumns);
+    if (missingRequested.length > 0) {
+      return res.status(503).json({
+        ok: false,
+        message: `Warehouse schema is missing columns: ${missingRequested.join(", ")}. Apply apps/api/sql/patch_warehouse_default_cbm_rate.sql`
+      });
+    }
     const insertColumns = ["code", "name", "country", "timezone", "status"];
     const insertValues = [payload.code, payload.name, payload.country, payload.timezone, payload.status];
     if (availableColumns.has("default_cbm_size")) {
@@ -171,6 +189,13 @@ router.put("/:id", validate(warehouseSchema), async (req, res) => {
 
   try {
     const availableColumns = await getAvailableOptionalWarehouseColumns();
+    const missingRequested = findMissingRequestedOptionalColumns(req.body, availableColumns);
+    if (missingRequested.length > 0) {
+      return res.status(503).json({
+        ok: false,
+        message: `Warehouse schema is missing columns: ${missingRequested.join(", ")}. Apply apps/api/sql/patch_warehouse_default_cbm_rate.sql`
+      });
+    }
     const updateAssignments = [
       "code = ?",
       "name = ?",

@@ -149,7 +149,7 @@ cat apps/api/sql/seed/seed_sample_realistic_10x.sql | docker compose --env-file 
   sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
-Apply billing schema patch on an already-running DB (required for Billing Events tab):
+Apply runtime DB patches on an already-running DB (required for Billing/Storage/Warehouse settings):
 
 ```bash
 cd /var/www/wms
@@ -161,6 +161,7 @@ Manual fallback (same idempotent patches):
 ```bash
 cat apps/api/sql/patch_billing_invoice_engine.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 cat apps/api/sql/patch_multi_warehouse_billing_storage.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+cat apps/api/sql/patch_warehouse_default_cbm_rate.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
 ## 8) Default login

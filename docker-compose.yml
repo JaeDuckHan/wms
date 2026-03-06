@@ -17,7 +17,8 @@ services:
       - ./apps/api/sql/seed/seed_testpack_base.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
       - ./apps/api/sql/patch_billing_invoice_engine.sql:/docker-entrypoint-initdb.d/03_patch_billing.sql:ro
       - ./apps/api/sql/patch_multi_warehouse_billing_storage.sql:/docker-entrypoint-initdb.d/04_patch_billing_wh.sql:ro
-      - ./apps/api/sql/seed/seed_sample_realistic_10x.sql:/docker-entrypoint-initdb.d/05_seed_sample.sql:ro
+      - ./apps/api/sql/patch_warehouse_default_cbm_rate.sql:/docker-entrypoint-initdb.d/05_patch_warehouse_cbm.sql:ro
+      - ./apps/api/sql/seed/seed_sample_realistic_10x.sql:/docker-entrypoint-initdb.d/06_seed_sample.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
