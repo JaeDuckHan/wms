@@ -284,14 +284,6 @@ function syncExchangeRateUsageCounts() {
 syncInvoiceSubtotalThb();
 syncExchangeRateUsageCounts();
 
-function isEndpointUnavailableError(error: unknown) {
-  const status =
-    typeof error === "object" && error !== null && "status" in error
-      ? Number((error as { status?: unknown }).status)
-      : NaN;
-  return [404, 501, 502, 503, 504].includes(status);
-}
-
 async function withFallback<T>(
   options: RequestOptions | undefined,
   backend: () => Promise<T>,
@@ -306,7 +298,7 @@ async function withFallback<T>(
     }
     return data;
   } catch (error) {
-    if (shouldUseFallback(token) || isEndpointUnavailableError(error)) return clone(await fallback());
+    if (shouldUseFallback(token)) return clone(await fallback());
     throw error;
   }
 }
