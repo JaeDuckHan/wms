@@ -23,6 +23,7 @@ export const productsMock: Product[] = Array.from({ length: 20 }, (_, index) => 
     id: `prd-${seq}`,
     client_id: ((index % 10) + 1),
     client_code: clientCode,
+    client_name: `Client ${clientCode}`,
     barcode_raw: barcodeRaw,
     barcode_full: `${clientCode}-${barcodeRaw}`,
     name: `Sample Product ${pad2(seq)}`,

@@ -4,6 +4,7 @@ export type Product = {
   id: string;
   client_id?: number;
   client_code: string;
+  client_name: string;
   barcode_raw: string;
   barcode_full: string;
   name: string;

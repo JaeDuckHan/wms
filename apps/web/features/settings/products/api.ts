@@ -11,6 +11,7 @@ type RawProduct = {
   id: number | string;
   client_id?: number | string | null;
   client_code?: string | null;
+  client_name?: string | null;
   barcode_raw?: string | null;
   barcode_full?: string | null;
   name?: string | null;
@@ -129,6 +130,7 @@ function mapRawProduct(raw: RawProduct): Product {
     id: String(raw.id),
     client_id: raw.client_id == null ? undefined : Number(raw.client_id),
     client_code: clientCode,
+    client_name: (raw.client_name ?? "").trim() || "-",
     barcode_raw: barcodeRaw,
     barcode_full: raw.barcode_full?.trim() || buildBarcodeFull(clientCode, barcodeRaw),
     name: (raw.name_kr ?? raw.name ?? "").trim() || `Product #${raw.id}`,
@@ -155,6 +157,7 @@ async function createProductInMock(input: ProductFormInput): Promise<Product> {
     id: `prd-${Date.now()}`,
     client_id: validated.client_id,
     client_code: validated.client_code,
+    client_name: validated.client_code,
     barcode_raw: validated.barcode_raw,
     barcode_full: buildBarcodeFull(validated.client_code, validated.barcode_raw),
     name: validated.name,
@@ -180,6 +183,7 @@ async function updateProductInMock(id: string, input: ProductFormInput): Promise
     ...mockDb[idx],
     client_id: validated.client_id,
     client_code: validated.client_code,
+    client_name: validated.client_code,
     barcode_raw: validated.barcode_raw,
     barcode_full: buildBarcodeFull(validated.client_code, validated.barcode_raw),
     name: validated.name,

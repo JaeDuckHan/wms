@@ -128,6 +128,7 @@ export function ProductsSettingsPage() {
         (statusFilter === "all" || item.status === statusFilter) &&
         (
         item.client_code.toLowerCase().includes(q) ||
+        item.client_name.toLowerCase().includes(q) ||
         item.barcode_raw.toLowerCase().includes(q) ||
         item.name.toLowerCase().includes(q)
         )
@@ -319,7 +320,11 @@ export function ProductsSettingsPage() {
             emptyText={loadingRows ? t("Loading products...") : t("No products found.")}
             rowClassName="cursor-pointer hover:bg-slate-50"
             columns={[
-            { key: "client_code", label: "Client Code", render: (row) => <span className="font-medium">{row.client_code}</span> },
+            {
+              key: "client_code",
+              label: "Client",
+              render: (row) => <span className="font-medium">{row.client_code} | {row.client_name}</span>
+            },
             { key: "barcode_raw", label: "Barcode Raw", render: (row) => row.barcode_raw },
             { key: "barcode_full", label: "Barcode Full", render: (row) => row.barcode_full },
             { key: "name", label: "Name", render: (row) => row.name },

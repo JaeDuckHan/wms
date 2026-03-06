@@ -92,6 +92,7 @@ function buildProductSelectColumns(availableColumns) {
     p.id,
     p.client_id,
     c.client_code,
+    c.name_kr AS client_name,
     p.sku_code,
     p.barcode_raw,
     p.barcode_full,
