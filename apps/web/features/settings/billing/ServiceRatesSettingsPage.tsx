@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import {
   createServiceRate,
   deleteServiceRate,
@@ -30,6 +31,7 @@ const blank: Omit<ServiceRate, "id"> = {
 export function ServiceRatesSettingsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canManageBillingSettings, ready } = useCurrentUser();
   const [rows, setRows] = useState<ServiceRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +55,11 @@ export function ServiceRatesSettingsPage() {
   };
 
   useEffect(() => {
+    if (!ready || !canManageBillingSettings) return;
     void reload();
-  }, []);
+  }, [ready, canManageBillingSettings]);
+
+  const accessDenied = ready && !canManageBillingSettings;
 
   const startCreate = () => {
     setEditing(null);
@@ -104,7 +109,16 @@ export function ServiceRatesSettingsPage() {
         subtitle="Define billable services and default KRW/THB pricing policies."
       />
       <SettingsTabs />
-
+      {accessDenied ? (
+        <div className="rounded-xl border bg-white p-6">
+          <ErrorState
+            title={t("Access denied")}
+            message={t("Only admin can access billing settings.")}
+          />
+        </div>
+      ) : null}
+      {accessDenied ? null : (
+        <>
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -128,8 +142,8 @@ export function ServiceRatesSettingsPage() {
                   label: "Actions",
                   render: (row) => (
                     <div className="flex gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => startEdit(row)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void remove(row.service_code)}>Delete</Button>
+                      {canManageBillingSettings ? <Button size="sm" variant="secondary" onClick={() => startEdit(row)}>Edit</Button> : null}
+                      {canManageBillingSettings ? <Button size="sm" variant="ghost" onClick={() => void remove(row.service_code)}>Delete</Button> : null}
                     </div>
                   ),
                 },
@@ -163,9 +177,11 @@ export function ServiceRatesSettingsPage() {
             <option value="active">{t("active")}</option>
             <option value="inactive">{t("inactive")}</option>
           </select>
-          <Button onClick={() => void save()}>{t("Save")}</Button>
+          <Button onClick={() => void save()} disabled={!canManageBillingSettings}>{t("Save")}</Button>
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 }

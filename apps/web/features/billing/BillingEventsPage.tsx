@@ -7,7 +7,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { getMe } from "@/features/auth/api";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { BillingTabs } from "@/components/billing/BillingTabs";
 import {
   billingEventsCsvUrl,
@@ -27,6 +27,7 @@ function currentMonth2Digits() {
 export function BillingEventsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { isAdmin, canAccessBillingEvents, ready } = useCurrentUser();
   const [rows, setRows] = useState<BillingEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,13 +38,8 @@ export function BillingEventsPage() {
   const [clientId, setClientId] = useState("");
   const [status, setStatus] = useState("");
   const [serviceCode, setServiceCode] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
   const normalizedYear = /^\d{4}$/.test(year) ? year : currentYear();
   const selectedInvoiceMonth = month && /^\d{2}$/.test(month) ? `${normalizedYear}-${month}` : undefined;
-
-  useEffect(() => {
-    getMe().then((me) => setIsAdmin(me.role === "admin")).catch(() => setIsAdmin(false));
-  }, []);
 
   const reload = async () => {
     setLoading(true);
@@ -66,8 +62,11 @@ export function BillingEventsPage() {
   };
 
   useEffect(() => {
+    if (!ready || !canAccessBillingEvents) return;
     void reload();
-  }, []);
+  }, [ready, canAccessBillingEvents]);
+
+  const accessDenied = ready && !canAccessBillingEvents;
 
   const csvHref = useMemo(
     () =>
@@ -107,7 +106,16 @@ export function BillingEventsPage() {
         subtitle="Review pending/invoiced billing events before monthly KRW invoice generation."
       />
       <BillingTabs />
-
+      {accessDenied ? (
+        <div className="rounded-xl border bg-white p-6">
+          <ErrorState
+            title={t("Access denied")}
+            message={t("Customer accounts can only access invoices.")}
+          />
+        </div>
+      ) : null}
+      {accessDenied ? null : (
+        <>
       <div className="mb-4 rounded-xl border bg-white p-4">
         <div className="grid gap-3 md:grid-cols-6">
           <Input type="number" placeholder="Year (YYYY)" value={year} onChange={(e) => setYear(e.target.value.slice(0, 4))} />
@@ -174,6 +182,8 @@ export function BillingEventsPage() {
           />
         )}
       </div>
+        </>
+      )}
     </section>
   );
 }

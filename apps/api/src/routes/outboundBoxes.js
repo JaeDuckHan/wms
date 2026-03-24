@@ -20,31 +20,6 @@ const updateBoxSchema = z.object({
   status: z.enum(["open", "packed", "shipped"]).default("open")
 });
 
-let ensured = false;
-
-async function ensureOutboundBoxesTable() {
-  if (ensured) return;
-  await getPool().query(`
-    CREATE TABLE IF NOT EXISTS outbound_boxes (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      outbound_order_id BIGINT UNSIGNED NOT NULL,
-      box_no VARCHAR(80) NOT NULL,
-      courier VARCHAR(100) NULL,
-      tracking_no VARCHAR(120) NULL,
-      item_count INT UNSIGNED NOT NULL DEFAULT 0,
-      status ENUM('open','packed','shipped') NOT NULL DEFAULT 'open',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      deleted_at DATETIME NULL,
-      PRIMARY KEY (id),
-      UNIQUE KEY uq_outbound_box_no (outbound_order_id, box_no),
-      KEY idx_outbound_boxes_order_deleted (outbound_order_id, deleted_at),
-      CONSTRAINT fk_outbound_boxes_order FOREIGN KEY (outbound_order_id) REFERENCES outbound_orders(id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-  `);
-  ensured = true;
-}
-
 async function hasOutboundOrder(outboundOrderId) {
   const [rows] = await getPool().query(
     "SELECT id FROM outbound_orders WHERE id = ? AND deleted_at IS NULL LIMIT 1",
@@ -59,7 +34,6 @@ function isMysqlDuplicate(error) {
 
 router.get("/:id/boxes", async (req, res) => {
   try {
-    await ensureOutboundBoxesTable();
     const outboundOrderId = Number(req.params.id);
     const exists = await hasOutboundOrder(outboundOrderId);
     if (!exists) {
@@ -81,7 +55,6 @@ router.get("/:id/boxes", async (req, res) => {
 
 router.post("/:id/boxes", validate(createBoxSchema), async (req, res) => {
   try {
-    await ensureOutboundBoxesTable();
     const outboundOrderId = Number(req.params.id);
     const exists = await hasOutboundOrder(outboundOrderId);
     if (!exists) {
@@ -114,7 +87,6 @@ router.post("/:id/boxes", validate(createBoxSchema), async (req, res) => {
 
 router.put("/:id/boxes/:boxId", validate(updateBoxSchema), async (req, res) => {
   try {
-    await ensureOutboundBoxesTable();
     const outboundOrderId = Number(req.params.id);
     const exists = await hasOutboundOrder(outboundOrderId);
     if (!exists) {
@@ -151,7 +123,6 @@ router.put("/:id/boxes/:boxId", validate(updateBoxSchema), async (req, res) => {
 
 router.delete("/:id/boxes/:boxId", async (req, res) => {
   try {
-    await ensureOutboundBoxesTable();
     const outboundOrderId = Number(req.params.id);
     const [result] = await getPool().query(
       `UPDATE outbound_boxes

@@ -1,5 +1,6 @@
 const express = require("express");
 const { getPool } = require("../db");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -7,12 +8,16 @@ router.get("/stock-balances", async (req, res) => {
   const { client_id, product_id, lot_id, warehouse_id, location_id } = req.query;
 
   try {
+    const scopedClientId = getScopedClientId(req);
     let query = `SELECT id, client_id, product_id, lot_id, warehouse_id, location_id, available_qty, reserved_qty, created_at, updated_at
                  FROM stock_balances
                  WHERE deleted_at IS NULL`;
     const params = [];
 
-    if (client_id) {
+    if (scopedClientId) {
+      query += " AND client_id = ?";
+      params.push(scopedClientId);
+    } else if (client_id) {
       query += " AND client_id = ?";
       params.push(client_id);
     }
@@ -45,12 +50,16 @@ router.get("/stock-transactions", async (req, res) => {
   const { client_id, product_id, lot_id, ref_type, ref_id, txn_type, date_from, date_to } = req.query;
 
   try {
+    const scopedClientId = getScopedClientId(req);
     let query = `SELECT id, client_id, product_id, lot_id, warehouse_id, location_id, txn_type, txn_date, qty_in, qty_out, ref_type, ref_id, note, created_by, created_at, updated_at
                  FROM stock_transactions
                  WHERE deleted_at IS NULL`;
     const params = [];
 
-    if (client_id) {
+    if (scopedClientId) {
+      query += " AND client_id = ?";
+      params.push(scopedClientId);
+    } else if (client_id) {
       query += " AND client_id = ?";
       params.push(client_id);
     }

@@ -2,9 +2,9 @@ import {
   requestJson,
   resolveToken,
   shouldUseFallback,
-  shouldUseMockMode,
   type RequestOptions,
 } from "@/features/settings/shared/http";
+import { shouldUseMockMode } from "@/lib/runtime-mode";
 
 export type ServiceRate = {
   id: number;
@@ -947,8 +947,21 @@ export async function getBillingInvoice(id: string | number, options?: RequestOp
 export async function exportBillingInvoicePdf(id: string | number, options?: RequestOptions) {
   return withFallback(
     options,
-    () => requestJson<{ status: string; message: string }>(`/billing/invoices/${id}/export-pdf`, undefined, options),
-    () => ({ status: "stub", message: `PDF export queued for invoice ${id}` })
+    () =>
+      requestJson<{
+        status: string;
+        message: string;
+        file_name?: string;
+        content_type?: string;
+        download_url?: string | null;
+      }>(`/billing/invoices/${id}/export-pdf`, undefined, options),
+    () => ({
+      status: "ready",
+      message: `Printable invoice HTML is ready for invoice ${id}`,
+      file_name: `invoice-${id}.html`,
+      content_type: "text/html",
+      download_url: `/billing/invoices/${id}/export-pdf?download=1`,
+    })
   );
 }
 

@@ -2,6 +2,7 @@ const express = require("express");
 const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -155,8 +156,9 @@ async function resolveClientId(inputClientId, inputClientCode) {
   return Number(rows[0].id);
 }
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const availableColumns = await getAvailableOptionalProductColumns();
     const productSelectColumns = buildProductSelectColumns(availableColumns);
     const [rows] = await getPool().query(
@@ -164,7 +166,9 @@ router.get("/", async (_req, res) => {
        FROM products p
        LEFT JOIN clients c ON c.id = p.client_id
        WHERE p.deleted_at IS NULL
-       ORDER BY p.id DESC`
+       ${scopedClientId ? "AND p.client_id = ?" : ""}
+       ORDER BY p.id DESC`,
+      scopedClientId ? [scopedClientId] : []
     );
     res.json({ ok: true, data: rows });
   } catch (error) {
@@ -174,14 +178,16 @@ router.get("/", async (_req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const availableColumns = await getAvailableOptionalProductColumns();
     const productSelectColumns = buildProductSelectColumns(availableColumns);
     const [rows] = await getPool().query(
       `SELECT ${productSelectColumns}
        FROM products p
        LEFT JOIN clients c ON c.id = p.client_id
-       WHERE p.id = ? AND p.deleted_at IS NULL`,
-      [req.params.id]
+       WHERE p.id = ? AND p.deleted_at IS NULL
+       ${scopedClientId ? "AND p.client_id = ?" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Product not found" });

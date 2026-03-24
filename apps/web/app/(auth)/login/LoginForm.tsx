@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { login } from "@/features/auth/api";
+import { getMe, login } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/features/outbound/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { getDefaultConsolePath } from "@/lib/authz";
 
 type LoginCandidate = {
   email: string;
@@ -77,8 +78,12 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
         throw lastError ?? new Error("Login request failed");
       }
 
+      const me = await getMe();
+      const nextPath =
+        nextUrl && nextUrl !== "/outbounds" ? nextUrl : getDefaultConsolePath(me.role);
+
       pushToast({ title: t("Login successful"), variant: "success" });
-      router.replace(nextUrl);
+      router.replace(nextPath);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : t("Login request failed");
       setError(message);

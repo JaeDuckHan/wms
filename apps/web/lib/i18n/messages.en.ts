@@ -1,4 +1,13 @@
 export const messagesEn = {
+  "Access denied": "Access denied",
+  "Customer accounts can only access invoices.": "Customer accounts can only access invoices.",
+  "Customer accounts cannot access settings.": "Customer accounts cannot access settings.",
+  "Only admin can access billing settings.": "Only admin can access billing settings.",
+  "Allocatable Shortage": "Allocatable Shortage",
+  "Allocatable OK": "Allocatable OK",
+  "Shortage Items": "Shortage Items",
+  "Requested Qty": "Requested Qty",
+  "Allocatable Qty": "Allocatable Qty",
   nav: {
     inbounds: "Inbounds",
     outbounds: "Outbounds",

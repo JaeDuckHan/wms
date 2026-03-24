@@ -4,19 +4,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-const tabs = [
-  { href: "/settings/clients", label: "Clients" },
-  { href: "/settings/products", label: "Products" },
-  { href: "/settings/warehouses", label: "Warehouses" },
-  { href: "/settings/service-rates", label: "Service Rates" },
-  { href: "/settings/contract-rates", label: "Contract Rates" },
-  { href: "/settings/storage-rates", label: "Storage Rates" },
-  { href: "/settings/exchange-rates", label: "Exchange Rates" },
-];
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 
 export function SettingsTabs() {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { canAccessSettings, canManageBillingSettings } = useCurrentUser();
+
+  if (!canAccessSettings) {
+    return null;
+  }
+
+  const tabs = [
+    { href: "/settings/clients", label: "Clients" },
+    { href: "/settings/products", label: "Products" },
+    { href: "/settings/warehouses", label: "Warehouses" },
+    canManageBillingSettings ? { href: "/settings/service-rates", label: "Service Rates" } : null,
+    canManageBillingSettings ? { href: "/settings/contract-rates", label: "Contract Rates" } : null,
+    canManageBillingSettings ? { href: "/settings/storage-rates", label: "Storage Rates" } : null,
+    canManageBillingSettings ? { href: "/settings/exchange-rates", label: "Exchange Rates" } : null,
+  ].filter(Boolean) as Array<{ href: string; label: string }>;
 
   return (
     <div className="mb-6 rounded-xl border bg-white p-1">

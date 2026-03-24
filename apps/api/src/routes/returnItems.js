@@ -10,6 +10,7 @@ const {
   upsertStockTxn,
   softDeleteStockTxn
 } = require("../services/stock");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -58,10 +59,15 @@ async function getReturnItemWithContext(conn, itemId) {
 router.get("/", async (req, res) => {
   const returnOrderId = req.query.return_order_id;
   try {
+    const scopedClientId = getScopedClientId(req);
     let query = `SELECT id, return_order_id, product_id, lot_id, location_id, qty_received, qty_restocked, qty_disposed, disposition_reason, created_at, updated_at
                  FROM return_items
                  WHERE deleted_at IS NULL`;
     const params = [];
+    if (scopedClientId) {
+      query += " AND return_order_id IN (SELECT id FROM return_orders WHERE client_id = ? AND deleted_at IS NULL)";
+      params.push(scopedClientId);
+    }
     if (returnOrderId) {
       query += " AND return_order_id = ?";
       params.push(returnOrderId);
@@ -76,11 +82,13 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, return_order_id, product_id, lot_id, location_id, qty_received, qty_restocked, qty_disposed, disposition_reason, created_at, updated_at
        FROM return_items
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
+       WHERE id = ? AND deleted_at IS NULL
+       ${scopedClientId ? "AND return_order_id IN (SELECT id FROM return_orders WHERE client_id = ? AND deleted_at IS NULL)" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Return item not found" });

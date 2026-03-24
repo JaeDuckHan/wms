@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/DataTable";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/toast";
-import { getMe } from "@/features/auth/api";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { BillingTabs } from "@/components/billing/BillingTabs";
 import {
   duplicateBillingInvoiceAdmin,
@@ -21,11 +21,11 @@ import { useI18n } from "@/lib/i18n/I18nProvider";
 export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canWrite, isAdmin } = useCurrentUser();
   const [invoice, setInvoice] = useState<BillingInvoice | null>(null);
   const [items, setItems] = useState<BillingInvoiceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [acting, setActing] = useState(false);
 
   const load = async () => {
@@ -45,14 +45,14 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   useEffect(() => {
     void load();
   }, [invoiceId]);
-  useEffect(() => {
-    getMe().then((me) => setIsAdmin(me.role === "admin")).catch(() => setIsAdmin(false));
-  }, []);
 
   const runExport = async () => {
     try {
       const result = await exportBillingInvoicePdf(invoiceId);
-      pushToast({ title: t("Export stub"), description: result.message, variant: "info" });
+      if (result.download_url && typeof window !== "undefined") {
+        window.open(`/api/proxy${result.download_url}`, "_blank", "noopener,noreferrer");
+      }
+      pushToast({ title: t("Export ready"), description: result.message, variant: "info" });
     } catch (e) {
       pushToast({ title: t("Export failed"), description: e instanceof Error ? e.message : "", variant: "error" });
     }
@@ -108,9 +108,9 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
         subtitle={invoice ? `${t("Client")} ${invoice.client_code} | ${invoice.invoice_month}` : t("Loading...")}
         rightSlot={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => void runExport()}>{t("Export PDF (Stub)")}</Button>
-            {invoice?.status === "draft" && <Button onClick={() => void runIssue()} disabled={acting}>Issue</Button>}
-            {invoice?.status === "issued" && <Button onClick={() => void runMarkPaid()} disabled={acting}>Mark Paid</Button>}
+            <Button variant="secondary" onClick={() => void runExport()}>{t("Export Invoice")}</Button>
+            {canWrite && invoice?.status === "draft" && <Button onClick={() => void runIssue()} disabled={acting}>Issue</Button>}
+            {canWrite && invoice?.status === "issued" && <Button onClick={() => void runMarkPaid()} disabled={acting}>Mark Paid</Button>}
             {isAdmin && invoice?.status !== "draft" && (
               <Button variant="secondary" onClick={() => void runDuplicateAdmin()} disabled={acting}>
                 {t("Duplicate (Admin)")}

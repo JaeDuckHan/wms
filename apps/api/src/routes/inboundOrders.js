@@ -11,6 +11,7 @@ const {
   softDeleteStockTxn
 } = require("../services/stock");
 const { syncInboundOrderBillingEvent } = require("../services/billingEvents");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -48,23 +49,6 @@ function toMysqlDateTime(value) {
   const mi = String(date.getUTCMinutes()).padStart(2, "0");
   const ss = String(date.getUTCSeconds()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-}
-
-async function ensureInboundOrderLogsTable() {
-  await getPool().query(
-    `CREATE TABLE IF NOT EXISTS inbound_order_logs (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      inbound_order_id BIGINT UNSIGNED NOT NULL,
-      action VARCHAR(40) NOT NULL,
-      from_status VARCHAR(30) NULL,
-      to_status VARCHAR(30) NULL,
-      note VARCHAR(1000) NULL,
-      actor_user_id BIGINT UNSIGNED NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_inbound_order_logs_order_created (inbound_order_id, created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
-  );
 }
 
 function resolveActorUserId(req, fallbackUserId) {
@@ -170,7 +154,6 @@ async function appendInboundOrderLog({
   note = null,
   actorUserId = null
 }) {
-  await ensureInboundOrderLogsTable();
   await getPool().query(
     `INSERT INTO inbound_order_logs (inbound_order_id, action, from_status, to_status, note, actor_user_id)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -178,13 +161,16 @@ async function appendInboundOrderLog({
   );
 }
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at
        FROM inbound_orders
        WHERE deleted_at IS NULL
-       ORDER BY id DESC`
+       ${scopedClientId ? "AND client_id = ?" : ""}
+       ORDER BY id DESC`,
+      scopedClientId ? [scopedClientId] : []
     );
     res.json({ ok: true, data: rows });
   } catch (error) {
@@ -194,11 +180,13 @@ router.get("/", async (_req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at
        FROM inbound_orders
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
+       WHERE id = ? AND deleted_at IS NULL
+       ${scopedClientId ? "AND client_id = ?" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Inbound order not found" });
@@ -211,15 +199,17 @@ router.get("/:id", async (req, res) => {
 
 router.get("/:id/logs", async (req, res) => {
   try {
-    await ensureInboundOrderLogsTable();
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT l.id, l.inbound_order_id, l.action, l.from_status, l.to_status, l.note, l.actor_user_id,
               u.email AS actor_email, u.name AS actor_name, l.created_at
        FROM inbound_order_logs l
+       JOIN inbound_orders io ON io.id = l.inbound_order_id AND io.deleted_at IS NULL
        LEFT JOIN users u ON u.id = l.actor_user_id
        WHERE l.inbound_order_id = ?
+       ${scopedClientId ? "AND io.client_id = ?" : ""}
        ORDER BY l.id ASC`,
-      [req.params.id]
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     return res.json({ ok: true, data: rows });
   } catch (error) {

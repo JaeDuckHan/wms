@@ -11,6 +11,7 @@ const {
   softDeleteStockTxn
 } = require("../services/stock");
 const { syncInboundOrderBillingEvent } = require("../services/billingEvents");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -29,23 +30,6 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
-async function ensureInboundOrderLogsTable(conn) {
-  await conn.query(
-    `CREATE TABLE IF NOT EXISTS inbound_order_logs (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      inbound_order_id BIGINT UNSIGNED NOT NULL,
-      action VARCHAR(40) NOT NULL,
-      from_status VARCHAR(30) NULL,
-      to_status VARCHAR(30) NULL,
-      note VARCHAR(1000) NULL,
-      actor_user_id BIGINT UNSIGNED NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_inbound_order_logs_order_created (inbound_order_id, created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
-  );
-}
-
 function resolveActorUserId(req, fallbackUserId) {
   const tokenUserId = Number(req.user?.sub || 0);
   if (Number.isFinite(tokenUserId) && tokenUserId > 0) return tokenUserId;
@@ -55,7 +39,6 @@ function resolveActorUserId(req, fallbackUserId) {
 }
 
 async function appendInboundOrderLog(conn, { inboundOrderId, action, note, actorUserId }) {
-  await ensureInboundOrderLogsTable(conn);
   await conn.query(
     `INSERT INTO inbound_order_logs (inbound_order_id, action, note, actor_user_id)
      VALUES (?, ?, ?, ?)`,
@@ -91,10 +74,16 @@ router.get("/", async (req, res) => {
   const inboundOrderId = req.query.inbound_order_id;
 
   try {
+    const scopedClientId = getScopedClientId(req);
     let query = `SELECT id, inbound_order_id, product_id, lot_id, location_id, qty, invoice_price, currency, remark, created_at, updated_at
                  FROM inbound_items
                  WHERE deleted_at IS NULL`;
     const params = [];
+
+    if (scopedClientId) {
+      query += " AND inbound_order_id IN (SELECT id FROM inbound_orders WHERE client_id = ? AND deleted_at IS NULL)";
+      params.push(scopedClientId);
+    }
 
     if (inboundOrderId) {
       query += " AND inbound_order_id = ?";
@@ -112,11 +101,13 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, inbound_order_id, product_id, lot_id, location_id, qty, invoice_price, currency, remark, created_at, updated_at
        FROM inbound_items
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
+       WHERE id = ? AND deleted_at IS NULL
+       ${scopedClientId ? "AND inbound_order_id IN (SELECT id FROM inbound_orders WHERE client_id = ? AND deleted_at IS NULL)" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Inbound item not found" });

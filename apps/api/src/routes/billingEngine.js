@@ -3,6 +3,7 @@ const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
 const { withTransaction } = require("../services/stock");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -94,6 +95,193 @@ function normalizeInvoiceStatus(status) {
   const value = String(status).toLowerCase();
   if (["draft", "issued", "paid"].includes(value)) return value;
   return null;
+}
+
+function formatDisplayDate(value) {
+  if (!value) return "-";
+  return String(value).slice(0, 10);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatNumber(value, fractionDigits = 0) {
+  const numeric = Number(value || 0);
+  return Number.isFinite(numeric)
+    ? numeric.toLocaleString("en-US", {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits
+      })
+    : "0";
+}
+
+async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
+  const hasInvoices = await hasTable("invoices", conn);
+  if (!hasInvoices) return null;
+
+  const hasInvoiceMonth = await hasInvoiceMonthColumn(conn);
+  const hasInvoiceDate = await hasInvoiceDateColumn(conn);
+  const hasBillingEvents = await hasTable("billing_events", conn);
+  const hasFxRate = await hasColumn("invoices", "fx_rate_thbkrw", conn);
+  const hasSubtotal = await hasColumn("invoices", "subtotal_krw", conn);
+  const hasVat = await hasColumn("invoices", "vat_krw", conn);
+  const hasTotalKrw = await hasColumn("invoices", "total_krw", conn);
+  const hasInvoiceItems = await hasTable("invoice_items", conn);
+
+  const monthExpr = invoiceMonthExpr(hasInvoiceMonth, "i");
+  const dateExpr = invoiceDateExpr(hasInvoiceDate, "i");
+  const subtotalThbExpr = hasBillingEvents
+    ? "COALESCE((SELECT SUM(be.amount_thb) FROM billing_events be WHERE be.invoice_id = i.id AND be.deleted_at IS NULL), 0)"
+    : "0";
+  const fxExpr = hasFxRate ? "i.fx_rate_thbkrw" : "NULL";
+  const subtotalExpr = hasSubtotal ? "i.subtotal_krw" : "0";
+  const vatExpr = hasVat ? "i.vat_krw" : "0";
+  const totalExpr = hasTotalKrw ? "i.total_krw" : "i.total_amount";
+
+  const [invoiceRows] = await conn.query(
+    `SELECT i.id, i.client_id, c.client_code, c.name_kr,
+            i.invoice_no, ${monthExpr} AS invoice_month, ${dateExpr} AS invoice_date, i.currency,
+            ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at, i.updated_at,
+            (MOD(${subtotalExpr}, 100) = 0) AS subtotal_trunc100,
+            (MOD(${vatExpr}, 100) = 0) AS vat_trunc100,
+            (MOD(${totalExpr}, 100) = 0) AS total_trunc100
+     FROM invoices i
+     JOIN clients c ON c.id = i.client_id
+     WHERE i.id = ? AND i.deleted_at IS NULL
+     ${scopedClientId ? "AND i.client_id = ?" : ""}`,
+    scopedClientId ? [invoiceId, scopedClientId] : [invoiceId]
+  );
+
+  if (invoiceRows.length === 0) return null;
+
+  const [itemRows] = hasInvoiceItems
+    ? await conn.query(
+        `SELECT id, invoice_id, service_code, description, qty, unit_price_krw, amount_krw, created_at, updated_at,
+                (MOD(unit_price_krw, 100) = 0) AS unit_price_trunc100,
+                (MOD(amount_krw, 100) = 0) AS amount_trunc100
+         FROM invoice_items
+         WHERE invoice_id = ? AND deleted_at IS NULL
+         ORDER BY id ASC`,
+        [invoiceId]
+      )
+    : [[]];
+
+  return {
+    invoice: invoiceRows[0],
+    items: itemRows
+  };
+}
+
+function buildInvoiceHtmlDocument(detail) {
+  const { invoice, items } = detail;
+  const rowsHtml = items
+    .map(
+      (item, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(item.service_code)}</td>
+          <td>${escapeHtml(item.description)}</td>
+          <td class="num">${formatNumber(item.qty)}</td>
+          <td class="num">${formatNumber(item.unit_price_krw)}</td>
+          <td class="num">${formatNumber(item.amount_krw)}</td>
+        </tr>`
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(invoice.invoice_no)} Invoice</title>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: "Segoe UI", "Noto Sans KR", sans-serif; margin: 32px; color: #0f172a; }
+      h1, h2, p { margin: 0; }
+      .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+      .brand { font-size: 28px; font-weight: 700; letter-spacing: 0.04em; }
+      .muted { color: #475569; }
+      .meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
+      .card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; background: #fff; }
+      .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px; }
+      .value { font-size: 15px; font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; font-size: 13px; vertical-align: top; }
+      th { text-align: left; color: #475569; background: #f8fafc; }
+      .num { text-align: right; font-variant-numeric: tabular-nums; }
+      .summary { margin-top: 24px; margin-left: auto; width: 320px; }
+      .summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+      .summary-row.total { font-size: 16px; font-weight: 700; border-top: 2px solid #0f172a; margin-top: 8px; }
+      .footer { margin-top: 32px; color: #64748b; font-size: 12px; }
+      @media print {
+        body { margin: 16px; }
+        .card { break-inside: avoid; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div>
+        <div class="brand">Kowinsblue 3PL</div>
+        <p class="muted">Commercial Invoice</p>
+      </div>
+      <div class="card">
+        <div class="label">Invoice No</div>
+        <div class="value">${escapeHtml(invoice.invoice_no)}</div>
+      </div>
+    </div>
+
+    <div class="meta">
+      <div class="card">
+        <div class="label">Client</div>
+        <div class="value">${escapeHtml(invoice.client_code)} / ${escapeHtml(invoice.name_kr)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Invoice Month</div>
+        <div class="value">${escapeHtml(invoice.invoice_month)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Invoice Date</div>
+        <div class="value">${escapeHtml(formatDisplayDate(invoice.invoice_date))}</div>
+      </div>
+      <div class="card">
+        <div class="label">Status</div>
+        <div class="value">${escapeHtml(String(invoice.status).toUpperCase())}</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Code</th>
+          <th>Description</th>
+          <th class="num">Qty</th>
+          <th class="num">Unit KRW</th>
+          <th class="num">Amount KRW</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+
+    <div class="summary">
+      <div class="summary-row"><span>FX Rate</span><strong>${formatNumber(invoice.fx_rate_thbkrw, 4)}</strong></div>
+      <div class="summary-row"><span>Original THB</span><strong>${formatNumber(invoice.subtotal_thb, 2)} THB</strong></div>
+      <div class="summary-row"><span>Subtotal</span><strong>${formatNumber(invoice.subtotal_krw)} KRW</strong></div>
+      <div class="summary-row"><span>VAT 7%</span><strong>${formatNumber(invoice.vat_krw)} KRW</strong></div>
+      <div class="summary-row total"><span>Total</span><strong>${formatNumber(invoice.total_krw)} KRW</strong></div>
+    </div>
+
+    <div class="footer">
+      Generated from WMS invoice ledger. This printable HTML is intended for immediate browser print-to-PDF workflow and download audit.
+    </div>
+  </body>
+</html>`;
 }
 
 const BILLING_DATE_RANGE_MESSAGES = {
@@ -325,10 +513,14 @@ const markPendingSchema = z.object({
 
 function buildBillingEventsWhere(query, options = {}) {
   const hasWarehouseId = options.hasWarehouseId !== false;
+  const scopedClientId = Number(options.scopedClientId || 0);
   const params = [];
   let where = " WHERE be.deleted_at IS NULL";
 
-  if (query.client_id) {
+  if (scopedClientId > 0) {
+    where += " AND be.client_id = ?";
+    params.push(scopedClientId);
+  } else if (query.client_id) {
     where += " AND be.client_id = ?";
     params.push(Number(query.client_id));
   }
@@ -355,7 +547,8 @@ function buildBillingEventsWhere(query, options = {}) {
   return { where, params };
 }
 
-router.get("/billing/settings/service-catalog", async (_req, res) => {
+router.get("/billing/settings/service-catalog", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const hasServiceName = await hasColumn("service_catalog", "service_name");
     const hasBillingUnit = await hasColumn("service_catalog", "billing_unit");
@@ -481,6 +674,7 @@ router.delete("/billing/settings/service-catalog/:serviceCode", async (req, res)
 });
 
 router.get("/billing/settings/client-contract-rates", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { client_id, service_code } = req.query;
   try {
     const exists = await hasTable("client_contract_rates");
@@ -596,6 +790,7 @@ router.delete("/billing/settings/client-contract-rates/:id", async (req, res) =>
 });
 
 router.get("/billing/settings/storage-rates", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { warehouse_id, client_id, effective_from } = req.query;
   try {
     const exists = await hasTable("storage_rate_settings");
@@ -757,6 +952,7 @@ router.delete("/billing/settings/storage-rates/:id", async (req, res) => {
 });
 
 router.get("/billing/settings/exchange-rates", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { month } = req.query;
   try {
     const hasSource = await hasColumn("exchange_rates", "source");
@@ -904,6 +1100,7 @@ router.delete("/billing/settings/exchange-rates/:id", async (req, res) => {
 
 router.get("/billing/events", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const exists = await hasTable("billing_events");
     if (!exists) {
       return res.json({ ok: true, data: [], alerts: { missing_warehouse_id: 0 } });
@@ -911,7 +1108,7 @@ router.get("/billing/events", async (req, res) => {
 
     const hasWarehouseId = await hasColumn("billing_events", "warehouse_id");
     const warehouseExpr = hasWarehouseId ? "be.warehouse_id" : "NULL";
-    const { where, params } = buildBillingEventsWhere(req.query, { hasWarehouseId });
+    const { where, params } = buildBillingEventsWhere(req.query, { hasWarehouseId, scopedClientId });
     const [rows] = await getPool().query(
       `SELECT be.id, be.event_date, be.client_id, c.client_code, c.name_kr,
               be.service_code, be.qty, be.amount_thb, be.fx_rate_thbkrw, be.amount_krw,
@@ -947,6 +1144,7 @@ router.get("/billing/events", async (req, res) => {
 
 router.get("/billing/events/export.csv", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const exists = await hasTable("billing_events");
     if (!exists) {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -957,7 +1155,7 @@ router.get("/billing/events/export.csv", async (req, res) => {
 
     const hasWarehouseId = await hasColumn("billing_events", "warehouse_id");
     const warehouseExpr = hasWarehouseId ? "be.warehouse_id" : "NULL";
-    const { where, params } = buildBillingEventsWhere(req.query, { hasWarehouseId });
+    const { where, params } = buildBillingEventsWhere(req.query, { hasWarehouseId, scopedClientId });
     const [rows] = await getPool().query(
       `SELECT be.event_date, c.client_code, be.service_code, be.qty, be.amount_thb,
               be.fx_rate_thbkrw, be.amount_krw, be.reference_type, be.reference_id, ${warehouseExpr} AS warehouse_id, be.status
@@ -1635,6 +1833,7 @@ router.post("/billing/invoices/:id/duplicate-admin", async (req, res) => {
 });
 
 router.get("/billing/invoices", async (req, res) => {
+  const scopedClientId = getScopedClientId(req);
   const { client_id, invoice_month, invoice_date_from, invoice_date_to } = req.query;
   const status = normalizeInvoiceStatus(req.query.status);
   const normalizedFromDate = normalizeDateFilter(invoice_date_from);
@@ -1688,7 +1887,10 @@ router.get("/billing/invoices", async (req, res) => {
                    AND ${monthExpr} IS NOT NULL`;
     const params = [];
 
-    if (client_id) {
+    if (scopedClientId) {
+      query += " AND i.client_id = ?";
+      params.push(scopedClientId);
+    } else if (client_id) {
       query += " AND i.client_id = ?";
       params.push(client_id);
     }
@@ -1719,66 +1921,12 @@ router.get("/billing/invoices", async (req, res) => {
 
 router.get("/billing/invoices/:id", async (req, res) => {
   try {
-    const hasInvoices = await hasTable("invoices");
-    if (!hasInvoices) {
+    const scopedClientId = getScopedClientId(req);
+    const detail = await loadInvoiceDetail(getPool(), Number(req.params.id), scopedClientId);
+    if (!detail) {
       return res.status(404).json({ ok: false, message: "Invoice not found" });
     }
-
-    const hasInvoiceMonth = await hasInvoiceMonthColumn();
-    const hasInvoiceDate = await hasInvoiceDateColumn();
-    const hasBillingEvents = await hasTable("billing_events");
-    const hasFxRate = await hasColumn("invoices", "fx_rate_thbkrw");
-    const hasSubtotal = await hasColumn("invoices", "subtotal_krw");
-    const hasVat = await hasColumn("invoices", "vat_krw");
-    const hasTotalKrw = await hasColumn("invoices", "total_krw");
-    const hasInvoiceItems = await hasTable("invoice_items");
-
-    const monthExpr = invoiceMonthExpr(hasInvoiceMonth, "i");
-    const dateExpr = invoiceDateExpr(hasInvoiceDate, "i");
-    const subtotalThbExpr = hasBillingEvents
-      ? "COALESCE((SELECT SUM(be.amount_thb) FROM billing_events be WHERE be.invoice_id = i.id AND be.deleted_at IS NULL), 0)"
-      : "0";
-    const fxExpr = hasFxRate ? "i.fx_rate_thbkrw" : "NULL";
-    const subtotalExpr = hasSubtotal ? "i.subtotal_krw" : "0";
-    const vatExpr = hasVat ? "i.vat_krw" : "0";
-    const totalExpr = hasTotalKrw ? "i.total_krw" : "i.total_amount";
-
-    const [invoiceRows] = await getPool().query(
-      `SELECT i.id, i.client_id, c.client_code, c.name_kr,
-              i.invoice_no, ${monthExpr} AS invoice_month, ${dateExpr} AS invoice_date, i.currency,
-              ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at, i.updated_at,
-              (MOD(${subtotalExpr}, 100) = 0) AS subtotal_trunc100,
-              (MOD(${vatExpr}, 100) = 0) AS vat_trunc100,
-              (MOD(${totalExpr}, 100) = 0) AS total_trunc100
-       FROM invoices i
-       JOIN clients c ON c.id = i.client_id
-       WHERE i.id = ? AND i.deleted_at IS NULL`,
-      [req.params.id]
-    );
-
-    if (invoiceRows.length === 0) {
-      return res.status(404).json({ ok: false, message: "Invoice not found" });
-    }
-
-    const [itemRows] = hasInvoiceItems
-      ? await getPool().query(
-          `SELECT id, invoice_id, service_code, description, qty, unit_price_krw, amount_krw, created_at, updated_at,
-                  (MOD(unit_price_krw, 100) = 0) AS unit_price_trunc100,
-                  (MOD(amount_krw, 100) = 0) AS amount_trunc100
-           FROM invoice_items
-           WHERE invoice_id = ? AND deleted_at IS NULL
-           ORDER BY id ASC`,
-          [req.params.id]
-        )
-      : [[]];
-
-    return res.json({
-      ok: true,
-      data: {
-        invoice: invoiceRows[0],
-        items: itemRows
-      }
-    });
+    return res.json({ ok: true, data: detail });
   } catch (error) {
     return res.status(500).json({ ok: false, message: error.message });
   }
@@ -1786,37 +1934,63 @@ router.get("/billing/invoices/:id", async (req, res) => {
 
 router.get("/billing/invoices/:id/export-pdf", async (req, res) => {
   try {
-    const hasInvoices = await hasTable("invoices");
-    if (!hasInvoices) {
+    const scopedClientId = getScopedClientId(req);
+    const detail = await loadInvoiceDetail(getPool(), Number(req.params.id), scopedClientId);
+    if (!detail) {
       return res.status(404).json({ ok: false, message: "Invoice not found" });
     }
 
-    const hasInvoiceMonth = await hasInvoiceMonthColumn();
-    const hasTotalKrw = await hasColumn("invoices", "total_krw");
-    const monthExpr = invoiceMonthExpr(hasInvoiceMonth, "i");
-    const totalExpr = hasTotalKrw ? "i.total_krw" : "i.total_amount";
+    const invoice = detail.invoice;
+    const fileName = `${String(invoice.invoice_no).replace(/[^A-Za-z0-9._-]/g, "_")}.html`;
+    const shouldDownload = String(req.query.download || "0") === "1";
 
-    const [invoiceRows] = await getPool().query(
-      `SELECT i.id, i.invoice_no, ${monthExpr} AS invoice_month, ${totalExpr} AS total_krw, i.status
-       FROM invoices i
-       WHERE i.id = ? AND i.deleted_at IS NULL`,
-      [req.params.id]
+    if (!shouldDownload) {
+      return res.json({
+        ok: true,
+        data: {
+          invoice_id: invoice.id,
+          invoice_no: invoice.invoice_no,
+          status: "ready",
+          message: "Printable invoice HTML is ready for download.",
+          file_name: fileName,
+          content_type: "text/html",
+          download_url: `/billing/invoices/${invoice.id}/export-pdf?download=1`
+        }
+      });
+    }
+
+    const requestedBy = Number(req.user?.sub || 0) > 0 ? Number(req.user?.sub) : null;
+    await getPool().query(
+      `INSERT INTO invoice_export_logs (invoice_id, export_format, requested_by, file_name, meta_json)
+       VALUES (?, 'html', ?, ?, JSON_OBJECT('status', ?, 'invoice_no', ?, 'client_code', ?))`,
+      [invoice.id, requestedBy, fileName, invoice.status, invoice.invoice_no, invoice.client_code]
     );
 
-    if (invoiceRows.length === 0) {
+    const html = buildInvoiceHtmlDocument(detail);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    return res.send(html);
+
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+router.get("/billing/invoices/:id/export-logs", async (req, res) => {
+  try {
+    const scopedClientId = getScopedClientId(req);
+    const detail = await loadInvoiceDetail(getPool(), Number(req.params.id), scopedClientId);
+    if (!detail) {
       return res.status(404).json({ ok: false, message: "Invoice not found" });
     }
-
-    return res.json({
-      ok: true,
-      data: {
-        invoice_id: invoiceRows[0].id,
-        invoice_no: invoiceRows[0].invoice_no,
-        status: "stub",
-        message: "PDF export endpoint is ready. Implement renderer integration next.",
-        download_url: null
-      }
-    });
+    const [rows] = await getPool().query(
+      `SELECT id, invoice_id, export_format, requested_by, requested_at, file_name, meta_json
+       FROM invoice_export_logs
+       WHERE invoice_id = ?
+       ORDER BY id DESC`,
+      [req.params.id]
+    );
+    return res.json({ ok: true, data: rows });
   } catch (error) {
     return res.status(500).json({ ok: false, message: error.message });
   }

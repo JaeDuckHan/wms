@@ -9,9 +9,9 @@ import type {
 } from "@/features/inbound/types";
 import { ApiError } from "@/features/outbound/api";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
+import { shouldUseImplicitFallback, shouldUseMockMode } from "@/lib/runtime-mode";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 const LATENCY_MS = 120;
 
 type RequestOptions = { token?: string };
@@ -65,7 +65,7 @@ function delay(ms: number) {
 }
 
 function shouldUseFallback(token?: string) {
-  return USE_MOCK || token === "mock-token";
+  return shouldUseImplicitFallback(token);
 }
 
 function toDateOnly(value: string | null | undefined): string {
@@ -272,7 +272,7 @@ function mapItems(rawItems: RawInboundItem[], products: RawProduct[], lots: RawL
 const mockDb: InboundOrder[] = inboundOrdersMock.map((order) => cloneOrder(order));
 
 export async function getInboundOrders(query?: InboundListQuery, options?: RequestOptions): Promise<InboundOrder[]> {
-  if (USE_MOCK) {
+  if (shouldUseMockMode()) {
     await delay(LATENCY_MS);
     return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
   }
@@ -297,7 +297,7 @@ export async function getInboundOrders(query?: InboundListQuery, options?: Reque
 }
 
 export async function getInboundOrderByNo(inboundNo: string, options?: RequestOptions): Promise<InboundOrder | null> {
-  if (USE_MOCK) {
+  if (shouldUseMockMode()) {
     await delay(LATENCY_MS);
     const order = mockDb.find((item) => item.inbound_no === inboundNo) ?? getInboundByNo(inboundNo);
     return order ? cloneOrder(order) : null;
@@ -343,7 +343,7 @@ export async function transitionInboundStatus(
   action: InboundAction,
   options?: RequestOptions
 ): Promise<InboundOrder> {
-  if (USE_MOCK) {
+  if (shouldUseMockMode()) {
     await delay(LATENCY_MS);
     const idx = mockDb.findIndex((item) => item.inbound_no === inboundNo);
     if (idx < 0) throw new ApiError("Inbound order not found", 404);

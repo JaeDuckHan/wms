@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import {
   createClientContractRate,
   deleteClientContractRate,
@@ -28,6 +29,7 @@ const blank: Omit<ClientContractRate, "id"> = {
 export function ClientContractRatesSettingsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canManageBillingSettings, ready } = useCurrentUser();
   const [rows, setRows] = useState<ClientContractRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,8 +49,11 @@ export function ClientContractRatesSettingsPage() {
   };
 
   useEffect(() => {
+    if (!ready || !canManageBillingSettings) return;
     void reload();
-  }, []);
+  }, [ready, canManageBillingSettings]);
+
+  const accessDenied = ready && !canManageBillingSettings;
 
   const startCreate = () => {
     setEditingId(null);
@@ -99,7 +104,16 @@ export function ClientContractRatesSettingsPage() {
         subtitle="Manage client-specific overrides by service and effective date."
       />
       <SettingsTabs />
-
+      {accessDenied ? (
+        <div className="rounded-xl border bg-white p-6">
+          <ErrorState
+            title={t("Access denied")}
+            message={t("Only admin can access billing settings.")}
+          />
+        </div>
+      ) : null}
+      {accessDenied ? null : (
+        <>
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -121,8 +135,8 @@ export function ClientContractRatesSettingsPage() {
                   label: "Actions",
                   render: (row) => (
                     <div className="flex gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => startEdit(row)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void remove(row.id)}>Delete</Button>
+                      {canManageBillingSettings ? <Button size="sm" variant="secondary" onClick={() => startEdit(row)}>Edit</Button> : null}
+                      {canManageBillingSettings ? <Button size="sm" variant="ghost" onClick={() => void remove(row.id)}>Delete</Button> : null}
                     </div>
                   ),
                 },
@@ -144,9 +158,11 @@ export function ClientContractRatesSettingsPage() {
             <option value="THB">THB</option>
           </select>
           <Input type="date" value={form.effective_date} onChange={(e) => setForm((p) => ({ ...p, effective_date: e.target.value }))} />
-          <Button onClick={() => void save()}>{t("Save")}</Button>
+          <Button onClick={() => void save()} disabled={!canManageBillingSettings}>{t("Save")}</Button>
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 }

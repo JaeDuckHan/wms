@@ -149,7 +149,7 @@ cat apps/api/sql/seed/seed_sample_realistic_10x.sql | docker compose --env-file 
   sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
-Apply runtime DB patches on an already-running DB (required for Billing/Storage/Warehouse settings):
+Apply runtime DB patches on an already-running DB (required for Billing/Storage/Warehouse settings, order logs, outbound boxes, and invoice export logs):
 
 ```bash
 cd /var/www/wms
@@ -162,6 +162,7 @@ Manual fallback (same idempotent patches):
 cat apps/api/sql/patch_billing_invoice_engine.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 cat apps/api/sql/patch_multi_warehouse_billing_storage.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 cat apps/api/sql/patch_warehouse_default_cbm_rate.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+cat apps/api/sql/patch_runtime_operational_tables.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
 ## 8) Default login
@@ -170,4 +171,7 @@ Seed default account:
 
 1. Email: `admin@example.com`
 2. Password: `x`
-3. Extra sample admin: `ops.admin@amorepacific-partner.co.kr` / `1234`
+3. Manager: `manager101@example.com` / `x`
+4. Warehouse: `warehouse201@example.com` / `x`
+5. Client viewer: `viewer101@example.com` / `x`
+6. Extra sample admin: `ops.admin@amorepacific-partner.co.kr` / `1234`

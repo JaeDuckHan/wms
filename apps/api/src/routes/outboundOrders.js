@@ -6,6 +6,7 @@ const {
   StockError,
   withTransaction,
   adjustAvailableQty,
+  adjustReservedQty,
   upsertStockTxn,
   getStockTxnId,
   softDeleteStockTxn
@@ -15,6 +16,7 @@ const {
   softDeleteOutboundServiceEvent
 } = require("../services/billing");
 const { syncOutboundOrderBillingEvent } = require("../services/billingEvents");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -64,23 +66,6 @@ function toMysqlDateTime(value) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
-async function ensureOutboundOrderLogsTable() {
-  await getPool().query(
-    `CREATE TABLE IF NOT EXISTS outbound_order_logs (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      outbound_order_id BIGINT UNSIGNED NOT NULL,
-      action VARCHAR(40) NOT NULL,
-      from_status VARCHAR(30) NULL,
-      to_status VARCHAR(30) NULL,
-      note VARCHAR(1000) NULL,
-      actor_user_id BIGINT UNSIGNED NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_outbound_order_logs_order_created (outbound_order_id, created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
-  );
-}
-
 function resolveActorUserId(req, fallbackUserId) {
   const tokenUserId = Number(req.user?.sub || 0);
   if (Number.isFinite(tokenUserId) && tokenUserId > 0) return tokenUserId;
@@ -109,6 +94,10 @@ function isShipmentAppliedStatus(status) {
   return status === "shipped" || status === "delivered";
 }
 
+function isReservationAppliedStatus(status) {
+  return status === "allocated" || status === "picking" || status === "packed";
+}
+
 async function getOutboundItems(conn, outboundOrderId) {
   const [rows] = await conn.query(
     `SELECT id, product_id, lot_id, location_id, qty, box_count, remark
@@ -118,6 +107,121 @@ async function getOutboundItems(conn, outboundOrderId) {
     [outboundOrderId]
   );
   return rows;
+}
+
+async function getOutboundOrderOrThrow(conn, outboundOrderId, scopedClientId = null) {
+  const [rows] = await conn.query(
+    `SELECT id, outbound_no, client_id, warehouse_id, order_date, status, created_by
+     FROM outbound_orders
+     WHERE id = ? AND deleted_at IS NULL
+     ${scopedClientId ? "AND client_id = ?" : ""}
+     LIMIT 1`,
+    scopedClientId ? [outboundOrderId, scopedClientId] : [outboundOrderId]
+  );
+  if (rows.length === 0) {
+    throw toAppError("NOT_FOUND", "Outbound order not found");
+  }
+  return rows[0];
+}
+
+function toDateValue(value) {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+}
+
+function rankSuggestionCandidate(candidate, item) {
+  const sameLotAndLocation =
+    Number(candidate.lot_id) === Number(item.lot_id) &&
+    Number(candidate.location_id || 0) === Number(item.location_id || 0);
+  const sameLot = Number(candidate.lot_id) === Number(item.lot_id);
+  const sameLocation = Number(candidate.location_id || 0) === Number(item.location_id || 0);
+  return [
+    sameLotAndLocation ? 0 : sameLot ? 1 : sameLocation ? 2 : 3,
+    toDateValue(candidate.expiry_date),
+    toDateValue(candidate.mfg_date),
+    String(candidate.location_code || ""),
+  ];
+}
+
+function compareSuggestionCandidates(a, b, item) {
+  const left = rankSuggestionCandidate(a, item);
+  const right = rankSuggestionCandidate(b, item);
+  for (let idx = 0; idx < left.length; idx += 1) {
+    if (left[idx] < right[idx]) return -1;
+    if (left[idx] > right[idx]) return 1;
+  }
+  if (Number(b.allocatable_qty) !== Number(a.allocatable_qty)) {
+    return Number(b.allocatable_qty) - Number(a.allocatable_qty);
+  }
+  return String(a.location_code || "").localeCompare(String(b.location_code || ""));
+}
+
+async function buildAllocationSuggestions(conn, order, items) {
+  const suggestions = [];
+
+  for (const item of items) {
+    const [candidateRows] = await conn.query(
+      `SELECT
+          sb.product_id,
+          sb.lot_id,
+          sb.location_id,
+          GREATEST(COALESCE(sb.available_qty, 0) - COALESCE(sb.reserved_qty, 0), 0) AS allocatable_qty,
+          pl.lot_no,
+          pl.expiry_date,
+          pl.mfg_date,
+          wl.location_code
+       FROM stock_balances sb
+       JOIN product_lots pl ON pl.id = sb.lot_id AND pl.deleted_at IS NULL
+       LEFT JOIN warehouse_locations wl ON wl.id = sb.location_id AND wl.deleted_at IS NULL
+       WHERE sb.client_id = ?
+         AND sb.warehouse_id = ?
+         AND sb.product_id = ?
+         AND sb.deleted_at IS NULL
+         AND GREATEST(COALESCE(sb.available_qty, 0) - COALESCE(sb.reserved_qty, 0), 0) > 0`,
+      [order.client_id, order.warehouse_id, item.product_id]
+    );
+
+    const sortedCandidates = candidateRows.sort((a, b) => compareSuggestionCandidates(a, b, item));
+    let remaining = Number(item.qty);
+    const allocationPlan = sortedCandidates
+      .map((candidate) => {
+        const suggestedQty = Math.min(remaining, Number(candidate.allocatable_qty));
+        remaining -= suggestedQty;
+        return {
+          product_id: Number(candidate.product_id),
+          lot_id: Number(candidate.lot_id),
+          lot_no: candidate.lot_no,
+          location_id: candidate.location_id == null ? null : Number(candidate.location_id),
+          location_code: candidate.location_code || "-",
+          allocatable_qty: Number(candidate.allocatable_qty),
+          suggested_qty: suggestedQty,
+          expiry_date: candidate.expiry_date,
+          mfg_date: candidate.mfg_date,
+        };
+      })
+      .filter((candidate) => candidate.suggested_qty > 0);
+
+    const networkAllocatableQty = allocationPlan.reduce((sum, candidate) => sum + Number(candidate.allocatable_qty), 0);
+    suggestions.push({
+      outbound_item_id: Number(item.id),
+      product_id: Number(item.product_id),
+      requested_qty: Number(item.qty),
+      network_allocatable_qty: networkAllocatableQty,
+      shortage_qty: Math.max(Number(item.qty) - networkAllocatableQty, 0),
+      suggested_strategy:
+        allocationPlan.length === 0
+          ? "shortage"
+          : allocationPlan.length === 1 &&
+              Number(allocationPlan[0].lot_id) === Number(item.lot_id) &&
+              Number(allocationPlan[0].location_id || 0) === Number(item.location_id || 0)
+            ? "current"
+            : "reallocate",
+      allocation_plan: allocationPlan,
+    });
+  }
+
+  return suggestions;
 }
 
 async function applyShipmentEffects(conn, order, items) {
@@ -162,6 +266,38 @@ async function applyShipmentEffects(conn, order, items) {
   await syncOutboundOrderBillingEvent(conn, order.id);
 }
 
+async function applyReservationEffects(conn, order, items) {
+  for (const item of items) {
+    await adjustReservedQty(
+      conn,
+      {
+        clientId: order.client_id,
+        productId: item.product_id,
+        lotId: item.lot_id,
+        warehouseId: order.warehouse_id,
+        locationId: item.location_id
+      },
+      Number(item.qty)
+    );
+  }
+}
+
+async function rollbackReservationEffects(conn, order, items) {
+  for (const item of items) {
+    await adjustReservedQty(
+      conn,
+      {
+        clientId: order.client_id,
+        productId: item.product_id,
+        lotId: item.lot_id,
+        warehouseId: order.warehouse_id,
+        locationId: item.location_id
+      },
+      -Number(item.qty)
+    );
+  }
+}
+
 async function rollbackShipmentEffects(conn, order, items) {
   for (const item of items) {
     const stockTxnId = await getStockTxnId(conn, "outbound_ship", "outbound_item", item.id);
@@ -192,7 +328,6 @@ async function appendOutboundOrderLog({
   note = null,
   actorUserId = null
 }) {
-  await ensureOutboundOrderLogsTable();
   await getPool().query(
     `INSERT INTO outbound_order_logs (outbound_order_id, action, from_status, to_status, note, actor_user_id)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -200,13 +335,16 @@ async function appendOutboundOrderLog({
   );
 }
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, outbound_no, client_id, warehouse_id, order_date, sales_channel, order_no, tracking_no, status, packed_at, shipped_at, created_by, created_at, updated_at
        FROM outbound_orders
        WHERE deleted_at IS NULL
-       ORDER BY id DESC`
+       ${scopedClientId ? "AND client_id = ?" : ""}
+       ORDER BY id DESC`,
+      scopedClientId ? [scopedClientId] : []
     );
     res.json({ ok: true, data: rows });
   } catch (error) {
@@ -216,11 +354,13 @@ router.get("/", async (_req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, outbound_no, client_id, warehouse_id, order_date, sales_channel, order_no, tracking_no, status, packed_at, shipped_at, created_by, created_at, updated_at
        FROM outbound_orders
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
+       WHERE id = ? AND deleted_at IS NULL
+       ${scopedClientId ? "AND client_id = ?" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Outbound order not found" });
@@ -233,18 +373,37 @@ router.get("/:id", async (req, res) => {
 
 router.get("/:id/logs", async (req, res) => {
   try {
-    await ensureOutboundOrderLogsTable();
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT l.id, l.outbound_order_id, l.action, l.from_status, l.to_status, l.note, l.actor_user_id,
               u.email AS actor_email, u.name AS actor_name, l.created_at
        FROM outbound_order_logs l
+       JOIN outbound_orders oo ON oo.id = l.outbound_order_id AND oo.deleted_at IS NULL
        LEFT JOIN users u ON u.id = l.actor_user_id
        WHERE l.outbound_order_id = ?
+       ${scopedClientId ? "AND oo.client_id = ?" : ""}
        ORDER BY l.id ASC`,
-      [req.params.id]
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     return res.json({ ok: true, data: rows });
   } catch (error) {
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+router.get("/:id/allocation-suggestions", async (req, res) => {
+  try {
+    const scopedClientId = getScopedClientId(req);
+    const result = await withTransaction(async (conn) => {
+      const order = await getOutboundOrderOrThrow(conn, req.params.id, scopedClientId);
+      const items = await getOutboundItems(conn, order.id);
+      return buildAllocationSuggestions(conn, order, items);
+    });
+    return res.json({ ok: true, data: result });
+  } catch (error) {
+    if (error && error.code === "NOT_FOUND") {
+      return res.status(404).json({ ok: false, message: "Outbound order not found" });
+    }
     return res.status(500).json({ ok: false, message: error.message });
   }
 });
@@ -339,9 +498,14 @@ router.put("/:id", validate(outboundOrderSchema), async (req, res) => {
       const previous = existingRows[0];
       const wasApplied = isShipmentAppliedStatus(previous.status);
       const willApply = isShipmentAppliedStatus(status);
+      const wasReserved = isReservationAppliedStatus(previous.status);
+      const willReserve = isReservationAppliedStatus(status);
 
       if (wasApplied && (Number(previous.client_id) !== Number(client_id) || Number(previous.warehouse_id) !== Number(warehouse_id))) {
         throw toAppError("ORDER_LOCKED_FIELDS", "Cannot change client/warehouse after shipment");
+      }
+      if (wasReserved && (Number(previous.client_id) !== Number(client_id) || Number(previous.warehouse_id) !== Number(warehouse_id))) {
+        throw toAppError("ORDER_LOCKED_FIELDS", "Cannot change client/warehouse after allocation");
       }
 
       await conn.query(
@@ -373,10 +537,20 @@ router.put("/:id", validate(outboundOrderSchema), async (req, res) => {
       const updated = updatedRows[0];
       const items = await getOutboundItems(conn, updated.id);
 
-      if (!wasApplied && willApply) {
-        await applyShipmentEffects(conn, updated, items);
-      } else if (wasApplied && !willApply) {
+      if (wasApplied && !willApply) {
         await rollbackShipmentEffects(conn, previous, items);
+        if (willReserve) {
+          await applyReservationEffects(conn, updated, items);
+        }
+      } else if (!wasApplied && willApply) {
+        if (wasReserved) {
+          await rollbackReservationEffects(conn, previous, items);
+        }
+        await applyShipmentEffects(conn, updated, items);
+      } else if (!wasReserved && willReserve) {
+        await applyReservationEffects(conn, updated, items);
+      } else if (wasReserved && !willReserve) {
+        await rollbackReservationEffects(conn, previous, items);
       }
 
       return { updated, previousStatus: previous.status };
@@ -431,6 +605,9 @@ router.delete("/:id", async (req, res) => {
       if (isShipmentAppliedStatus(current.status)) {
         const items = await getOutboundItems(conn, current.id);
         await rollbackShipmentEffects(conn, current, items);
+      } else if (isReservationAppliedStatus(current.status)) {
+        const items = await getOutboundItems(conn, current.id);
+        await rollbackReservationEffects(conn, current, items);
       }
       await conn.query(
         "UPDATE outbound_orders SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",

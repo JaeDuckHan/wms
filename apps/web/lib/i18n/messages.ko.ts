@@ -1,4 +1,13 @@
 export const messagesKo = {
+  "Access denied": "접근 권한 없음",
+  "Customer accounts can only access invoices.": "고객 계정은 청구서만 조회할 수 있습니다.",
+  "Customer accounts cannot access settings.": "고객 계정은 설정에 접근할 수 없습니다.",
+  "Only admin can access billing settings.": "정산 설정은 관리자만 접근할 수 있습니다.",
+  "Allocatable Shortage": "가용수량 부족",
+  "Allocatable OK": "가용수량 충분",
+  "Shortage Items": "부족 품목",
+  "Requested Qty": "요청 수량",
+  "Allocatable Qty": "가용 수량",
   nav: {
     inbounds: "입고",
     outbounds: "출고",

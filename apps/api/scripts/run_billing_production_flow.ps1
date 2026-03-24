@@ -20,7 +20,7 @@ try {
   Assert-True ($health -eq "200") "API not healthy"
 
   Step 1 "Login"
-  $login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/auth/login" -ContentType "application/json" -Body (@{ email="admin.demo@example.com"; password="1234" } | ConvertTo-Json)
+  $login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/auth/login" -ContentType "application/json" -Body (@{ email="admin@example.com"; password="x" } | ConvertTo-Json)
   $token = $login.data.token
   $h = @{ Authorization = "Bearer $token" }
 
@@ -80,7 +80,14 @@ try {
   $dup = Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/$invoiceId/duplicate-admin" -Headers $h
   Assert-True ($dup.data.status -eq "draft") "Duplicated invoice should be draft"
 
-  Step 10 "Mark original issued invoice paid + events remain invoiced"
+  Step 10 "Export invoice + mark original issued invoice paid + events remain invoiced"
+  $exportMeta = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/invoices/$invoiceId/export-pdf" -Headers $h
+  Assert-True ($exportMeta.data.status -eq "ready") "Export meta not ready"
+  Assert-True ($null -ne $exportMeta.data.download_url) "Export download_url missing"
+  $exportCode = curl.exe -s -o NUL -w "%{http_code}" -H "Authorization: Bearer $token" "$BaseUrl$($exportMeta.data.download_url)"
+  Assert-True ($exportCode -eq "200") "Invoice export download failed"
+  $exportLogs = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/invoices/$invoiceId/export-logs" -Headers $h
+  Assert-True ($exportLogs.data.Count -ge 1) "Expected invoice export log"
   Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/$invoiceId/mark-paid" -Headers $h | Out-Null
   $stats = & $mysql -h 127.0.0.1 -P 3306 -u root -p1234 -N -B -D wms_test -e "SELECT status, COUNT(*) FROM billing_events WHERE client_id=$clientId AND DATE_FORMAT(event_date,'%Y-%m')='2026-02' AND deleted_at IS NULL GROUP BY status"
   Assert-True ($stats -match "INVOICED") "Expected invoiced events after generation"

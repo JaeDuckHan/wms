@@ -27,6 +27,7 @@ import {
   seedBillingEvents,
   type BillingInvoice,
 } from "@/features/billing/api";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
 function todayIso() {
@@ -53,6 +54,7 @@ type PendingInvoiceAction = {
 export function BillingInvoicesPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canWrite } = useCurrentUser();
   const [rows, setRows] = useState<BillingInvoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -293,11 +295,12 @@ export function BillingInvoicesPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => void onGenerate(0)}>{t("Generate")}</Button>
-          <Button variant="secondary" onClick={() => setRegenConfirmOpen(true)}>{t("Re-generate Draft")}</Button>
-          <Button variant="ghost" onClick={() => setSeedConfirmOpen(true)}>{t("Create Sample Events")}</Button>
-          <Button variant="ghost" onClick={() => void openCleanupConfirm()}>Sample Data Cleanup</Button>
+          <Button onClick={() => void onGenerate(0)} disabled={!canWrite}>{t("Generate")}</Button>
+          <Button variant="secondary" onClick={() => setRegenConfirmOpen(true)} disabled={!canWrite}>{t("Re-generate Draft")}</Button>
+          <Button variant="ghost" onClick={() => setSeedConfirmOpen(true)} disabled={!canWrite}>{t("Create Sample Events")}</Button>
+          <Button variant="ghost" onClick={() => void openCleanupConfirm()} disabled={!canWrite}>Sample Data Cleanup</Button>
         </div>
+        {!canWrite ? <div className="mt-2 text-xs text-amber-700">Read-only role: invoice write actions are disabled.</div> : null}
       </div>
 
       <Dialog open={seedConfirmOpen} onOpenChange={setSeedConfirmOpen}>
@@ -396,7 +399,7 @@ export function BillingInvoicesPage() {
                 label: "Actions",
                 render: (row) => (
                   <div className="flex gap-2">
-                    {row.status === "draft" && (
+                    {canWrite && row.status === "draft" && (
                       <Button
                         size="sm"
                         variant="secondary"
@@ -406,7 +409,7 @@ export function BillingInvoicesPage() {
                         {t("Issue")}
                       </Button>
                     )}
-                    {row.status === "issued" && (
+                    {canWrite && row.status === "issued" && (
                       <Button
                         size="sm"
                         variant="secondary"

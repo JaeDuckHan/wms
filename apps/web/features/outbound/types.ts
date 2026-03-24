@@ -20,7 +20,17 @@ export type OutboundItem = {
   requested_qty: number;
   picked_qty: number;
   available_qty: number;
-  status: "ready" | "shortage" | "picked";
+  reserved_qty: number;
+  allocatable_qty: number;
+  network_allocatable_qty: number;
+  shortage_qty: number;
+  status: "ready" | "shortage" | "picked" | "reallocate";
+  allocation_plan: Array<{
+    lot: string;
+    location: string;
+    allocatable_qty: number;
+    suggested_qty: number;
+  }>;
 };
 
 export type OutboundBox = {

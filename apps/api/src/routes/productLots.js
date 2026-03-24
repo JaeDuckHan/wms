@@ -1,5 +1,6 @@
 const express = require("express");
 const { getPool } = require("../db");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -7,6 +8,7 @@ router.get("/", async (req, res) => {
   const { product_id, client_id, status } = req.query;
 
   try {
+    const scopedClientId = getScopedClientId(req);
     let query = `SELECT pl.id, pl.product_id, pl.lot_no, pl.expiry_date, pl.mfg_date, pl.status, pl.created_at, pl.updated_at
                  FROM product_lots pl
                  JOIN products p ON p.id = pl.product_id
@@ -18,7 +20,10 @@ router.get("/", async (req, res) => {
       query += " AND pl.product_id = ?";
       params.push(product_id);
     }
-    if (client_id) {
+    if (scopedClientId) {
+      query += " AND p.client_id = ?";
+      params.push(scopedClientId);
+    } else if (client_id) {
       query += " AND p.client_id = ?";
       params.push(client_id);
     }
@@ -38,12 +43,14 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT pl.id, pl.product_id, pl.lot_no, pl.expiry_date, pl.mfg_date, pl.status, pl.created_at, pl.updated_at
        FROM product_lots pl
        JOIN products p ON p.id = pl.product_id
-       WHERE pl.id = ? AND pl.deleted_at IS NULL AND p.deleted_at IS NULL`,
-      [req.params.id]
+       WHERE pl.id = ? AND pl.deleted_at IS NULL AND p.deleted_at IS NULL
+       ${scopedClientId ? "AND p.client_id = ?" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
 
     if (rows.length === 0) {

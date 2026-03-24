@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { getDataMode, getDataModeLabel } from "@/lib/runtime-mode";
+import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
 export function Topbar() {
   const pathname = usePathname();
@@ -19,10 +21,18 @@ export function Topbar() {
 
   const initialQuery = useMemo(() => searchParams.get("q") ?? "", [searchParams]);
   const [query, setQuery] = useState(initialQuery);
+  const [token, setToken] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setQuery(initialQuery);
   }, [initialQuery]);
+
+  useEffect(() => {
+    const tokenCookie = document.cookie
+      .split("; ")
+      .find((entry) => entry.startsWith(`${AUTH_COOKIE_KEY}=`));
+    setToken(tokenCookie ? decodeURIComponent(tokenCookie.split("=")[1]) : undefined);
+  }, []);
 
   const onSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -43,6 +53,17 @@ export function Topbar() {
     router.push("/login");
   };
 
+  const dataMode = getDataMode(token);
+  const dataModeLabel = getDataModeLabel(token);
+  const dataModeClassName =
+    dataMode === "mock"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : dataMode === "mock-fallback"
+        ? "border-orange-200 bg-orange-50 text-orange-700"
+      : dataMode === "live-strict"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-sky-200 bg-sky-50 text-sky-700";
+
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-white px-6">
       <form onSubmit={onSearch} className="relative w-full max-w-md">
@@ -55,6 +76,9 @@ export function Topbar() {
         />
       </form>
       <div className="ml-4 flex items-center gap-2">
+        <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${dataModeClassName}`}>
+          {dataModeLabel}
+        </span>
         <Link href="/guide">
           <Button variant="secondary" size="sm">
             <BookOpenText className="h-4 w-4" />

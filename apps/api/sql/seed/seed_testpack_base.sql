@@ -16,11 +16,13 @@ INSERT INTO warehouse_locations (id, warehouse_id, location_code, zone, status, 
 VALUES (301, 201, 'LOC-301', 'Z1', 'active', NOW(), NOW(), NULL)
 ON DUPLICATE KEY UPDATE warehouse_id=VALUES(warehouse_id), status='active', deleted_at=NULL, updated_at=NOW();
 
--- 4) users (1002,1003)
+-- 4) users (1002,1003,1004,1005)
 INSERT INTO users (id, client_id, email, password_hash, name, role, status, created_at, updated_at, deleted_at)
 VALUES
  (1002, 101, 'manager101@example.com', 'x', 'Manager101', 'manager', 'active', NOW(), NOW(), NULL),
- (1003, NULL, 'admin@example.com', 'x', 'Admin', 'admin', 'active', NOW(), NOW(), NULL)
+ (1003, NULL, 'admin@example.com', 'x', 'Admin', 'admin', 'active', NOW(), NOW(), NULL),
+ (1004, NULL, 'warehouse201@example.com', 'x', 'Warehouse201', 'warehouse', 'active', NOW(), NOW(), NULL),
+ (1005, 101, 'viewer101@example.com', 'x', 'Viewer101', 'client_viewer', 'active', NOW(), NOW(), NULL)
 ON DUPLICATE KEY UPDATE name=VALUES(name), status='active', deleted_at=NULL, updated_at=NOW();
 
 -- 5) products (401) *주의: barcode_raw, barcode_full NOT NULL

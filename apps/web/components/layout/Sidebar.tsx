@@ -7,21 +7,23 @@ import { cn } from "@/lib/utils";
 import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 
 export function Sidebar() {
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
   const { pushToast } = useToast();
+  const { canAccessInbounds, canAccessSettings, isClientViewer } = useCurrentUser();
 
   const items = [
-    { href: "/inbounds", label: "nav.inbounds", icon: Download },
+    canAccessInbounds ? { href: "/inbounds", label: "nav.inbounds", icon: Download } : null,
     { href: "/outbounds", label: "nav.outbounds", icon: Send },
     { href: "/inventory", label: "nav.inventory", icon: Boxes },
-    { href: "/billing/events", label: "nav.billing", icon: FileText },
+    { href: isClientViewer ? "/billing" : "/billing/events", label: "nav.billing", icon: FileText },
     { href: "/dashboard", label: "nav.dashboard", icon: House },
-    { href: "/settings", label: "nav.settings", icon: Settings },
-  ];
+    canAccessSettings ? { href: "/settings", label: "nav.settings", icon: Settings } : null,
+  ].filter(Boolean) as Array<{ href: string; label: string; icon: typeof House }>;
   const toStackedLabel = (text: string) => text.replace(" / ", "\n");
 
   const handleLogout = () => {

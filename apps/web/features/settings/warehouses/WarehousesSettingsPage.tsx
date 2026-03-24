@@ -18,6 +18,7 @@ import {
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { createWarehouse, deleteWarehouse, listWarehouses, toggleWarehouseStatus, updateWarehouse } from "@/features/settings/warehouses/api";
 import type { Warehouse, WarehouseStatus } from "@/features/settings/warehouses/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -47,6 +48,7 @@ const initialForm: FormState = {
 export function WarehousesSettingsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canAccessSettings, canWrite, ready } = useCurrentUser();
   const [rows, setRows] = useState<Warehouse[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -75,8 +77,11 @@ export function WarehousesSettingsPage() {
   };
 
   useEffect(() => {
+    if (!ready || !canAccessSettings) return;
     void loadRows();
-  }, []);
+  }, [ready, canAccessSettings]);
+
+  const accessDenied = ready && !canAccessSettings;
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -230,11 +235,18 @@ export function WarehousesSettingsPage() {
         breadcrumbs={[{ label: "Settings" }, { label: "Warehouses" }]}
         title="Warehouses"
         subtitle="Configure warehouse master records used across operations."
-        rightSlot={<Button onClick={openCreate}>{t("New")}</Button>}
+        rightSlot={canWrite ? <Button onClick={openCreate}>{t("New")}</Button> : undefined}
       />
       <SettingsTabs />
-
+      {accessDenied ? (
+        <div className="rounded-xl border bg-white p-6">
+          <ErrorState title={t("Access denied")} message={t("Customer accounts cannot access settings.")} />
+        </div>
+      ) : null}
+      {accessDenied ? null : (
+        <>
       <div className="rounded-xl border bg-white p-6">
+        {!canWrite ? <div className="mb-4 text-xs text-amber-700">Read-only role: warehouse write actions are disabled.</div> : null}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Badge variant="default">{`${t("All")}: ${counts.total}`}</Badge>
           <Badge variant="success">{`${t("Active")}: ${counts.active}`}</Badge>
@@ -286,13 +298,17 @@ export function WarehousesSettingsPage() {
               label: "Actions",
               render: (row) => (
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id || removingId === row.id}>{t("Edit")}</Button>
-                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id || removingId === row.id}>
-                    {row.status === "active" ? t("Deactivate") : t("Activate")}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void removeRow(row)} disabled={togglingId === row.id || removingId === row.id}>
-                    {t("Delete")}
-                  </Button>
+                  {canWrite ? (
+                    <>
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id || removingId === row.id}>{t("Edit")}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id || removingId === row.id}>
+                        {row.status === "active" ? t("Deactivate") : t("Activate")}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => void removeRow(row)} disabled={togglingId === row.id || removingId === row.id}>
+                        {t("Delete")}
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               ),
             },
@@ -356,12 +372,14 @@ export function WarehousesSettingsPage() {
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setOpen(false)}>{t("Cancel")}</Button>
-            <Button onClick={() => void submit()} disabled={saving || !form.warehouse_code.trim() || !form.name.trim()}>
+            <Button onClick={() => void submit()} disabled={!canWrite || saving || !form.warehouse_code.trim() || !form.name.trim()}>
               {saving ? t("Saving...") : t("Save")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </section>
   );
 }

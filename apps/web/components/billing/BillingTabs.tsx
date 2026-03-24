@@ -4,14 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-const tabs = [
-  { href: "/billing/events", label: "Billing Events" },
-  { href: "/billing", label: "Invoices" },
-];
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 
 export function BillingTabs() {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { canAccessBillingEvents } = useCurrentUser();
+  const tabs = [
+    canAccessBillingEvents ? { href: "/billing/events", label: "Billing Events" } : null,
+    { href: "/billing", label: "Invoices" },
+  ].filter(Boolean) as Array<{ href: string; label: string }>;
 
   return (
     <div className="mb-6 rounded-xl border bg-white p-1">

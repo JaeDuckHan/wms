@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
-const protectedPrefixes = ["/outbounds", "/inbounds"];
+const protectedPrefixes = ["/dashboard", "/inbounds", "/outbounds", "/inventory", "/billing", "/settings", "/guide"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -19,5 +19,13 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/outbounds/:path*", "/inbounds/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/inbounds/:path*",
+    "/outbounds/:path*",
+    "/inventory/:path*",
+    "/billing/:path*",
+    "/settings/:path*",
+    "/guide/:path*",
+  ],
 };

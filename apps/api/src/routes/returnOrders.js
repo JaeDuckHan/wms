@@ -2,6 +2,7 @@ const express = require("express");
 const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -26,13 +27,16 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, return_no, client_id, warehouse_id, related_outbound_order_id, return_date, status, reason, created_by, created_at, updated_at
        FROM return_orders
        WHERE deleted_at IS NULL
-       ORDER BY id DESC`
+       ${scopedClientId ? "AND client_id = ?" : ""}
+       ORDER BY id DESC`,
+      scopedClientId ? [scopedClientId] : []
     );
     res.json({ ok: true, data: rows });
   } catch (error) {
@@ -42,11 +46,13 @@ router.get("/", async (_req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, return_no, client_id, warehouse_id, related_outbound_order_id, return_date, status, reason, created_by, created_at, updated_at
        FROM return_orders
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
+       WHERE id = ? AND deleted_at IS NULL
+       ${scopedClientId ? "AND client_id = ?" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Return order not found" });

@@ -1,5 +1,6 @@
 const express = require("express");
 const { getPool } = require("../db");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 const PALLET_CBM = 1.2;
@@ -231,7 +232,7 @@ async function getCbmSqlParts(alias = "p") {
   return { effectiveCbmExpr, missingCbmCondition };
 }
 
-function resolveFilters(query = {}, body = {}) {
+function resolveFilters(query = {}, body = {}, scopedClientId = null) {
   const warehouseIdResult = parseOptionalPositiveInt(query.warehouseId ?? body.warehouseId, "warehouseId");
   if (!warehouseIdResult.ok) {
     return warehouseIdResult;
@@ -246,7 +247,7 @@ function resolveFilters(query = {}, body = {}) {
     ok: true,
     value: {
       warehouseId: warehouseIdResult.value,
-      clientId: clientIdResult.value
+      clientId: scopedClientId || clientIdResult.value
     }
   };
 }
@@ -549,7 +550,7 @@ async function generateSnapshots(req, res) {
     return res.status(400).json({ ok: false, message: dateResult.message });
   }
 
-  const filtersResult = resolveFilters(req.query, req.body);
+  const filtersResult = resolveFilters(req.query, req.body, getScopedClientId(req));
   if (!filtersResult.ok) {
     return res.status(400).json({ ok: false, message: filtersResult.message });
   }
@@ -584,7 +585,7 @@ async function getStorageDashboard(req, res) {
     return res.status(400).json({ ok: false, message: dateResult.message });
   }
 
-  const filtersResult = resolveFilters(req.query);
+  const filtersResult = resolveFilters(req.query, {}, getScopedClientId(req));
   if (!filtersResult.ok) {
     return res.status(400).json({ ok: false, message: filtersResult.message });
   }
@@ -638,7 +639,7 @@ async function getStorageTrend(req, res) {
     return res.status(400).json({ ok: false, message: groupByResult.message });
   }
 
-  const filtersResult = resolveFilters(req.query);
+  const filtersResult = resolveFilters(req.query, {}, getScopedClientId(req));
   if (!filtersResult.ok) {
     return res.status(400).json({ ok: false, message: filtersResult.message });
   }
@@ -705,7 +706,7 @@ async function getStorageBillingPreview(req, res) {
     return res.status(400).json({ ok: false, message: monthResult.message });
   }
 
-  const filtersResult = resolveFilters(req.query);
+  const filtersResult = resolveFilters(req.query, {}, getScopedClientId(req));
   if (!filtersResult.ok) {
     return res.status(400).json({ ok: false, message: filtersResult.message });
   }

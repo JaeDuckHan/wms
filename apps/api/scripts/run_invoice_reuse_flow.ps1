@@ -1,7 +1,7 @@
 ﻿param(
   [string]$BaseUrl = "http://localhost:3100",
-  [string]$Email = "admin.demo@example.com",
-  [string]$Password = "1234",
+  [string]$Email = "admin@example.com",
+  [string]$Password = "x",
   [int]$ClientId = 101,
   [int]$WarehouseId = 201,
   [int]$UserId = 1002,

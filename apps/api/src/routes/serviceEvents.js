@@ -1,5 +1,6 @@
 const express = require("express");
 const { getPool } = require("../db");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -8,12 +9,16 @@ router.get("/service-events", async (req, res) => {
     req.query;
 
   try {
+    const scopedClientId = getScopedClientId(req);
     let query = `SELECT id, client_id, service_id, outbound_order_id, stock_transaction_id, event_date, source_type, basis_applied, qty, box_count, unit_price, amount, currency, remark, created_at, updated_at
                  FROM service_events
                  WHERE deleted_at IS NULL`;
     const params = [];
 
-    if (client_id) {
+    if (scopedClientId) {
+      query += " AND client_id = ?";
+      params.push(scopedClientId);
+    } else if (client_id) {
       query += " AND client_id = ?";
       params.push(client_id);
     }

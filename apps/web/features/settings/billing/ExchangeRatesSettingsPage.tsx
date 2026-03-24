@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import {
   createExchangeRate,
   deleteExchangeRate,
@@ -28,6 +29,7 @@ const blank: Omit<ExchangeRate, "id" | "base_currency" | "quote_currency"> = {
 export function ExchangeRatesSettingsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canManageBillingSettings, ready } = useCurrentUser();
   const [rows, setRows] = useState<ExchangeRate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +54,11 @@ export function ExchangeRatesSettingsPage() {
   };
 
   useEffect(() => {
+    if (!ready || !canManageBillingSettings) return;
     void reload();
-  }, []);
+  }, [ready, canManageBillingSettings]);
+
+  const accessDenied = ready && !canManageBillingSettings;
 
   const startCreate = () => {
     setEditingId(null);
@@ -105,7 +110,16 @@ export function ExchangeRatesSettingsPage() {
         subtitle="Manage THB->KRW rates used as invoice-level snapshots."
       />
       <SettingsTabs />
-
+      {accessDenied ? (
+        <div className="rounded-xl border bg-white p-6">
+          <ErrorState
+            title={t("Access denied")}
+            message={t("Only admin can access billing settings.")}
+          />
+        </div>
+      ) : null}
+      {accessDenied ? null : (
+        <>
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -131,8 +145,8 @@ export function ExchangeRatesSettingsPage() {
                   label: "Actions",
                   render: (row) => (
                     <div className="flex gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => startEdit(row)} disabled={Number(row.locked) === 1 || Number(row.used_invoice_count || 0) > 0}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void remove(row.id)} disabled={Number(row.locked) === 1 || Number(row.used_invoice_count || 0) > 0}>Delete</Button>
+                      {canManageBillingSettings ? <Button size="sm" variant="secondary" onClick={() => startEdit(row)} disabled={Number(row.locked) === 1 || Number(row.used_invoice_count || 0) > 0}>Edit</Button> : null}
+                      {canManageBillingSettings ? <Button size="sm" variant="ghost" onClick={() => void remove(row.id)} disabled={Number(row.locked) === 1 || Number(row.used_invoice_count || 0) > 0}>Delete</Button> : null}
                     </div>
                   ),
                 },
@@ -161,9 +175,11 @@ export function ExchangeRatesSettingsPage() {
             <option value={0}>{t("Unlocked")}</option>
             <option value={1}>{t("Locked")}</option>
           </select>
-          <Button onClick={() => void save()}>{t("Save")}</Button>
+          <Button onClick={() => void save()} disabled={!canManageBillingSettings}>{t("Save")}</Button>
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 }

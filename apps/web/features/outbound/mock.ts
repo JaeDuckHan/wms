@@ -33,7 +33,18 @@ function buildItems(seq: number): OutboundItem[] {
     const requested = 10 + seq + idx * 3;
     const picked = idx % 3 === 0 ? requested : Math.max(requested - (idx + 2), 0);
     const available = idx % 2 === 0 ? requested + 8 : Math.max(requested - 4, 0);
-    const status = picked >= requested ? "picked" : available < requested ? "shortage" : "ready";
+    const reserved = idx % 2 === 0 ? Math.max(Math.floor(requested / 2), 1) : Math.max(Math.floor(requested / 3), 0);
+    const allocatable = Math.max(available - reserved, 0);
+    const alternateAllocatable = idx % 2 === 1 ? requested + 2 : Math.max(requested - 3, 0);
+    const networkAllocatable = Math.max(allocatable + alternateAllocatable, allocatable);
+    const status =
+      picked >= requested
+        ? "picked"
+        : allocatable >= requested
+          ? "ready"
+          : networkAllocatable >= requested
+            ? "reallocate"
+            : "shortage";
     return {
       id: `OI-${seq}-${idx + 1}`,
       barcode_full: `CL${pad2(((seq + idx) % 10) + 1)}-8800${String(seq * 200 + idx + 1).padStart(9, "0")}`,
@@ -43,6 +54,34 @@ function buildItems(seq: number): OutboundItem[] {
       requested_qty: requested,
       picked_qty: picked,
       available_qty: available,
+      reserved_qty: reserved,
+      allocatable_qty: allocatable,
+      network_allocatable_qty: networkAllocatable,
+      shortage_qty: Math.max(requested - networkAllocatable, 0),
+      allocation_plan:
+        networkAllocatable >= requested
+          ? [
+              {
+                lot: `LOT-26${pad2(((seq + idx) % 12) + 1)}-${String.fromCharCode(65 + (idx % 3))}`,
+                location: `B-${pad2((seq % 10) + 1)}-${pad2((idx % 8) + 1)}`,
+                allocatable_qty: allocatable,
+                suggested_qty: Math.min(requested, allocatable),
+              },
+              {
+                lot: `LOT-26${pad2(((seq + idx + 1) % 12) + 1)}-${String.fromCharCode(65 + ((idx + 1) % 3))}`,
+                location: `B-${pad2(((seq + 3) % 10) + 1)}-${pad2(((idx + 2) % 8) + 1)}`,
+                allocatable_qty: alternateAllocatable,
+                suggested_qty: Math.max(requested - Math.min(requested, allocatable), 0),
+              },
+            ].filter((plan) => plan.suggested_qty > 0)
+          : [
+              {
+                lot: `LOT-26${pad2(((seq + idx) % 12) + 1)}-${String.fromCharCode(65 + (idx % 3))}`,
+                location: `B-${pad2((seq % 10) + 1)}-${pad2((idx % 8) + 1)}`,
+                allocatable_qty: allocatable,
+                suggested_qty: Math.min(requested, allocatable),
+              },
+            ].filter((plan) => plan.suggested_qty > 0),
       status,
     };
   });

@@ -9,6 +9,9 @@ export type StockBalanceRow = {
   location: string;
   available_qty: number;
   reserved_qty: number;
+  allocatable_qty: number;
+  reservation_rate_pct: number;
+  reservation_status: "low" | "medium" | "high" | "full";
 };
 
 export type StockTransactionRow = {

@@ -55,7 +55,7 @@ async function getReturnOrderContext(conn, returnOrderId) {
 async function adjustAvailableQty(conn, key, delta) {
   const { clientId, productId, lotId, warehouseId, locationId } = key;
   const [rows] = await conn.query(
-    `SELECT id, available_qty
+    `SELECT id, available_qty, reserved_qty
      FROM stock_balances
      WHERE client_id = ?
        AND product_id = ?
@@ -84,10 +84,52 @@ async function adjustAvailableQty(conn, key, delta) {
   if (nextQty < 0) {
     throw new StockError("INSUFFICIENT_STOCK", "Insufficient stock");
   }
+  if (nextQty < Number(rows[0].reserved_qty || 0)) {
+    throw new StockError("RESERVED_STOCK_CONFLICT", "Reserved stock exceeds available stock");
+  }
 
   await conn.query(
     "UPDATE stock_balances SET available_qty = ? WHERE id = ?",
     [nextQty, rows[0].id]
+  );
+}
+
+async function adjustReservedQty(conn, key, delta) {
+  const { clientId, productId, lotId, warehouseId, locationId } = key;
+  const [rows] = await conn.query(
+    `SELECT id, available_qty, reserved_qty
+     FROM stock_balances
+     WHERE client_id = ?
+       AND product_id = ?
+       AND lot_id = ?
+       AND warehouse_id = ?
+       AND location_id <=> ?
+       AND deleted_at IS NULL
+     FOR UPDATE`,
+    [clientId, productId, lotId, warehouseId, locationId]
+  );
+
+  if (rows.length === 0) {
+    throw new StockError(
+      delta >= 0 ? "INSUFFICIENT_STOCK" : "INSUFFICIENT_RESERVED_STOCK",
+      delta >= 0 ? "Insufficient stock to reserve" : "Insufficient reserved stock"
+    );
+  }
+
+  const currentAvailable = Number(rows[0].available_qty || 0);
+  const currentReserved = Number(rows[0].reserved_qty || 0);
+  const nextReserved = currentReserved + Number(delta);
+
+  if (nextReserved < 0) {
+    throw new StockError("INSUFFICIENT_RESERVED_STOCK", "Insufficient reserved stock");
+  }
+  if (nextReserved > currentAvailable) {
+    throw new StockError("INSUFFICIENT_STOCK", "Insufficient stock to reserve");
+  }
+
+  await conn.query(
+    "UPDATE stock_balances SET reserved_qty = ? WHERE id = ?",
+    [nextReserved, rows[0].id]
   );
 }
 
@@ -186,6 +228,7 @@ module.exports = {
   getOutboundOrderContext,
   getReturnOrderContext,
   adjustAvailableQty,
+  adjustReservedQty,
   upsertStockTxn,
   getStockTxnId,
   softDeleteStockTxn

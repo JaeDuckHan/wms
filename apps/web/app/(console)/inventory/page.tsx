@@ -65,6 +65,26 @@ export default async function InventoryPage({
           { key: "location", label: "Location", render: (row) => row.location },
           { key: "available_qty", label: "Available Qty", className: "tabular-nums", render: (row) => row.available_qty },
           { key: "reserved_qty", label: "Reserved Qty", className: "tabular-nums", render: (row) => row.reserved_qty },
+          { key: "allocatable_qty", label: "Allocatable Qty", className: "tabular-nums", render: (row) => row.allocatable_qty },
+          {
+            key: "reservation_pressure",
+            label: "Reservation Pressure",
+            render: (row) => (
+              <Badge
+                variant={
+                  row.reservation_status === "full"
+                    ? "danger"
+                    : row.reservation_status === "high"
+                      ? "warning"
+                      : row.reservation_status === "medium"
+                        ? "info"
+                        : "default"
+                }
+              >
+                {`${row.reservation_rate_pct}%`}
+              </Badge>
+            ),
+          },
         ]}
       />
     ) : (
@@ -89,7 +109,7 @@ export default async function InventoryPage({
       <PageHeader
         breadcrumbs={[{ label: "Operations" }, { label: "Inventory" }]}
         title="Inventory"
-        subtitle="Live stock balances and movement history"
+        subtitle="Live stock balances, reserved stock, and allocatable stock"
       />
 
       <div className="mb-5 rounded-xl border bg-white px-4 py-3">
@@ -112,6 +132,12 @@ export default async function InventoryPage({
             );
           })}
         </div>
+        {currentTab === "balances" && (
+          <div className="mt-3 space-y-1 text-xs text-slate-500">
+            <p>Allocatable Qty = Available Qty - Reserved Qty</p>
+            <p>Reservation Pressure = Reserved Qty / Available Qty</p>
+          </div>
+        )}
 
         {currentTab === "transactions" && (
           <>

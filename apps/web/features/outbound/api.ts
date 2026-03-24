@@ -9,9 +9,9 @@ import type {
   OutboundTimeline,
 } from "@/features/outbound/types";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
+import { shouldUseImplicitFallback, shouldUseMockMode } from "@/lib/runtime-mode";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 const LATENCY_MS = 120;
 
 type RequestOptions = {
@@ -74,6 +74,7 @@ type RawStockBalance = {
   lot_id: number;
   location_id: number | null;
   available_qty: number;
+  reserved_qty?: number;
 };
 
 type RawOutboundBox = {
@@ -100,6 +101,26 @@ type RawOutboundLog = {
   created_at: string;
 };
 
+type RawAllocationSuggestion = {
+  outbound_item_id: number;
+  product_id: number;
+  requested_qty: number;
+  network_allocatable_qty: number;
+  shortage_qty: number;
+  suggested_strategy: "current" | "reallocate" | "shortage";
+  allocation_plan: Array<{
+    product_id: number;
+    lot_id: number;
+    lot_no: string;
+    location_id: number | null;
+    location_code: string;
+    allocatable_qty: number;
+    suggested_qty: number;
+    expiry_date: string | null;
+    mfg_date: string | null;
+  }>;
+};
+
 type JsonResponse<T> = {
   ok: boolean;
   data?: T;
@@ -120,7 +141,7 @@ function delay(ms: number) {
 }
 
 function shouldUseFallback(token?: string) {
-  return USE_MOCK || token === "mock-token";
+  return shouldUseImplicitFallback(token);
 }
 
 function toDateOnly(value: string | null | undefined): string {
@@ -343,32 +364,116 @@ function toKey(productId: number, lotId: number, locationId: number | null) {
   return `${productId}:${lotId}:${locationId ?? 0}`;
 }
 
+function toNetworkKey(productId: number, lotId: number) {
+  return `${productId}:${lotId}`;
+}
+
 function mapItems(
   rawItems: RawOutboundItem[],
   products: RawProduct[],
   lots: RawLot[],
   balances: RawStockBalance[],
-  orderStatus: OutboundStatus
+  orderStatus: OutboundStatus,
+  suggestions?: RawAllocationSuggestion[]
 ): OutboundItem[] {
   const productMap = new Map(products.map((product) => [product.id, product]));
   const lotMap = new Map(lots.map((lot) => [lot.id, lot]));
   const balanceMap = new Map(
-    balances.map((balance) => [toKey(balance.product_id, balance.lot_id, balance.location_id), Number(balance.available_qty)])
+    balances.map((balance) => [
+      toKey(balance.product_id, balance.lot_id, balance.location_id),
+      {
+        available_qty: Number(balance.available_qty),
+        reserved_qty: Number(balance.reserved_qty || 0),
+      },
+    ])
   );
+  const balanceGroups = new Map<
+    string,
+    Array<{
+      location: string;
+      allocatable_qty: number;
+    }>
+  >();
+
+  for (const balance of balances) {
+    const networkKey = toNetworkKey(balance.product_id, balance.lot_id);
+    const existing = balanceGroups.get(networkKey) ?? [];
+    existing.push({
+      location: balance.location_id ? `LOC-${balance.location_id}` : "-",
+      allocatable_qty: Math.max(0, Number(balance.available_qty) - Number(balance.reserved_qty || 0)),
+    });
+    balanceGroups.set(networkKey, existing);
+  }
+
+  const suggestionMap = new Map((suggestions ?? []).map((item) => [item.outbound_item_id, item]));
 
   return rawItems.map((item) => {
-    const available = balanceMap.get(toKey(item.product_id, item.lot_id, item.location_id)) ?? 0;
+    const balance = balanceMap.get(toKey(item.product_id, item.lot_id, item.location_id)) ?? {
+      available_qty: 0,
+      reserved_qty: 0,
+    };
+    const candidateAllocations = [...(balanceGroups.get(toNetworkKey(item.product_id, item.lot_id)) ?? [])].sort((a, b) => {
+      if (a.location === (item.location_id ? `LOC-${item.location_id}` : "-")) return -1;
+      if (b.location === (item.location_id ? `LOC-${item.location_id}` : "-")) return 1;
+      return b.allocatable_qty - a.allocatable_qty;
+    });
+    const available = balance.available_qty;
+    const reserved = balance.reserved_qty;
+    const allocatable = Math.max(0, available - reserved);
+    const networkAllocatable = candidateAllocations.reduce((sum, candidate) => sum + candidate.allocatable_qty, 0);
+    let remaining = Number(item.qty);
+    const fallbackAllocationPlan = candidateAllocations
+      .map((candidate) => {
+        const suggestedQty = Math.min(remaining, candidate.allocatable_qty);
+        remaining -= suggestedQty;
+        return {
+          lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
+          location: candidate.location,
+          allocatable_qty: candidate.allocatable_qty,
+          suggested_qty: suggestedQty,
+        };
+      })
+      .filter((candidate) => candidate.suggested_qty > 0);
     const picked = ["packed", "shipped", "delivered"].includes(orderStatus) ? Number(item.qty) : 0;
+    const requested = Number(item.qty);
+    const suggestion = suggestionMap.get(item.id);
+    const resolvedNetworkAllocatable = suggestion
+      ? Number(suggestion.network_allocatable_qty)
+      : networkAllocatable;
+    const shortageQty = suggestion
+      ? Number(suggestion.shortage_qty)
+      : Math.max(requested - resolvedNetworkAllocatable, 0);
+    const resolvedAllocationPlan = suggestion
+      ? suggestion.allocation_plan.map((candidate) => ({
+          lot: candidate.lot_no,
+          location: candidate.location_code || "-",
+          allocatable_qty: Number(candidate.allocatable_qty),
+          suggested_qty: Number(candidate.suggested_qty),
+        }))
+      : fallbackAllocationPlan;
+    const status =
+      picked > 0
+        ? "picked"
+        : allocatable < requested
+          ? resolvedNetworkAllocatable >= requested
+            ? "reallocate"
+            : "shortage"
+          : "ready";
     return {
       id: String(item.id),
       barcode_full: productMap.get(item.product_id)?.barcode_full ?? `P-${item.product_id}`,
       product_name: productMap.get(item.product_id)?.name_kr ?? `Product #${item.product_id}`,
       lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
       location: item.location_id ? `LOC-${item.location_id}` : "-",
-      requested_qty: Number(item.qty),
+      requested_qty: requested,
       picked_qty: picked,
       available_qty: available,
-      status: available < Number(item.qty) ? "shortage" : picked > 0 ? "picked" : "ready",
+      reserved_qty: reserved,
+      allocatable_qty: allocatable,
+      network_allocatable_qty: resolvedNetworkAllocatable,
+      shortage_qty: shortageQty,
+      allocation_plan: resolvedAllocationPlan,
+      status,
     };
   });
 }
@@ -376,7 +481,7 @@ function mapItems(
 const mockDb: OutboundOrder[] = outboundOrdersMock.map((order) => cloneOrder(order));
 
 export async function getOutboundOrders(query?: OutboundListQuery, options?: RequestOptions): Promise<OutboundOrder[]> {
-  if (USE_MOCK) {
+  if (shouldUseMockMode()) {
     await delay(LATENCY_MS);
     return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
   }
@@ -403,7 +508,7 @@ export async function getOutboundOrders(query?: OutboundListQuery, options?: Req
 }
 
 export async function getOutboundOrderByNo(outboundNo: string, options?: RequestOptions): Promise<OutboundOrder | null> {
-  if (USE_MOCK) {
+  if (shouldUseMockMode()) {
     await delay(LATENCY_MS);
     const order = mockDb.find((item) => item.outbound_no === outboundNo) ?? getOutboundByNo(outboundNo);
     return order ? cloneOrder(order) : null;
@@ -432,6 +537,18 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
         options
       ),
     ]);
+    let suggestions: RawAllocationSuggestion[] = [];
+    try {
+      suggestions = await requestJson<RawAllocationSuggestion[]>(
+        `/outbound-orders/${rawOrder.id}/allocation-suggestions`,
+        undefined,
+        options
+      );
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 404)) {
+        throw error;
+      }
+    }
     let rawBoxes: RawOutboundBox[] = [];
     let boxesSupported = true;
     let rawLogs: RawOutboundLog[] = [];
@@ -451,7 +568,7 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
       if (!(error instanceof ApiError && error.status === 404)) throw error;
     }
 
-    const items = mapItems(rawItems, products, lots, balances, rawOrder.status);
+    const items = mapItems(rawItems, products, lots, balances, rawOrder.status, suggestions);
     const boxes = mapBoxes(rawBoxes, rawOrder.tracking_no);
     const clientName = clients.find((client) => client.id === rawOrder.client_id)?.name_kr ?? "";
     const timeline = mapOutboundLogs(rawLogs);
@@ -472,7 +589,7 @@ export async function transitionOutboundStatus(
   action: OutboundAction,
   options?: RequestOptions
 ): Promise<OutboundOrder> {
-  if (USE_MOCK) {
+  if (shouldUseMockMode()) {
     await delay(LATENCY_MS);
     const idx = mockDb.findIndex((item) => item.outbound_no === outboundNo);
     if (idx < 0) throw new ApiError("Outbound order not found", 404);
@@ -543,7 +660,7 @@ export async function addOutboundBox(
   payload: AddBoxPayload,
   options?: RequestOptions
 ): Promise<OutboundBox[]> {
-  if (!USE_MOCK) {
+  if (!shouldUseMockMode()) {
     const current = await (async () => {
       const rawOrders = await requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options);
       const found = rawOrders.find((order) => order.outbound_no === outboundNo);

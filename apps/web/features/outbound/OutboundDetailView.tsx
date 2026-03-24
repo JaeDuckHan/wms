@@ -71,6 +71,26 @@ export function OutboundDetailView({
   const [loading, setLoading] = useState(false);
 
   const currentAction = actionByStatus(order.status);
+  const shortageItems = useMemo(
+    () => order.items.filter((item) => item.status === "shortage"),
+    [order.items]
+  );
+  const reallocationItems = useMemo(
+    () => order.items.filter((item) => item.status === "reallocate"),
+    [order.items]
+  );
+  const totalRequestedQty = useMemo(
+    () => order.items.reduce((sum, item) => sum + item.requested_qty, 0),
+    [order.items]
+  );
+  const totalAllocatableQty = useMemo(
+    () => order.items.reduce((sum, item) => sum + item.allocatable_qty, 0),
+    [order.items]
+  );
+  const totalNetworkAllocatableQty = useMemo(
+    () => order.items.reduce((sum, item) => sum + item.network_allocatable_qty, 0),
+    [order.items]
+  );
 
   const setTabWithQuery = (nextTab: string) => {
     const normalized = normalizeTab(nextTab);
@@ -133,14 +153,28 @@ export function OutboundDetailView({
         render: (row: OutboundOrder["items"][number]) => row.available_qty,
       },
       {
+        key: "reserved_qty",
+        label: "reserved_qty",
+        className: "tabular-nums",
+        render: (row: OutboundOrder["items"][number]) => row.reserved_qty,
+      },
+      {
+        key: "allocatable_qty",
+        label: "allocatable_qty",
+        className: "tabular-nums",
+        render: (row: OutboundOrder["items"][number]) => row.allocatable_qty,
+      },
+      {
         key: "status",
         label: "status",
         render: (row: OutboundOrder["items"][number]) =>
-          row.available_qty < row.requested_qty ? (
+          row.status === "shortage" ? (
             <Badge variant="danger" className="inline-flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
-              {t("Shortage")}
+              {t("Allocatable Shortage")}
             </Badge>
+          ) : row.status === "reallocate" ? (
+            <Badge variant="warning">{t("Reallocate Needed")}</Badge>
           ) : (
             <Badge variant={row.status === "picked" ? "success" : "default"}>{t(row.status)}</Badge>
           ),
@@ -238,12 +272,70 @@ export function OutboundDetailView({
             <CardContent className="space-y-2">
               <p className="text-sm">{t(order.summary)}</p>
               <p className="text-sm text-slate-500">{t(order.memo)}</p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Badge variant={shortageItems.length > 0 ? "danger" : "success"}>
+                  {shortageItems.length > 0
+                    ? `${t("Shortage Items")}: ${shortageItems.length}`
+                    : t("Allocatable OK")}
+                </Badge>
+                <Badge variant={reallocationItems.length > 0 ? "warning" : "default"}>
+                  {`${t("Reallocation Items")}: ${reallocationItems.length}`}
+                </Badge>
+                <Badge variant="info">
+                  {`${t("Requested Qty")}: ${totalRequestedQty}`}
+                </Badge>
+                <Badge variant={totalAllocatableQty < totalRequestedQty ? "warning" : "default"}>
+                  {`${t("Allocatable Qty")}: ${totalAllocatableQty}`}
+                </Badge>
+                <Badge variant={totalNetworkAllocatableQty < totalRequestedQty ? "danger" : "success"}>
+                  {`${t("Network Allocatable Qty")}: ${totalNetworkAllocatableQty}`}
+                </Badge>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="items">
           <DataTable rows={order.items} columns={itemColumns} emptyText={t("No items available.")} />
+          {reallocationItems.length > 0 && (
+            <div className="mt-4 rounded-xl border bg-amber-50 p-4">
+              <p className="text-sm font-medium text-amber-900">{t("Reallocation Suggestions")}</p>
+              <div className="mt-3 space-y-3">
+                {reallocationItems.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-amber-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{item.product_name}</span>
+                      <Badge variant="warning">{`${t("Current Location")}: ${item.location}`}</Badge>
+                      <Badge variant="info">{`${t("Requested Qty")}: ${item.requested_qty}`}</Badge>
+                      <Badge variant="default">{`${t("Network Allocatable Qty")}: ${item.network_allocatable_qty}`}</Badge>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {item.allocation_plan.map((plan) => (
+                        <Badge key={`${item.id}-${plan.location}`} variant={plan.location === item.location ? "default" : "info"}>
+                          {`${plan.lot} @ ${plan.location} ${t("Suggested Qty")}: ${plan.suggested_qty} / ${t("Allocatable Qty")}: ${plan.allocatable_qty}`}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {shortageItems.length > 0 && (
+            <div className="mt-4 rounded-xl border bg-rose-50 p-4">
+              <p className="text-sm font-medium text-rose-900">{t("Shortage Alerts")}</p>
+              <div className="mt-3 space-y-2">
+                {shortageItems.map((item) => (
+                  <div key={`shortage-${item.id}`} className="flex flex-wrap items-center gap-2 text-sm text-rose-800">
+                    <span className="font-medium">{item.product_name}</span>
+                    <span>{`${t("Current Location")}: ${item.location}`}</span>
+                    <span>{`${t("Shortage Qty")}: ${item.shortage_qty}`}</span>
+                    <span>{`${t("Network Allocatable Qty")}: ${item.network_allocatable_qty}`}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="boxes">

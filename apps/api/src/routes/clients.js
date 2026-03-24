@@ -2,6 +2,7 @@ const express = require("express");
 const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -24,13 +25,16 @@ function isMysqlDuplicate(error) {
   return error && error.code === "ER_DUP_ENTRY";
 }
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, client_code, name_kr, name_en, contact_name, phone, email, address, status, created_at, updated_at
        FROM clients
        WHERE deleted_at IS NULL
-       ORDER BY id DESC`
+       ${scopedClientId ? "AND id = ?" : ""}
+       ORDER BY id DESC`,
+      scopedClientId ? [scopedClientId] : []
     );
     res.json({ ok: true, data: rows });
   } catch (error) {
@@ -40,11 +44,13 @@ router.get("/", async (_req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, client_code, name_kr, name_en, contact_name, phone, email, address, status, created_at, updated_at
        FROM clients
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
+       WHERE id = ? AND deleted_at IS NULL
+       ${scopedClientId ? "AND id = ?" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Client not found" });

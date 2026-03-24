@@ -18,6 +18,7 @@ import {
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { listClients } from "@/features/settings/clients/api";
 import { buildBarcodeFull, createProduct, deleteProduct, listProducts, toggleProductStatus, updateProduct } from "@/features/settings/products/api";
 import type { Product, ProductStatus } from "@/features/settings/products/types";
@@ -79,6 +80,7 @@ function formatCbmDisplay(value: number | null | undefined) {
 export function ProductsSettingsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canAccessSettings, canWrite, ready } = useCurrentUser();
   const [rows, setRows] = useState<Product[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -109,8 +111,11 @@ export function ProductsSettingsPage() {
   };
 
   useEffect(() => {
+    if (!ready || !canAccessSettings) return;
     void loadRows();
-  }, []);
+  }, [ready, canAccessSettings]);
+
+  const accessDenied = ready && !canAccessSettings;
 
   const barcodePreview = useMemo(
     () => buildBarcodeFull(form.client_code, form.barcode_raw),
@@ -274,11 +279,18 @@ export function ProductsSettingsPage() {
         breadcrumbs={[{ label: "Settings" }, { label: "Products" }]}
         title="Products"
         subtitle="Maintain product catalog by client and barcode rules."
-        rightSlot={<Button onClick={openCreate}>{t("New")}</Button>}
+        rightSlot={canWrite ? <Button onClick={openCreate}>{t("New")}</Button> : undefined}
       />
       <SettingsTabs />
-
+      {accessDenied ? (
+        <div className="rounded-xl border bg-white p-6">
+          <ErrorState title={t("Access denied")} message={t("Customer accounts cannot access settings.")} />
+        </div>
+      ) : null}
+      {accessDenied ? null : (
+        <>
       <div className="rounded-xl border bg-white p-6">
+        {!canWrite ? <div className="mb-4 text-xs text-amber-700">Read-only role: product write actions are disabled.</div> : null}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Badge variant="default">{`${t("All")}: ${counts.total}`}</Badge>
           <Badge variant="success">{`${t("Active")}: ${counts.active}`}</Badge>
@@ -336,13 +348,17 @@ export function ProductsSettingsPage() {
               label: "Actions",
               render: (row) => (
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id || removingId === row.id}>{t("Edit")}</Button>
-                  <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id || removingId === row.id}>
-                    {row.status === "active" ? t("Archive") : t("Activate")}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void removeRow(row)} disabled={togglingId === row.id || removingId === row.id}>
-                    {t("Delete")}
-                  </Button>
+                  {canWrite ? (
+                    <>
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id || removingId === row.id}>{t("Edit")}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => void toggleStatus(row)} disabled={togglingId === row.id || removingId === row.id}>
+                        {row.status === "active" ? t("Archive") : t("Activate")}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => void removeRow(row)} disabled={togglingId === row.id || removingId === row.id}>
+                        {t("Delete")}
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               ),
             },
@@ -441,12 +457,14 @@ export function ProductsSettingsPage() {
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setOpen(false)}>{t("Cancel")}</Button>
-            <Button onClick={() => void submit()} disabled={saving || !form.client_code.trim() || !form.barcode_raw.trim() || !form.name.trim()}>
+            <Button onClick={() => void submit()} disabled={!canWrite || saving || !form.client_code.trim() || !form.barcode_raw.trim() || !form.name.trim()}>
               {saving ? t("Saving...") : t("Save")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </section>
   );
 }

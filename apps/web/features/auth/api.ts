@@ -25,6 +25,22 @@ type JsonResponse<T> = {
   message?: string;
 };
 
+async function parseJsonResponse<T>(response: Response): Promise<JsonResponse<T>> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return { ok: response.ok, message: response.ok ? undefined : "Empty response body" };
+  }
+
+  try {
+    return JSON.parse(text) as JsonResponse<T>;
+  } catch {
+    return {
+      ok: false,
+      message: response.ok ? "Invalid JSON response" : text.slice(0, 200) || "Request failed",
+    };
+  }
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/proxy${path}`, {
     ...init,
@@ -33,7 +49,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  const json = (await response.json()) as JsonResponse<T>;
+  const json = await parseJsonResponse<T>(response);
   if (!response.ok || !json.ok || json.data === undefined) {
     throw new ApiError(json.message ?? "Request failed", response.status);
   }

@@ -15,7 +15,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-echo "[info] applying billing runtime patches with env: $ENV_FILE"
+echo "[info] applying runtime schema patches with env: $ENV_FILE"
 
 docker compose --env-file "$ENV_FILE" exec -T db \
   sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
@@ -29,4 +29,8 @@ docker compose --env-file "$ENV_FILE" exec -T db \
   sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
   < apps/api/sql/patch_warehouse_default_cbm_rate.sql
 
-echo "[ok] runtime patches applied (idempotent): billing + warehouse default cbm columns."
+docker compose --env-file "$ENV_FILE" exec -T db \
+  sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
+  < apps/api/sql/patch_runtime_operational_tables.sql
+
+echo "[ok] runtime patches applied (idempotent): billing, warehouse, and operational tables."

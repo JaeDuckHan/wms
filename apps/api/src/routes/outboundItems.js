@@ -5,8 +5,10 @@ const { validate } = require("../middleware/validate");
 const {
   StockError,
   withTransaction,
-  getOutboundOrderContext
+  getOutboundOrderContext,
+  adjustReservedQty
 } = require("../services/stock");
+const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
@@ -25,23 +27,6 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
-async function ensureOutboundOrderLogsTable(conn) {
-  await conn.query(
-    `CREATE TABLE IF NOT EXISTS outbound_order_logs (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      outbound_order_id BIGINT UNSIGNED NOT NULL,
-      action VARCHAR(40) NOT NULL,
-      from_status VARCHAR(30) NULL,
-      to_status VARCHAR(30) NULL,
-      note VARCHAR(1000) NULL,
-      actor_user_id BIGINT UNSIGNED NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_outbound_order_logs_order_created (outbound_order_id, created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
-  );
-}
-
 function resolveActorUserId(req, fallbackUserId) {
   const tokenUserId = Number(req.user?.sub || 0);
   if (Number.isFinite(tokenUserId) && tokenUserId > 0) return tokenUserId;
@@ -51,7 +36,6 @@ function resolveActorUserId(req, fallbackUserId) {
 }
 
 async function appendOutboundOrderLog(conn, { outboundOrderId, action, note, actorUserId }) {
-  await ensureOutboundOrderLogsTable(conn);
   await conn.query(
     `INSERT INTO outbound_order_logs (outbound_order_id, action, note, actor_user_id)
      VALUES (?, ?, ?, ?)`,
@@ -83,14 +67,38 @@ function isShippedLockedStatus(status) {
   return status === "shipped" || status === "delivered";
 }
 
+function isReservationAppliedStatus(status) {
+  return status === "allocated" || status === "picking" || status === "packed";
+}
+
+async function adjustItemReservation(conn, order, item, delta) {
+  await adjustReservedQty(
+    conn,
+    {
+      clientId: order.client_id,
+      productId: item.product_id,
+      lotId: item.lot_id,
+      warehouseId: order.warehouse_id,
+      locationId: item.location_id ?? null
+    },
+    Number(delta)
+  );
+}
+
 router.get("/", async (req, res) => {
   const outboundOrderId = req.query.outbound_order_id;
 
   try {
+    const scopedClientId = getScopedClientId(req);
     let query = `SELECT id, outbound_order_id, product_id, lot_id, location_id, qty, box_type, box_count, remark, created_at, updated_at
                  FROM outbound_items
                  WHERE deleted_at IS NULL`;
     const params = [];
+
+    if (scopedClientId) {
+      query += " AND outbound_order_id IN (SELECT id FROM outbound_orders WHERE client_id = ? AND deleted_at IS NULL)";
+      params.push(scopedClientId);
+    }
 
     if (outboundOrderId) {
       query += " AND outbound_order_id = ?";
@@ -108,11 +116,13 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const scopedClientId = getScopedClientId(req);
     const [rows] = await getPool().query(
       `SELECT id, outbound_order_id, product_id, lot_id, location_id, qty, box_type, box_count, remark, created_at, updated_at
        FROM outbound_items
-       WHERE id = ? AND deleted_at IS NULL`,
-      [req.params.id]
+       WHERE id = ? AND deleted_at IS NULL
+       ${scopedClientId ? "AND outbound_order_id IN (SELECT id FROM outbound_orders WHERE client_id = ? AND deleted_at IS NULL)" : ""}`,
+      scopedClientId ? [req.params.id, scopedClientId] : [req.params.id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, message: "Outbound item not found" });
@@ -162,6 +172,14 @@ router.post("/", validate(outboundItemSchema), async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [outbound_order_id, product_id, lot_id, location_id, qty, box_type, box_count, remark]
       );
+      if (isReservationAppliedStatus(orderRows[0].status)) {
+        await adjustItemReservation(
+          conn,
+          order,
+          { product_id, lot_id, location_id, qty },
+          qty
+        );
+      }
       await appendOutboundOrderLog(conn, {
         outboundOrderId: order.id,
         action: "item_create",
@@ -236,6 +254,10 @@ router.put("/:id", validate(outboundItemSchema), async (req, res) => {
         throw new StockError("ORDER_LOCKED", "Cannot modify items after shipment");
       }
 
+      if (isReservationAppliedStatus(prev.status)) {
+        await adjustItemReservation(conn, prev, prev, -Number(prev.qty));
+      }
+
       await conn.query(
         `UPDATE outbound_items
          SET outbound_order_id = ?, product_id = ?, lot_id = ?, location_id = ?, qty = ?, box_type = ?, box_count = ?, remark = ?
@@ -252,6 +274,14 @@ router.put("/:id", validate(outboundItemSchema), async (req, res) => {
           req.params.id
         ]
       );
+      if (isReservationAppliedStatus(nextOrderRows[0].status)) {
+        await adjustItemReservation(
+          conn,
+          nextOrder,
+          { product_id, lot_id, location_id, qty },
+          qty
+        );
+      }
       if (Number(prev.outbound_order_id) !== Number(nextOrder.id)) {
         await appendOutboundOrderLog(conn, {
           outboundOrderId: prev.outbound_order_id,
@@ -305,6 +335,9 @@ router.delete("/:id", async (req, res) => {
       }
       if (isShippedLockedStatus(prev.status)) {
         throw new StockError("ORDER_LOCKED", "Cannot modify items after shipment");
+      }
+      if (isReservationAppliedStatus(prev.status)) {
+        await adjustItemReservation(conn, prev, prev, -Number(prev.qty));
       }
 
       await conn.query(

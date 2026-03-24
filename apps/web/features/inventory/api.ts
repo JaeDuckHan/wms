@@ -1,9 +1,9 @@
 import { ApiError } from "@/features/outbound/api";
 import type { InventoryQuery, StockBalanceRow, StockTransactionRow } from "@/features/inventory/types";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
+import { shouldUseImplicitFallback, shouldUseMockMode } from "@/lib/runtime-mode";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
 type RequestOptions = { token?: string };
 type AuthRequestOptions = RequestOptions & { allowAnonymous?: boolean };
@@ -47,6 +47,10 @@ function pad2(value: number) {
 
 const mockBalances: StockBalanceRow[] = Array.from({ length: 20 }, (_, index) => {
   const seq = index + 1;
+  const availableQty = 30 + seq * 3;
+  const reservedQty = seq % 6;
+  const allocatableQty = availableQty - reservedQty;
+  const reservationRatePct = availableQty > 0 ? Math.round((reservedQty / availableQty) * 100) : 0;
   return {
     id: `mb-${seq}`,
     client: `Sample Client ${pad2(((seq - 1) % 20) + 1)}`,
@@ -54,8 +58,11 @@ const mockBalances: StockBalanceRow[] = Array.from({ length: 20 }, (_, index) =>
     lot: `LOT-26${pad2(((seq - 1) % 12) + 1)}-${String.fromCharCode(65 + (seq % 3))}`,
     warehouse: `WH-${pad2(((seq - 1) % 20) + 1)}`,
     location: `LOC-${String(100 + seq)}`,
-    available_qty: 30 + seq * 3,
-    reserved_qty: seq % 6,
+    available_qty: availableQty,
+    reserved_qty: reservedQty,
+    allocatable_qty: allocatableQty,
+    reservation_rate_pct: reservationRatePct,
+    reservation_status: toReservationStatus(reservationRatePct),
   };
 });
 
@@ -122,11 +129,23 @@ function includesQ(...values: Array<string | number | null | undefined>) {
   };
 }
 
+function toReservationStatus(ratePct: number): StockBalanceRow["reservation_status"] {
+  if (ratePct >= 100) return "full";
+  if (ratePct >= 70) return "high";
+  if (ratePct >= 30) return "medium";
+  return "low";
+}
+
 function shouldUseFallback(token?: string) {
-  return USE_MOCK || token === "mock-token";
+  return shouldUseImplicitFallback(token);
 }
 
 export async function getStockBalances(query?: InventoryQuery, options?: RequestOptions): Promise<StockBalanceRow[]> {
+  if (shouldUseMockMode()) {
+    return mockBalances.filter((row) =>
+      includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
+    );
+  }
   const token = await resolveToken(options?.token);
   try {
     const [balances, clients, products, lots] = await Promise.all([
@@ -140,16 +159,24 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
     const productMap = new Map(products.map((item) => [item.id, item.name_kr]));
     const lotMap = new Map(lots.map((item) => [item.id, item.lot_no]));
 
-    const mapped = balances.map((row) => ({
-      id: String(row.id),
-      client: clientMap.get(row.client_id) ?? `Client #${row.client_id}`,
-      product: productMap.get(row.product_id) ?? `Product #${row.product_id}`,
-      lot: lotMap.get(row.lot_id) ?? `LOT-${row.lot_id}`,
-      warehouse: `WH-${row.warehouse_id}`,
-      location: row.location_id ? `LOC-${row.location_id}` : "-",
-      available_qty: Number(row.available_qty),
-      reserved_qty: Number(row.reserved_qty),
-    }));
+    const mapped = balances.map((row) => {
+      const availableQty = Number(row.available_qty);
+      const reservedQty = Number(row.reserved_qty);
+      const reservationRatePct = availableQty > 0 ? Math.round((reservedQty / availableQty) * 100) : 0;
+      return {
+        id: String(row.id),
+        client: clientMap.get(row.client_id) ?? `Client #${row.client_id}`,
+        product: productMap.get(row.product_id) ?? `Product #${row.product_id}`,
+        lot: lotMap.get(row.lot_id) ?? `LOT-${row.lot_id}`,
+        warehouse: `WH-${row.warehouse_id}`,
+        location: row.location_id ? `LOC-${row.location_id}` : "-",
+        available_qty: availableQty,
+        reserved_qty: reservedQty,
+        allocatable_qty: Math.max(0, availableQty - reservedQty),
+        reservation_rate_pct: reservationRatePct,
+        reservation_status: toReservationStatus(reservationRatePct),
+      };
+    });
     const filtered = mapped.filter((row) =>
       includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
     );
@@ -173,6 +200,15 @@ export async function getStockTransactions(
   query?: InventoryQuery,
   options?: RequestOptions
 ): Promise<StockTransactionRow[]> {
+  if (shouldUseMockMode()) {
+    const fallbackRows =
+      query?.txn_type && query.txn_type.length > 0
+        ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
+        : mockTransactions;
+    return fallbackRows.filter((row) =>
+      includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
+    );
+  }
   const token = await resolveToken(options?.token);
   const params = new URLSearchParams();
   if (query?.txn_type) params.set("txn_type", query.txn_type);

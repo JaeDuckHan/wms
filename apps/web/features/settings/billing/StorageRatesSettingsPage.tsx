@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import {
   createStorageRateSetting,
   deleteStorageRateSetting,
@@ -16,6 +17,7 @@ import {
   type StorageRateSetting,
   updateStorageRateSetting,
 } from "@/features/billing/api";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 const blank: Omit<StorageRateSetting, "id"> = {
   warehouse_id: null,
@@ -37,6 +39,8 @@ function parseOptionalInt(value: string) {
 
 export function StorageRatesSettingsPage() {
   const { pushToast } = useToast();
+  const { t } = useI18n();
+  const { canManageBillingSettings, ready } = useCurrentUser();
   const [rows, setRows] = useState<StorageRateSetting[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +67,11 @@ export function StorageRatesSettingsPage() {
   };
 
   useEffect(() => {
+    if (!ready || !canManageBillingSettings) return;
     void reload();
-  }, []);
+  }, [ready, canManageBillingSettings]);
+
+  const accessDenied = ready && !canManageBillingSettings;
 
   const startCreate = () => {
     setEditingId(null);
@@ -128,7 +135,16 @@ export function StorageRatesSettingsPage() {
         subtitle="Configure CBM/Pallet rates with priority scope (warehouse+client, warehouse, client, global)."
       />
       <SettingsTabs />
-
+      {accessDenied ? (
+        <div className="rounded-xl border bg-white p-6">
+          <ErrorState
+            title={t("Access denied")}
+            message={t("Only admin can access billing settings.")}
+          />
+        </div>
+      ) : null}
+      {accessDenied ? null : (
+        <>
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-xl border bg-white p-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -155,8 +171,8 @@ export function StorageRatesSettingsPage() {
                   label: "Actions",
                   render: (row) => (
                     <div className="flex gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => startEdit(row)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void remove(row.id)}>Delete</Button>
+                      {canManageBillingSettings ? <Button size="sm" variant="secondary" onClick={() => startEdit(row)}>Edit</Button> : null}
+                      {canManageBillingSettings ? <Button size="sm" variant="ghost" onClick={() => void remove(row.id)}>Delete</Button> : null}
                     </div>
                   ),
                 },
@@ -180,9 +196,11 @@ export function StorageRatesSettingsPage() {
             <option value="active">active</option>
             <option value="inactive">inactive</option>
           </select>
-          <Button onClick={() => void save()}>Save</Button>
+          <Button onClick={() => void save()} disabled={!canManageBillingSettings}>Save</Button>
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 }
