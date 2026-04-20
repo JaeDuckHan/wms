@@ -15,16 +15,18 @@ export default function GuidePage() {
           <li>로그인 후 좌측 메뉴가 `입고 / 출고 / 재고 / 정산 / 대시보드 / 설정`으로 보이는지 확인합니다.</li>
           <li>각 메뉴에서 목록이 1건 이상 보이는지 먼저 확인하고, 0건이면 필터를 초기화한 뒤 다시 조회합니다.</li>
           <li>운영 기준정보(`고객사`, `상품`, `창고`, `요율`)가 최신인지 `Settings`에서 먼저 점검합니다.</li>
+          <li>상단 데이터 모드 배지(`LIVE`, `LIVE DEV`, `MOCK`, `FALLBACK DEV`)가 현재 검증하려는 환경과 일치하는지 확인합니다.</li>
         </ol>
 
         <h2 className="mt-6 text-base font-semibold text-slate-900">2. 메뉴별 핵심 기능</h2>
         <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>`Inbounds(입고)`: 입고 접수, 상태 변경(도착/입고완료), 입고 품목 확인.</li>
-          <li>`Outbounds(출고)`: 출고 지시, 피킹/패킹/출고완료 상태 관리, 박스/송장 정보 확인.</li>
+          <li>`Inbounds(입고)`: 입고 접수, 상태 변경(도착/입고완료), 입고 품목 확인, 상세 기준 로그 점검.</li>
+          <li>`Outbounds(출고)`: 출고 지시, 피킹/패킹/출고완료 상태 관리, 박스/송장 정보 확인, 할당 제안 점검.</li>
           <li>`Inventory(재고)`: 현재고, 가용수량, 거래 이력 확인(입출고 반영 여부 점검).</li>
           <li>`Billing Events(정산 이벤트)`: 과금 대상 이벤트(PENDING/INVOICED) 검토.</li>
-          <li>`Invoices(인보이스)`: 청구서 생성, 발행(Issue), 수납완료(Mark Paid) 처리.</li>
-          <li>`Dashboard`: 보관 추이, 보관 요금, 창고 적재율 모니터링.</li>
+          <li>`Invoices(인보이스)`: 청구서 생성, 초안 재생성, 발행(Issue), 수납완료(Mark Paid), 출력 파일 확인.</li>
+          <li>`Dashboard`: 보관 추이, 보관 요금, 창고 적재율 모니터링과 CSV/클립보드/PNG 내보내기.</li>
+          <li>`Settings`: 고객사, 상품, 창고, 서비스요율, 계약요율, 보관요율, 환율 관리.</li>
         </ul>
 
         <h2 className="mt-6 text-base font-semibold text-slate-900">3. 정산(Billing) 상세 사용법</h2>
@@ -47,6 +49,7 @@ export default function GuidePage() {
           <li>인보이스 생성/샘플 생성/샘플 정리는 `Client ID` 입력이 필요합니다.</li>
           <li>상태 흐름은 `draft`에서 `issued`, `paid` 순서로 진행됩니다.</li>
           <li>금액은 KRW 기준이며 `Original THB`로 환산 전 금액도 함께 확인할 수 있습니다.</li>
+          <li>상세 화면에서는 `Export Invoice`와 관리자 전용 `Duplicate (Admin)` 기능을 사용할 수 있습니다.</li>
         </ul>
 
         <h2 className="mt-6 text-base font-semibold text-slate-900">4. 샘플 데이터 관리</h2>
@@ -56,7 +59,15 @@ export default function GuidePage() {
           <li>정리 모달에서 삭제 대상 건수(월/고객 기준)를 먼저 확인할 수 있습니다.</li>
         </ul>
 
-        <h2 className="mt-6 text-base font-semibold text-slate-900">5. 확인 모달이 붙은 액션</h2>
+        <h2 className="mt-6 text-base font-semibold text-slate-900">5. Dashboard와 설정에서 자주 쓰는 기능</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>`Dashboard`에서는 Demo Mode 기준으로 `Generate Snapshots`를 실행할 수 있습니다.</li>
+          <li>`Storage Trend`, `Storage Billing`, `Capacity` 화면에서 CSV 다운로드, 클립보드 복사, PNG 캡처를 사용할 수 있습니다.</li>
+          <li>`Settings`에서는 공통 기준정보 외에 `Service Rates`, `Contract Rates`, `Storage Rates`, `Exchange Rates`를 관리합니다.</li>
+          <li>`Billing Settings` 수정 권한은 관리자에게만 있습니다.</li>
+        </ul>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">6. 확인 모달이 붙은 액션</h2>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>샘플 이벤트 생성</li>
           <li>초안 재생성</li>
@@ -65,22 +76,32 @@ export default function GuidePage() {
           <li>인보이스 `Mark Paid`</li>
         </ul>
 
-        <h2 className="mt-6 text-base font-semibold text-slate-900">6. 초보자용 권장 운영 순서(실무 기준)</h2>
+        <h2 className="mt-6 text-base font-semibold text-slate-900">7. 초보자용 권장 운영 순서(실무 기준)</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5">
           <li>`Settings`에서 고객/상품/창고/요율이 최신인지 확인합니다.</li>
           <li>`Inbounds/Outbounds`에서 당일 처리 건의 상태가 정상 반영됐는지 확인합니다.</li>
           <li>`Inventory`에서 재고 반영 이상(음수/누락)이 없는지 점검합니다.</li>
           <li>`Billing Events`에서 대상 월/고객 이벤트를 확인하고 이상 건을 정리합니다.</li>
           <li>`Invoices`에서 기간+고객 기준으로 생성/검토 후 `Issue` 다음 `Mark Paid` 순으로 처리합니다.</li>
-          <li>필요 시 CSV 내보내기로 정산 검증 자료를 보관합니다.</li>
+          <li>필요 시 Dashboard와 Billing에서 CSV/PNG 내보내기로 검증 자료를 보관합니다.</li>
         </ol>
 
-        <h2 className="mt-6 text-base font-semibold text-slate-900">7. 데이터가 안 보일 때(0건) 점검 순서</h2>
+        <h2 className="mt-6 text-base font-semibold text-slate-900">8. 빠른 테스트 방법</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>관리자 계정으로 로그인 후 `입고 / 출고 / 재고 / 정산 / 대시보드 / 설정` 메뉴 노출을 확인합니다.</li>
+          <li>`Billing Events`에서 CSV 내보내기, `Invoices`에서 `Generate`, `Issue`, `Mark Paid` 순서를 확인합니다.</li>
+          <li>`Dashboard`에서 스냅샷 생성, CSV 다운로드, 클립보드 복사, PNG 캡처를 확인합니다.</li>
+          <li>`client_viewer` 계정으로 다시 로그인해 `Inbounds`, `Settings`가 보이지 않는지 확인합니다.</li>
+          <li>더 자세한 수동/자동 테스트 명령은 `docs/user-guide-ko.md`를 참고합니다.</li>
+        </ol>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">9. 데이터가 안 보일 때(0건) 점검 순서</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5">
           <li>년도/월 필터를 조정해서 다시 조회합니다. (당월에 데이터가 없을 수 있습니다)</li>
           <li>기간이 너무 좁지 않은지 확인합니다. (예: 올해 1월 1일 ~ 오늘)</li>
           <li>`Client ID`가 잘못 입력되지 않았는지 확인합니다.</li>
           <li>샘플 데이터가 필요하면 `Create Sample Events`를 실행합니다.</li>
+          <li>Dashboard가 비면 `Generate Snapshots`를 먼저 실행해 봅니다.</li>
           <li>여전히 0건이면 API `/health/db`의 billing readiness를 확인합니다.</li>
         </ol>
       </div>

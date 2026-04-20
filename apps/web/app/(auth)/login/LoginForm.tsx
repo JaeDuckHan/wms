@@ -79,8 +79,7 @@ export function LoginForm({ nextUrl }: { nextUrl: string }) {
       }
 
       const me = await getMe();
-      const nextPath =
-        nextUrl && nextUrl !== "/outbounds" ? nextUrl : getDefaultConsolePath(me.role);
+      const nextPath = nextUrl && nextUrl !== "/" ? nextUrl : getDefaultConsolePath(me.role);
 
       pushToast({ title: t("Login successful"), variant: "success" });
       router.replace(nextPath);

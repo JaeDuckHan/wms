@@ -1,216 +1,427 @@
-# WMS 사용자 가이드 (기술명세 기반)
+# WMS 사용자 가이드
 
 ## 1. 문서 목적
-- 본 문서는 웹 콘솔 메뉴별 기능을 운영 사용자 관점에서 설명하고, 실제 동작 규칙(입력/처리/결과/예외)을 함께 정의한다.
-- 화면 사용법과 API/데이터 처리 기대값을 연결해 QA, 운영, 장애 대응 시 공통 기준으로 사용한다.
 
-## 2. 공통 규칙
-- 인증: `/login` 성공 시 토큰 쿠키(`kb3pl_token`)가 설정되어야 한다.
-- 권한: 로그인 사용자 기준으로 API 접근이 제어된다.
-- 검색/필터: 상단 검색 및 각 페이지 필터는 URL 쿼리와 동기화된다.
-- 데이터 모드: 상단바 배지는 현재 연결 상태를 `LIVE`, `LIVE DEV`, `MOCK`, `FALLBACK DEV` 중 하나로 표시한다.
-- 운영 모드: production 에서는 fallback/mock 자동 전환이 금지된다.
-- 삭제 정책: 설정 메뉴 데이터는 soft delete 또는 API 정책에 따라 목록에서 제외될 수 있다.
+- 이 문서는 WMS 운영자, 관리자, QA가 실제 화면 기준으로 기능을 빠르게 이해하고 검증할 수 있도록 작성한 사용자 가이드입니다.
+- 웹 화면(`/guide`)에 보이는 요약 가이드보다 더 많은 기능, 권한 차이, 테스트 방법을 포함합니다.
+- 기준 범위는 현재 저장소의 `apps/web` 화면과 `apps/api` 라우트에 실제 구현된 기능입니다.
 
-## 3. 로그인 (`/login`)
-### 목적
-- 사용자 인증 후 콘솔 접근 세션을 생성한다.
+## 2. 시작 전 확인
 
-### 사용 방법
-1. 이메일, 비밀번호 입력
-2. `Sign in` 클릭
-3. 성공 시 요청된 `next` 경로 또는 기본 콘솔 화면으로 이동
+### 접속 주소
 
-### 처리 규칙
-- 버튼은 `type="submit"`으로 폼 제출을 트리거한다.
-- 토큰 쿠키는 HTTPS에서만 `Secure` 속성이 붙는다(로컬 HTTP 개발 환경 로그인 지원).
-- 로그인 후 기본 진입 경로는 role 에 따라 달라질 수 있다.
-  - 운영 계정: `/outbounds`
-  - 고객 조회 계정(`client_viewer`): `/billing`
+- 웹: 환경별 배포 URL 또는 로컬 `http://localhost:3000`
+- API Swagger: `http://localhost:3100/docs`
+- API 상태 확인:
+  - `GET /health`
+  - `GET /health/db`
 
-### 오류 대응
-- 401/400: 계정 정보 재확인
-- 네트워크 오류: API 서버(`:3100`) 및 프록시(`/api/proxy/*`) 상태 점검
+### 로그인 및 권한
 
-## 4. 인바운드 (`/inbounds`)
-### 목적
-- 입고 오더 조회/상세 확인 및 상태 흐름 관리
+- 로그인 화면: `/login`
+- 로그인 성공 시 역할별 기본 진입 경로:
+  - `admin`, `manager`, `warehouse`: `/outbounds`
+  - `client_viewer`: `/billing`
 
-### 주요 기능
-- 입고 오더 목록 조회(검색/상태 필터)
-- 상세 페이지 진입 후 상태/품목 정보 확인
+### 기본 계정 예시
 
-### 입력/출력
-- 입력: `q`, `status`
-- 출력: 오더 번호, 상태, 고객, 창고, 생성/수정 시각 등
+- `admin@example.com / x`
+- `manager101@example.com / x`
+- `warehouse201@example.com / x`
+- `viewer101@example.com / x`
+- 추가 데모 관리자: `ops.admin@amorepacific-partner.co.kr / 1234`
 
-### 처리 규칙
-- 인증 토큰 누락 시 로그인 화면으로 리다이렉트된다.
-- 상세 진입 시 오더 번호(`inboundNo`) 기준 조회한다.
+### 데이터 준비
 
-## 5. 아웃바운드 (`/outbounds`)
-### 목적
-- 출고 오더 운영(조회, 상세 확인, 박스 처리, 상태 전이)
+- 최소 마스터 샘플: [seed_master_min.sql](D:/codex/wms/apps/api/sql/seed_master_min.sql)
+- 통합 테스트팩 시드: [seed_phase1_integrated.js](D:/codex/wms/apps/api/scripts/seed_phase1_integrated.js)
+- 현실형 대량 샘플: [seed_sample_realistic_10x.sql](D:/codex/wms/apps/api/sql/seed/seed_sample_realistic_10x.sql)
 
-### 주요 기능
-- 목록 검색/상태 필터
-- 상세 화면에서 상태 액션 실행
-- 박스 추가/조회(백엔드 지원 시)
+## 3. 메뉴 구조
 
-### 처리 규칙
-- 상태 전이는 백엔드 검증 규칙을 따른다(예: 재고 부족 시 실패).
-- `allocated`, `picking`, `packed` 상태에서는 예약재고가 반영된다.
-- `shipped` 전환 시 예약 해제와 실재고 차감이 같이 적용된다.
-- 박스 API 비지원 환경에서는 버튼 비활성/안내 메시지로 처리한다.
+- `Inbounds`: 입고 오더 목록, 상세, 상태 변경, 로그 조회
+- `Outbounds`: 출고 오더 목록, 상세, 상태 변경, 박스 관리, 할당 제안, 로그 조회
+- `Inventory`: 현재고, 예약수량, 출고 가능수량, 재고 트랜잭션 조회
+- `Billing Events`: 청구 대상 이벤트 조회, CSV 내보내기, 관리자용 Pending 복원
+- `Invoices`: 인보이스 생성, 초안 재생성, 샘플 이벤트 생성/정리, 발행, 수납 완료
+- `Dashboard`: 스토리지 개요, 보관 추이, 보관 요금 미리보기, 적재율
+- `Settings`: 고객사, 상품, 창고, 서비스 요율, 계약 요율, 보관 요율, 환율 관리
+- `Guide`: 화면 사용 순서와 문제 해결 요약
 
-### 운영 체크
-- 출고 완료 후 재고/트랜잭션 화면과 데이터 정합성 확인
-- 상세 화면에서 `Reserved`, `Allocatable`, `Shortage` 표시가 기대값과 맞는지 확인
+## 4. 권한 요약
 
-## 6. 재고 (`/inventory`)
-### 목적
-- 현재고와 트랜잭션 이력을 조회해 입출고 반영 결과를 검증
+### 공통
 
-### 주요 기능
-- `balances`: 상품/로트/창고 기준 현재고 조회
-- `transactions`: 재고 변동 이력 조회
+- 모든 콘솔 화면은 로그인 필요
+- `GET` 조회는 인증 사용자 공통 허용
+- `POST/PUT/DELETE`는 기본적으로 `admin`, `manager`, `warehouse` 허용
 
-### 입력/출력
-- 입력: 검색어, 트랜잭션 타입(`inbound_receive`, `outbound_ship`, `return_receive` 등)
-- 출력: 수량, 위치, 변동 사유, 발생 시각
-- 현재고 화면은 `Available`, `Reserved`, `Allocatable` 를 같이 보여준다.
+### 역할별 차이
 
-### 처리 규칙
-- 토큰 없으면 접근 차단
-- API 응답 실패 시 화면 오류 상태를 명확히 표시
-- `Allocatable = Available - Reserved` 기준으로 출고 가능 수량을 해석한다.
-
-## 7. 정산 (`/billing`, `/billing/events`, `/billing/{id}`)
-### 목적
-- 정산 이벤트 집계, 인보이스 생성/발행/수납 상태 관리
-
-### 7-1. 인보이스 목록
-- 기능: 필터 조회, `Generate`, `Re-generate Draft`, 샘플 이벤트 생성
-- 처리 규칙: 생성 시 월/고객 기준 집계 실행, 중복 생성은 상태/정책에 따라 제한
-
-### 7-2. 인보이스 상세
-- 기능: `Issue`, `Mark Paid`, `Export Invoice`, `Duplicate (Admin)` 등
-- 처리 규칙: 상태 전이(`draft -> issued -> paid`)는 순서 제약을 따른다
-- `Export Invoice` 는 메타 응답 확인 후 다운로드 URL로 실제 출력 파일을 연다.
-- export 실행 이력은 감사로그로 조회할 수 있다.
-
-### 7-3. Billing Events
-- 기능: 이벤트 조회, 관리자용 pending 처리, CSV 내보내기
-- 처리 규칙: 필터 조건(월, 고객, 상태, 서비스 코드)에 맞는 결과만 반환
-
-## 8. 대시보드 (`/dashboard/*`)
-### 목적
-- 보관 지표 시각화 및 스냅샷 생성
-
-### 하위 메뉴
-- 개요: 대시보드 진입 허브
-- Storage Trend: 기간별 보관량 추이
-- Storage Billing: 월 보관비 미리보기
-- Capacity: 창고 용량/리스크 모니터링
-
-### API 계약
-- 프론트는 `/api/dashboard/*` 프록시 경로만 사용한다.
-- 백엔드는 `/api/dashboard/*` 엔드포인트만 공식 지원한다.
-
-### 운영 체크
-- 스냅샷 생성 후 동일 기간 조회 시 데이터 반영 여부 확인
-
-## 9. 설정 (`/settings/*`)
-### 목적
-- 기준정보(고객/상품/창고/요율) CRUD
-
-### 9-1. Clients / Products / Warehouses
-- 기능: `New`, `Edit`, `Delete`, 활성/비활성 토글
-- 입력 검증: 코드/이름/필수 필드 누락 시 저장 불가
-- 처리 규칙: 저장 후 목록/카운트 즉시 갱신
-
-### 9-2. Billing 설정
-- 대상: Service Rates, Exchange Rates, Client Contract Rates
-- 기능: 요율 생성/수정/삭제
-- 처리 규칙: 잠금/사용중 데이터는 편집·삭제 제한 가능
-- admin 만 진입 또는 수정 가능하며, 다른 role 은 제한 안내를 본다.
-
-## 10. 고객 전용 화면 규칙
-### 대상 role
+- `admin`
+  - 모든 조회/쓰기 가능
+  - Billing Settings 관리 가능
+  - Billing Events의 `Mark as Pending (Admin)` 가능
+  - 인보이스 상세의 `Duplicate (Admin)` 가능
+- `manager`
+  - 일반 쓰기 가능
+  - Billing Settings는 조회만 가능, 수정 불가
+  - `Duplicate (Admin)` 불가
+- `warehouse`
+  - 일반 쓰기 가능
+  - Billing Settings는 조회만 가능, 수정 불가
 - `client_viewer`
+  - 읽기 전용
+  - 기본 메뉴는 `Dashboard`, `Outbounds`, `Inventory`, `Billing`
+  - `Inbounds`, `Settings` 비노출
+  - 고객사 스코프로 자기 데이터만 조회
 
-### 기본 동작
-- 로그인 후 기본 진입 경로는 `/billing` 이다.
-- 사이드바에는 고객 전용 메뉴만 노출된다.
-  - `Dashboard`
-  - `Outbounds`
-  - `Inventory`
-  - `Billing`
+## 5. 화면별 사용 방법
 
-### 접근 제한
-- `Inbounds`, `Settings` 는 메뉴에서 숨김 처리된다.
-- 직접 URL 접근 시 제한 화면 또는 우회 처리된다.
-- 서버 조회는 토큰의 `client_id` 기준으로 자기 업체 데이터만 반환한다.
+### 5.1 로그인 `/login`
 
-### 테스트 포인트
-- 다른 `client_id` 조건을 직접 넣어도 자기 업체 데이터만 보여야 한다.
-- Billing 에서는 자기 업체 인보이스만 보여야 한다.
-- Inventory, Outbounds, Dashboard 도 같은 기준으로 잘려야 한다.
+- 이메일과 비밀번호를 입력하고 로그인합니다.
+- 로그인 실패 시 계정 정보 또는 API 연결을 먼저 확인합니다.
+- 로그인 후 상단 데이터 모드 배지(`LIVE`, `LIVE DEV`, `MOCK`, `FALLBACK DEV`)를 확인합니다.
 
-## 11. 기능 테스트 빠른 시작
-### 목적
-- 운영자 또는 QA 담당자가 별도 설명 없이 기본 기능을 점검할 수 있도록 최소 절차를 제공한다.
+### 5.2 Inbounds `/inbounds`
 
-### 사전 준비
-1. 웹(`3000`)과 API(`3100`)가 실행 중이어야 한다.
-2. DB seed 와 runtime patch 가 반영돼 있어야 한다.
-3. 운영 검증이면 `NEXT_PUBLIC_USE_MOCK=false` 여야 한다.
-4. 상단바 데이터 모드 배지가 기대값과 일치해야 한다.
+#### 주요 기능
 
-### 기본 테스트 계정
-- admin: `admin@example.com / x`
-- manager: `manager101@example.com / x`
-- warehouse: `warehouse201@example.com / x`
-- client viewer: `viewer101@example.com / x`
+- 입고 오더 목록 조회
+- 검색어/상태 필터
+- 입고 상세 조회
+- 도착, 입고 완료 등 상태 반영
+- 입고 품목 확인
+- 입고 로그 조회 API 지원
 
-### 공통 확인 순서
-1. 로그인
-2. 상단바 데이터 모드 배지 확인
-3. 메뉴 노출 범위 확인
-4. 목록 조회
-5. 상세 진입
-6. 권한 있는 액션 실행
-7. 결과가 목록, 상세, 재고, 정산에 반영되는지 확인
+#### 운영 체크 포인트
 
-### 권장 기능 테스트 시나리오
-1. `admin` 으로 로그인 후 Billing 에서 sample event 생성
-2. Billing Events 에서 `SAMPLE-*` 데이터 생성 확인
-3. Billing Invoices 에서 인보이스 생성 후 상세 진입
-4. `Issue -> Export Invoice -> Mark Paid` 순서 확인
-5. Inventory 에서 `Available / Reserved / Allocatable` 표시 확인
-6. Outbounds 상세에서 `Shortage`, `Allocatable`, 추천 배정 표시 확인
-7. `client_viewer` 로 재로그인 후 고객 전용 메뉴와 자기 업체 데이터만 보이는지 확인
+- 입고번호, 고객사, 창고, 상태가 맞는지 확인
+- 입고 완료 후 재고 화면에 수량이 반영되는지 확인
+- 상세 화면의 품목/로트/위치가 예상과 맞는지 확인
 
-### 자동화 스크립트
-- API 기반 시나리오 스크립트:
-  - [run_outbound_detail_flow.ps1](D:\codex\wms\apps\api\scripts\run_outbound_detail_flow.ps1)
-  - [run_invoice_reuse_flow.ps1](D:\codex\wms\apps\api\scripts\run_invoice_reuse_flow.ps1)
-  - [run_settlement_invoice_flow.ps1](D:\codex\wms\apps\api\scripts\run_settlement_invoice_flow.ps1)
-  - [run_billing_production_flow.ps1](D:\codex\wms\apps\api\scripts\run_billing_production_flow.ps1)
+### 5.3 Outbounds `/outbounds`
 
-### 상세 체크리스트 문서
-- role/권한별 체크: [role-test-checklist-ko.md](D:\codex\wms\docs\role-test-checklist-ko.md)
-- Billing UX 중심 체크: [billing-ux-flow-checklist.md](D:\codex\wms\docs\billing-ux-flow-checklist.md)
+#### 주요 기능
 
-## 12. 장애 대응 체크리스트
-1. 로그인 불가: 쿠키 설정 여부, `/api/proxy/auth/login` 응답 코드 확인
-2. 메뉴 진입 불가: 토큰 만료/누락, 권한 오류(401/403) 확인
-3. 대시보드 공백: `/api/dashboard/*` 응답 및 파라미터 확인
-4. 정산 실패: 이벤트 데이터 유무, 정산 배치 상태, 인보이스 상태 전이 확인
-5. 인보이스 export 실패: `/billing/invoices/:id/export-pdf` 와 `/billing/invoices/:id/export-logs` 확인
-6. 설정 저장 실패: 필수값/중복키/참조 무결성 오류 메시지 확인
+- 출고 오더 목록 조회
+- 검색어/상태 필터
+- 출고 상세 조회
+- 상태 전이(`confirmed`, `allocated`, `picking`, `packed`, `shipped` 등)
+- 박스 추가/수정/삭제
+- 할당 제안 조회
+- 출고 로그 조회 API 지원
 
-## 13. 검증 명령(권장)
-- 웹 정적 검증: `cd apps/web && npm run web:check`
-- API 헬스 스모크: `cd apps/api && npm run test:e2e:health-smoke`
-- 웹 스모크: `npm run start -- -p 3000` 후 `GET /login` 상태코드 200 확인
+#### 운영 체크 포인트
+
+- 상세 화면의 `Available`, `Reserved`, `Allocatable`, `Shortage`가 기대와 맞는지 확인
+- `shipped` 처리 후 재고 차감과 정산 이벤트 반영을 함께 확인
+- 박스 정보 수정 후 상세 화면과 API 결과가 일치하는지 확인
+
+### 5.4 Inventory `/inventory`
+
+#### 주요 기능
+
+- 재고 잔량(`stock-balances`) 조회
+- 재고 트랜잭션(`stock-transactions`) 조회
+- 검색/유형별 필터
+- `Available`, `Reserved`, `Allocatable` 표시
+
+#### 운영 체크 포인트
+
+- 입고 완료 후 증가, 출고 완료 후 감소가 반영되는지 확인
+- 동일 상품의 로트/창고/위치별 분리가 맞는지 확인
+- 출고 부족 시 `Allocatable`과 `Shortage` 계산이 맞는지 확인
+
+### 5.5 Billing Events `/billing/events`
+
+#### 주요 기능
+
+- 년/월/고객/상태/서비스코드 기준 조회
+- `PENDING`, `INVOICED` 상태 확인
+- CSV 내보내기
+- 관리자용 `Mark as Pending (Admin)`
+
+#### 운영 체크 포인트
+
+- 특정 월만 보려면 년도와 월을 같이 선택
+- 연간 흐름을 보려면 년도만 선택
+- `INVOICED` 이벤트는 이미 인보이스에 묶인 건인지 확인
+- 잘못 묶인 이벤트만 관리자 권한으로 Pending 복원
+
+### 5.6 Invoices `/billing`, `/billing/:id`
+
+#### 주요 기능
+
+- 기간 + 고객 기준 인보이스 목록 조회
+- `Generate`
+- `Re-generate Draft`
+- `Create Sample Events`
+- `Sample Data Cleanup`
+- 상세 화면 조회
+- `Issue`
+- `Mark Paid`
+- `Export Invoice`
+- `Duplicate (Admin)`
+- Export 로그 조회 API 지원
+
+#### 상태 흐름
+
+- `draft -> issued -> paid`
+
+#### 운영 체크 포인트
+
+- 종료일은 인보이스 기준일과 청구월 계산 기준으로도 사용
+- KRW 합계, 원화 환산 전 THB, 환율 스냅샷을 함께 확인
+- 발행 후 `Issue` 버튼이 사라지고 `Mark Paid`로 바뀌는지 확인
+- 상세 화면의 품목별 금액 합계가 총액과 일치하는지 확인
+
+### 5.7 Dashboard `/dashboard/*`
+
+#### 하위 화면
+
+- `/dashboard`: 개요
+- `/dashboard/storage-trend`: 보관 추이
+- `/dashboard/storage-billing`: 보관 요금 미리보기
+- `/dashboard/capacity`: 적재율
+
+#### 주요 기능
+
+- 날짜/기간/창고/고객 필터
+- Demo Mode 토글
+- 최근 스냅샷 생성
+- CSV 다운로드
+- 클립보드 복사
+- PNG 캡처
+- 스냅샷 부족 경고 표시
+
+#### 운영 체크 포인트
+
+- 스냅샷이 없으면 `Generate Snapshots`로 다시 생성
+- 같은 조건으로 재조회해 수치 일관성 확인
+- 보관 요금 화면에서 고객/창고/월 필터 변경 시 합계가 바뀌는지 확인
+
+### 5.8 Settings `/settings/*`
+
+#### 공통 기준정보
+
+- `Clients`
+- `Products`
+- `Warehouses`
+
+#### 정산 설정
+
+- `Service Rates`
+- `Contract Rates`
+- `Storage Rates`
+- `Exchange Rates`
+
+#### 운영 체크 포인트
+
+- 코드/이름/필수값 검증 메시지가 정확한지 확인
+- 저장 후 목록 즉시 갱신 여부 확인
+- 삭제는 목록 제외 기준으로 동작하는지 확인
+- Billing Settings는 admin만 수정 가능한지 확인
+
+## 6. 샘플 데이터 사용 방법
+
+### 최소 데모 구동
+
+1. 스키마 적용: [schema_v1.sql](D:/codex/wms/apps/api/sql/schema_v1.sql)
+2. 최소 마스터 적용: [seed_master_min.sql](D:/codex/wms/apps/api/sql/seed_master_min.sql)
+3. API 실행 후 `/health/db` 확인
+
+### 통합 시나리오 준비
+
+1. `apps/api`에서 `npm run seed:phase1-integrated`
+2. 입고/출고/정산/인보이스 검증 데이터를 한 번에 준비
+
+### 정산 데모 데이터만 추가
+
+1. `apps/api`에서 `npm run seed:billing-demo`
+2. 서비스 요율, 환율, billing 이벤트, invoice 초안을 보강
+
+### 현실형 샘플 10건
+
+- [seed_sample_realistic_10x.sql](D:/codex/wms/apps/api/sql/seed/seed_sample_realistic_10x.sql)을 직접 적용
+- 고객 10개, 입고/출고/재고 흐름을 한 번에 확보
+
+## 7. 수동 테스트 방법
+
+### 7.1 공통 스모크 테스트
+
+1. `/login` 접속
+2. 관리자 계정 로그인
+3. 좌측 메뉴 `Inbounds / Outbounds / Inventory / Billing / Dashboard / Settings` 노출 확인
+4. 각 화면 진입 후 목록이 1건 이상 보이는지 확인
+5. `/guide` 진입 후 가이드 문구 표시 확인
+
+### 7.2 역할별 테스트
+
+#### Admin
+
+1. 기준정보 생성/수정/삭제
+2. Billing Settings 생성/수정/삭제
+3. Billing Events에서 `Mark as Pending (Admin)` 실행
+4. 인보이스 `Generate -> Issue -> Mark Paid`
+5. 인보이스 상세에서 `Duplicate (Admin)` 확인
+
+#### Manager
+
+1. Clients/Products/Warehouses 쓰기 가능 확인
+2. Billing Settings 수정 불가 확인
+3. 인보이스 일반 액션 가능 확인
+4. `Duplicate (Admin)` 미노출 확인
+
+#### Warehouse
+
+1. 일반 기준정보 쓰기 가능 확인
+2. Billing Settings 수정 불가 확인
+3. 출고/재고 업무 반영 확인
+
+#### Client Viewer
+
+1. 기본 진입 경로가 `/billing`인지 확인
+2. `Inbounds`, `Settings` 메뉴 비노출 확인
+3. Billing 탭에서 Invoices만 보이는지 확인
+4. 자기 고객사 데이터만 보이는지 확인
+
+### 7.3 업무 흐름 테스트
+
+#### 입고 -> 재고 반영
+
+1. Inbounds에서 입고 완료 처리
+2. Inventory에서 해당 상품 수량 증가 확인
+3. Stock Transactions에서 inbound 기록 확인
+
+#### 출고 -> 재고/정산 반영
+
+1. Outbounds에서 출고 오더 확인
+2. 필요 시 박스 정보 수정
+3. `shipped` 처리
+4. Inventory에서 수량 감소 확인
+5. Billing Events에서 이벤트 생성 여부 확인
+
+#### 정산 -> 발행 -> 수납
+
+1. Billing Events에서 월/고객 필터로 대상 확인
+2. Invoices에서 `Generate`
+3. 상세에서 합계, 환율, 품목 라인 검토
+4. `Issue`
+5. `Mark Paid`
+6. 필요 시 `Export Invoice` 수행
+
+### 7.4 대시보드 테스트
+
+1. `/dashboard/storage-trend`에서 기간 필터 조회
+2. CSV 다운로드
+3. 클립보드 복사
+4. PNG 캡처
+5. Demo Mode에서 스냅샷 생성 버튼 동작 확인
+6. `/dashboard/storage-billing`과 `/dashboard/capacity`도 동일하게 확인
+
+## 8. 자동 테스트 방법
+
+### 웹 정적/빌드 검증
+
+```powershell
+cd apps/web
+npm run web:check
+```
+
+포함 항목:
+
+- TypeScript 타입 검사
+- i18n 키 검사
+- i18n 스냅샷 검사
+- Next.js production build
+
+### 웹 Playwright 스모크
+
+```powershell
+cd apps/web
+npm run test:e2e:smoke
+```
+
+전체 E2E:
+
+```powershell
+cd apps/web
+npm run test:e2e
+```
+
+헤디드 실행:
+
+```powershell
+cd apps/web
+npm run test:e2e:headed
+```
+
+주요 검증 범위:
+
+- 로그인
+- 메뉴 노출
+- 고객 전용 권한 제한
+- `/guide` 페이지 노출
+
+### API 헬스 스모크
+
+```powershell
+cd apps/api
+npm run test:e2e:health-smoke
+```
+
+### API 업무 시나리오 E2E
+
+```powershell
+cd apps/api
+npm run test:e2e:settlement
+npm run test:e2e:reopen-reject
+npm run test:e2e:invoice-reuse
+npm run test:e2e:insufficient-stock
+npm run test:e2e:outbound-detail
+npm run test:e2e:inbound-detail
+npm run test:e2e:billing-production
+```
+
+각 스크립트 의미:
+
+- `test:e2e:settlement`: 정산 생성, 인보이스 발행, 재오픈 흐름 핵심
+- `test:e2e:reopen-reject`: 정산 재오픈 요청 거절 흐름
+- `test:e2e:invoice-reuse`: 이미 발행된 인보이스 재사용 검증
+- `test:e2e:insufficient-stock`: 재고 부족 출고 예외 검증
+- `test:e2e:outbound-detail`: 출고 상세, 박스, 할당 관련 검증
+- `test:e2e:inbound-detail`: 입고 상세와 상태 반영 검증
+- `test:e2e:billing-production`: 실운영형 billing 흐름 검증
+
+## 9. 자주 놓치는 기능
+
+- Billing Events CSV 내보내기
+- 관리자 전용 Pending 복원
+- 인보이스 상세 `Duplicate (Admin)`
+- 인보이스 Export 로그
+- Dashboard의 CSV/클립보드/PNG 내보내기
+- Dashboard Demo Snapshot 생성
+- Storage Rates 설정
+- Exchange Rate 스냅샷 기반 환산
+- Outbound 박스 CRUD
+- Outbound allocation suggestions API
+- Inbound/Outbound action logs API
+- Settlement reopen request / approve / reject / log API
+
+## 10. 데이터가 안 보일 때 점검 순서
+
+1. 상단 데이터 모드 배지가 예상 환경인지 확인
+2. 날짜/월/고객 필터를 초기화하고 다시 조회
+3. `client_viewer`라면 자기 고객사 스코프로 잘려 보이는지 확인
+4. `/health/db`에서 billing readiness 확인
+5. 필요한 seed가 들어갔는지 확인
+6. Dashboard라면 snapshot 부족 경고가 있는지 확인
+7. 정산 화면이라면 대상 월에 이벤트가 존재하는지 먼저 확인
+
+## 11. 참고 문서
+
+- [docs/playwright-smoke-tests-ko.md](D:/codex/wms/docs/playwright-smoke-tests-ko.md)
+- [docs/role-test-checklist-ko.md](D:/codex/wms/docs/role-test-checklist-ko.md)
+- [apps/api/README.md](D:/codex/wms/apps/api/README.md)
