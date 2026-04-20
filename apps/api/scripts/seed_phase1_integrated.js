@@ -55,8 +55,15 @@ async function main() {
         CASE WHEN (SELECT COUNT(*) FROM inbound_orders WHERE id IN (700101,700102) AND status='received' AND deleted_at IS NULL)=2 THEN 'PASS' ELSE 'FAIL' END AS inbound_received,
         CASE WHEN (SELECT COUNT(*) FROM outbound_orders WHERE id=700201 AND status='shipped' AND deleted_at IS NULL)=1 THEN 'PASS' ELSE 'FAIL' END AS outbound_shipped,
         CASE WHEN (SELECT COUNT(*) FROM service_events WHERE id IN (700401,700402) AND deleted_at IS NULL)=2 THEN 'PASS' ELSE 'FAIL' END AS service_events_ready,
+        CASE WHEN (
+          SELECT COUNT(*) FROM billing_events
+          WHERE id IN (700421,700422,700423)
+            AND DATE_FORMAT(event_date,'%Y-%m') = DATE_FORMAT(CURDATE(),'%Y-%m')
+            AND status='INVOICED'
+            AND deleted_at IS NULL
+        ) = 3 THEN 'PASS' ELSE 'FAIL' END AS billing_events_invoiced,
         CASE WHEN (SELECT status FROM settlement_batches WHERE id=700501 AND deleted_at IS NULL)='closed' THEN 'PASS' ELSE 'FAIL' END AS settlement_closed,
-        CASE WHEN (SELECT status FROM invoices WHERE id=700601 AND deleted_at IS NULL)='sent' THEN 'PASS' ELSE 'FAIL' END AS invoice_sent,
+        CASE WHEN (SELECT status FROM invoices WHERE id=700601 AND deleted_at IS NULL)='issued' THEN 'PASS' ELSE 'FAIL' END AS invoice_issued,
         CASE WHEN (
           SELECT COALESCE(i.total_amount,0) - COALESCE((SELECT SUM(il.total_amount) FROM invoice_lines il WHERE il.invoice_id=i.id AND il.deleted_at IS NULL),0)
           FROM invoices i WHERE i.id=700601 AND i.deleted_at IS NULL
@@ -68,7 +75,7 @@ async function main() {
 
     const [summaryRows] = await conn.query(`
       SELECT sb.id AS settlement_batch_id, sb.billing_month, sb.status AS settlement_status, sb.total_krw,
-             i.id AS invoice_id, i.invoice_no, i.status AS invoice_status, i.total_amount AS invoice_total_krw
+             i.id AS invoice_id, i.invoice_no, i.invoice_month, i.status AS invoice_status, i.total_amount AS invoice_total_krw
       FROM settlement_batches sb
       LEFT JOIN invoices i ON i.settlement_batch_id=sb.id AND i.deleted_at IS NULL
       WHERE sb.id=700501 AND sb.deleted_at IS NULL

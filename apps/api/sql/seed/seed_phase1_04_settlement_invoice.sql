@@ -14,13 +14,18 @@ SET @seed_month := DATE_FORMAT(@seed_month_start, '%Y-%m');
 SET @seed_yyyymm := DATE_FORMAT(@seed_month_start, '%Y%m');
 SET @seed_month_end := LAST_DAY(@seed_month_start);
 SET @seed_due_date := DATE_ADD(@seed_month_end, INTERVAL 10 DAY);
+SET @seed_invoice_date := @seed_month_end;
+SET @seed_fx_rate := 39.250000;
+SET @seed_subtotal_krw := 9600.0000;
+SET @seed_vat_krw := 0.0000;
+SET @seed_total_krw := 9600.0000;
 
 -- FX rate (3월 정산 기준)
 INSERT INTO exchange_rates (
   id, base_currency, quote_currency, rate, rate_date, status, entered_by, activated_by, activated_at, created_at, updated_at, deleted_at
 )
 VALUES (
-  700701, 'THB', 'KRW', 39.250000, @seed_month_end, 'active', @admin_user_id, @admin_user_id, NOW(), NOW(), NOW(), NULL
+  700701, 'THB', 'KRW', @seed_fx_rate, @seed_month_end, 'active', @admin_user_id, @admin_user_id, NOW(), NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
   rate=VALUES(rate),
@@ -125,25 +130,52 @@ ON DUPLICATE KEY UPDATE
   updated_at=NOW();
 
 INSERT INTO invoices (
-  id, settlement_batch_id, client_id, invoice_no, status,
-  issue_date, due_date, recipient_email, currency, total_amount,
+  id, settlement_batch_id, client_id, invoice_month, invoice_no, status,
+  issue_date, invoice_date, due_date, recipient_email, currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount,
   sent_at, created_by, created_at, updated_at, deleted_at
 )
 VALUES (
-  700601, 700501, @client_id, CONCAT('INV-', @seed_yyyymm, '-C101-001'), 'sent',
-  @seed_month_end, @seed_due_date, @manager_email, 'KRW',
-  (SELECT total_krw FROM settlement_batches WHERE id=700501),
+  700601, 700501, @client_id, @seed_month, CONCAT('INV-', @seed_yyyymm, '-C101-001'), 'issued',
+  @seed_invoice_date, @seed_invoice_date, @seed_due_date, @manager_email, 'KRW', @seed_fx_rate, @seed_subtotal_krw, @seed_vat_krw, @seed_total_krw, @seed_total_krw,
   NOW(), @admin_user_id, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
+  invoice_month=VALUES(invoice_month),
   invoice_no=VALUES(invoice_no),
-  status='sent',
+  status='issued',
   issue_date=VALUES(issue_date),
+  invoice_date=VALUES(invoice_date),
   due_date=VALUES(due_date),
   recipient_email=VALUES(recipient_email),
   currency=VALUES(currency),
+  fx_rate_thbkrw=VALUES(fx_rate_thbkrw),
+  subtotal_krw=VALUES(subtotal_krw),
+  vat_krw=VALUES(vat_krw),
+  total_krw=VALUES(total_krw),
   total_amount=VALUES(total_amount),
   sent_at=VALUES(sent_at),
+  deleted_at=NULL,
+  updated_at=NOW();
+
+INSERT INTO billing_events (
+  id, client_id, service_code, reference_type, reference_id, event_date, qty, pricing_policy,
+  unit_price_thb, amount_thb, unit_price_krw, amount_krw, fx_rate_thbkrw, invoice_id, status, created_at, updated_at, deleted_at
+)
+VALUES
+  (700421, @client_id, 'SV_OUTBOUND_BOX', 'OUTBOUND', CONCAT('OUT-', @seed_yyyymm, '-001'), @seed_invoice_date, 7, 'KRW_FIXED', NULL, NULL, 700.0000, 4900.0000, @seed_fx_rate, 700601, 'INVOICED', NOW(), NOW(), NULL),
+  (700422, @client_id, 'SV_OUTBOUND_ORDER', 'OUTBOUND', CONCAT('OUT-', @seed_yyyymm, '-001'), @seed_invoice_date, 1, 'KRW_FIXED', NULL, NULL, 3500.0000, 3500.0000, @seed_fx_rate, 700601, 'INVOICED', NOW(), NOW(), NULL),
+  (700423, @client_id, 'SV_MANUAL_EXPENSE', 'MANUAL', CONCAT('MANUAL-', @seed_yyyymm, '-001'), @seed_invoice_date, 1, 'KRW_FIXED', NULL, NULL, 1200.0000, 1200.0000, @seed_fx_rate, 700601, 'INVOICED', NOW(), NOW(), NULL)
+ON DUPLICATE KEY UPDATE
+  event_date=VALUES(event_date),
+  qty=VALUES(qty),
+  pricing_policy=VALUES(pricing_policy),
+  unit_price_thb=VALUES(unit_price_thb),
+  amount_thb=VALUES(amount_thb),
+  unit_price_krw=VALUES(unit_price_krw),
+  amount_krw=VALUES(amount_krw),
+  fx_rate_thbkrw=VALUES(fx_rate_thbkrw),
+  invoice_id=VALUES(invoice_id),
+  status='INVOICED',
   deleted_at=NULL,
   updated_at=NOW();
 
@@ -168,6 +200,22 @@ ON DUPLICATE KEY UPDATE
   amount=VALUES(amount),
   extra_amount=VALUES(extra_amount),
   total_amount=VALUES(total_amount),
+  deleted_at=NULL,
+  updated_at=NOW();
+
+INSERT INTO invoice_items (
+  id, invoice_id, service_code, description, qty, unit_price_krw, amount_krw, created_at, updated_at, deleted_at
+)
+VALUES
+  (700711, 700601, 'SV_OUTBOUND_BOX', '출고 박스비', 7, 700.0000, 4900.0000, NOW(), NOW(), NULL),
+  (700712, 700601, 'SV_OUTBOUND_ORDER', '출고 처리비', 1, 3500.0000, 3500.0000, NOW(), NOW(), NULL),
+  (700713, 700601, 'SV_MANUAL_EXPENSE', '포장부자재 비용', 1, 1200.0000, 1200.0000, NOW(), NOW(), NULL)
+ON DUPLICATE KEY UPDATE
+  service_code=VALUES(service_code),
+  description=VALUES(description),
+  qty=VALUES(qty),
+  unit_price_krw=VALUES(unit_price_krw),
+  amount_krw=VALUES(amount_krw),
   deleted_at=NULL,
   updated_at=NOW();
 

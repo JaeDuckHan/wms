@@ -31,12 +31,20 @@ SELECT
   ) = 2 THEN 'PASS' ELSE 'FAIL' END AS service_events_ready,
 
   CASE WHEN (
+    SELECT COUNT(*) FROM billing_events
+    WHERE id IN (700421,700422,700423)
+      AND DATE_FORMAT(event_date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')
+      AND status='INVOICED'
+      AND deleted_at IS NULL
+  ) = 3 THEN 'PASS' ELSE 'FAIL' END AS billing_events_invoiced,
+
+  CASE WHEN (
     SELECT status FROM settlement_batches WHERE id=700501 AND deleted_at IS NULL
   ) = 'closed' THEN 'PASS' ELSE 'FAIL' END AS settlement_closed,
 
   CASE WHEN (
     SELECT status FROM invoices WHERE id=700601 AND deleted_at IS NULL
-  ) = 'sent' THEN 'PASS' ELSE 'FAIL' END AS invoice_sent,
+  ) = 'issued' THEN 'PASS' ELSE 'FAIL' END AS invoice_issued,
 
   CASE WHEN (
     SELECT COALESCE(i.total_amount,0) - COALESCE((
@@ -83,6 +91,7 @@ SELECT
   sb.total_krw,
   i.id AS invoice_id,
   i.invoice_no,
+  i.invoice_month,
   i.status AS invoice_status,
   i.total_amount AS invoice_total_krw
 FROM settlement_batches sb
