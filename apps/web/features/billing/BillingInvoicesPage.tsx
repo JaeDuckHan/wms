@@ -28,6 +28,7 @@ import {
   type BillingInvoice,
 } from "@/features/billing/api";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
+import { listClients } from "@/features/settings/clients/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
 function todayIso() {
@@ -56,6 +57,7 @@ export function BillingInvoicesPage() {
   const { t } = useI18n();
   const { canWrite } = useCurrentUser();
   const [rows, setRows] = useState<BillingInvoice[]>([]);
+  const [clients, setClients] = useState<Array<{ id: string; client_code: string; name: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,6 +82,10 @@ export function BillingInvoicesPage() {
   const [pendingAction, setPendingAction] = useState<PendingInvoiceAction>(null);
   const parsedClientId = Number(clientIdInput || 0);
   const selectedClientId = Number.isFinite(parsedClientId) && parsedClientId > 0 ? Math.trunc(parsedClientId) : null;
+  const selectedClient = useMemo(
+    () => clients.find((item) => item.id === String(selectedClientId ?? "")) ?? null,
+    [clients, selectedClientId]
+  );
 
   const dateRange = useMemo(() => {
     const fromDate = normalizeDate(fromDateInput);
@@ -122,6 +128,12 @@ export function BillingInvoicesPage() {
 
   useEffect(() => {
     void reload();
+  }, []);
+
+  useEffect(() => {
+    void listClients()
+      .then((data) => setClients(data.map((item) => ({ id: item.id, client_code: item.client_code, name: item.name }))))
+      .catch(() => setClients([]));
   }, []);
 
   const onGenerate = async (regenerateDraft: 0 | 1) => {
@@ -277,7 +289,14 @@ export function BillingInvoicesPage() {
 
       <div className="mb-4 rounded-xl border bg-white p-4">
         <div className="grid gap-3 md:grid-cols-6">
-          <Input type="number" placeholder="Client ID (empty=all)" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)} />
+          <Input list="billing-invoice-client-options" type="number" placeholder="Client ID (empty=all)" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)} />
+          <datalist id="billing-invoice-client-options">
+            {clients.map((item) => (
+              <option key={item.id} value={item.id} label={`${item.client_code} | ${item.name}`}>
+                {item.id} | {item.client_code} | {item.name}
+              </option>
+            ))}
+          </datalist>
           <Input type="date" value={fromDateInput} onChange={(e) => setFromDateInput(e.target.value)} />
           <Input type="date" value={toDateInput} onChange={(e) => setToDateInput(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -292,6 +311,11 @@ export function BillingInvoicesPage() {
           {dateRange.valid
             ? `${t("billingInvoices.rangePrefix")}: ${dateRange.fromDate} ~ ${dateRange.toDate} | ${t("billingInvoices.baseDatePrefix")}: ${derivedInvoiceDate}`
             : dateRange.message}
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          {selectedClient
+            ? `현재 고객: ${selectedClient.client_code} | ${selectedClient.name}`
+            : "Client ID는 Settings > Clients에서 고객사 코드와 회사명을 함께 확인할 수 있습니다."}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">

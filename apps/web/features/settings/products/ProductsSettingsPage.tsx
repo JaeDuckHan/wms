@@ -84,7 +84,7 @@ export function ProductsSettingsPage() {
   const [rows, setRows] = useState<Product[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
-  const [clients, setClients] = useState<Array<{ id: string; client_code: string }>>([]);
+  const [clients, setClients] = useState<Array<{ id: string; client_code: string; name: string }>>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created_desc");
@@ -102,7 +102,7 @@ export function ProductsSettingsPage() {
     try {
       const [products, clients] = await Promise.all([listProducts(), listClients()]);
       setRows(products);
-      setClients(clients.map((item) => ({ id: item.id, client_code: item.client_code })));
+      setClients(clients.map((item) => ({ id: item.id, client_code: item.client_code, name: item.name })));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : t("Failed to load products."));
     } finally {
@@ -125,6 +125,10 @@ export function ProductsSettingsPage() {
   const lengthCm = useMemo(() => parseOptionalPositiveDecimal(form.length_cm), [form.length_cm]);
   const heightCm = useMemo(() => parseOptionalPositiveDecimal(form.height_cm), [form.height_cm]);
   const cbmPreview = useMemo(() => computeCbmM3(widthCm, lengthCm, heightCm), [heightCm, lengthCm, widthCm]);
+  const selectedClient = useMemo(
+    () => clients.find((item) => item.client_code === form.client_code.trim().toUpperCase()) ?? null,
+    [clients, form.client_code]
+  );
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -375,17 +379,25 @@ export function ProductsSettingsPage() {
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600">{t("Client Code")}</label>
+              <label className="text-xs font-medium text-slate-600">{t("Client Code")} / Company</label>
               <Input
                 list="client-code-options"
                 value={form.client_code}
                 onChange={(e) => setForm((prev) => ({ ...prev, client_code: e.target.value.toUpperCase() }))}
+                placeholder="예: C101"
               />
               <datalist id="client-code-options">
                 {clients.map((item) => (
-                  <option key={item.id} value={item.client_code} />
+                  <option key={item.id} value={item.client_code} label={`${item.client_code} | ${item.name}`}>
+                    {item.client_code} | {item.name}
+                  </option>
                 ))}
               </datalist>
+              <p className="text-xs text-slate-500">
+                {selectedClient
+                  ? `${selectedClient.client_code} | ${selectedClient.name}`
+                  : "고객사 코드를 입력하면 등록된 회사명이 함께 표시됩니다. 먼저 Settings > Clients에서 고객사를 등록하세요."}
+              </p>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">Dimensions (cm)</label>

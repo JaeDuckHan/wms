@@ -15,6 +15,7 @@ import {
   markBillingEventsPending,
   type BillingEvent,
 } from "@/features/billing/api";
+import { listClients } from "@/features/settings/clients/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
 function currentYear() {
@@ -26,6 +27,7 @@ export function BillingEventsPage() {
   const { t } = useI18n();
   const { isAdmin, canAccessBillingEvents, ready } = useCurrentUser();
   const [rows, setRows] = useState<BillingEvent[]>([]);
+  const [clients, setClients] = useState<Array<{ id: string; client_code: string; name: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -37,6 +39,10 @@ export function BillingEventsPage() {
   const [serviceCode, setServiceCode] = useState("");
   const normalizedYear = /^\d{4}$/.test(year) ? year : currentYear();
   const selectedInvoiceMonth = month && /^\d{2}$/.test(month) ? `${normalizedYear}-${month}` : undefined;
+  const selectedClient = useMemo(
+    () => clients.find((item) => item.id === clientId.trim()) ?? null,
+    [clients, clientId]
+  );
 
   const reload = async () => {
     setLoading(true);
@@ -61,6 +67,13 @@ export function BillingEventsPage() {
   useEffect(() => {
     if (!ready || !canAccessBillingEvents) return;
     void reload();
+  }, [ready, canAccessBillingEvents]);
+
+  useEffect(() => {
+    if (!ready || !canAccessBillingEvents) return;
+    void listClients()
+      .then((data) => setClients(data.map((item) => ({ id: item.id, client_code: item.client_code, name: item.name }))))
+      .catch(() => setClients([]));
   }, [ready, canAccessBillingEvents]);
 
   const accessDenied = ready && !canAccessBillingEvents;
@@ -127,7 +140,14 @@ export function BillingEventsPage() {
               );
             })}
           </select>
-          <Input placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+          <Input list="billing-event-client-options" placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+          <datalist id="billing-event-client-options">
+            {clients.map((item) => (
+              <option key={item.id} value={item.id} label={`${item.client_code} | ${item.name}`}>
+                {item.id} | {item.client_code} | {item.name}
+              </option>
+            ))}
+          </datalist>
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">{t("All status")}</option>
             <option value="PENDING">{t("PENDING")}</option>
@@ -136,7 +156,10 @@ export function BillingEventsPage() {
           <Input placeholder="Service code" value={serviceCode} onChange={(e) => setServiceCode(e.target.value.toUpperCase())} />
           <Button variant="secondary" onClick={() => void reload()}>Search</Button>
         </div>
-        <div className="mt-2 text-xs text-slate-500">기본 조회는 올해 전체입니다. 특정 월만 보려면 월을 함께 선택합니다.</div>
+        <div className="mt-2 text-xs text-slate-500">
+          기본 조회는 올해 전체입니다. 특정 월만 보려면 월을 함께 선택합니다.
+          {selectedClient ? ` 현재 고객: ${selectedClient.client_code} | ${selectedClient.name}` : ""}
+        </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <a href={csvHref} className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50">{t("Export CSV")}</a>
           {isAdmin && (

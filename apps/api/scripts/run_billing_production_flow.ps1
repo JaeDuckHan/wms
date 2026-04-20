@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $mysql = "C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql.exe"
+$today = Get-Date
+$invoiceMonth = $today.ToString("yyyy-MM")
+$invoiceDate = (Get-Date -Year $today.Year -Month $today.Month -Day ([Math]::Min(20, [DateTime]::DaysInMonth($today.Year, $today.Month)))).ToString("yyyy-MM-dd")
 
 function Assert-True($cond, [string]$msg) {
   if (-not $cond) { throw "ASSERT_FAIL: $msg" }
@@ -43,23 +46,23 @@ try {
   }
 
   Step 4 "Create FX rate + verify list has used count field"
-  try { Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/settings/exchange-rates" -Headers $h -ContentType "application/json" -Body (@{ rate_date='2026-02-20'; rate=39.125; source='manual'; locked=0; status='active' } | ConvertTo-Json) | Out-Null }
+  try { Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/settings/exchange-rates" -Headers $h -ContentType "application/json" -Body (@{ rate_date=$invoiceDate; rate=39.125; source='manual'; locked=0; status='active' } | ConvertTo-Json) | Out-Null }
   catch { if (-not ($_.Exception.Message -like '*409*')) { throw } }
-  $fxList = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/settings/exchange-rates?month=2026-02" -Headers $h
+  $fxList = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/settings/exchange-rates?month=$invoiceMonth" -Headers $h
   Assert-True ($fxList.data.Count -ge 1) "FX list empty"
   Assert-True ($null -ne $fxList.data[0].used_invoice_count) "FX used_invoice_count missing"
 
   Step 5 "Seed billing events"
-  Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/events/sample" -Headers $h -ContentType "application/json" -Body (@{ client_id=[int]$clientId; invoice_month='2026-02' } | ConvertTo-Json) | Out-Null
+  Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/events/sample" -Headers $h -ContentType "application/json" -Body (@{ client_id=[int]$clientId; invoice_month=$invoiceMonth } | ConvertTo-Json) | Out-Null
 
   Step 6 "Verify billing events filters + CSV endpoint"
-  $events = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/events?invoice_month=2026-02&client_id=$clientId&status=PENDING" -Headers $h
+  $events = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/events?invoice_month=$invoiceMonth&client_id=$clientId&status=PENDING" -Headers $h
   Assert-True ($events.data.Count -ge 3) "Expected seeded pending events"
-  $csvCode = curl.exe -s -o NUL -w "%{http_code}" -H "Authorization: Bearer $token" "$BaseUrl/billing/events/export.csv?invoice_month=2026-02&client_id=$clientId"
+  $csvCode = curl.exe -s -o NUL -w "%{http_code}" -H "Authorization: Bearer $token" "$BaseUrl/billing/events/export.csv?invoice_month=$invoiceMonth&client_id=$clientId"
   Assert-True ($csvCode -eq "200") "CSV export failed"
 
   Step 7 "Generate invoice draft and validate TRUNC100 + VAT_7"
-  $gen = Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/generate" -Headers $h -ContentType "application/json" -Body (@{ client_id=[int]$clientId; invoice_month='2026-02'; invoice_date='2026-02-20'; regenerate_draft=1 } | ConvertTo-Json)
+  $gen = Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/generate" -Headers $h -ContentType "application/json" -Body (@{ client_id=[int]$clientId; invoice_month=$invoiceMonth; invoice_date=$invoiceDate; regenerate_draft=1 } | ConvertTo-Json)
   $invoiceId = [int]$gen.data.invoice.id
   $detail = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/invoices/$invoiceId" -Headers $h
   $vat = $detail.data.items | Where-Object { $_.service_code -eq "VAT_7" }
@@ -70,7 +73,7 @@ try {
   Step 8 "Issue invoice and verify regeneration blocked"
   Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/$invoiceId/issue" -Headers $h | Out-Null
   try {
-    Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/generate" -Headers $h -ContentType "application/json" -Body (@{ client_id=[int]$clientId; invoice_month='2026-02'; invoice_date='2026-02-20'; regenerate_draft=1 } | ConvertTo-Json) | Out-Null
+    Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/generate" -Headers $h -ContentType "application/json" -Body (@{ client_id=[int]$clientId; invoice_month=$invoiceMonth; invoice_date=$invoiceDate; regenerate_draft=1 } | ConvertTo-Json) | Out-Null
     throw "Generation should have been blocked"
   } catch {
     Assert-True ($_.Exception.Message -like '*400*') "Expected blocked generation after issue"
@@ -89,7 +92,7 @@ try {
   $exportLogs = Invoke-RestMethod -Method Get -Uri "$BaseUrl/billing/invoices/$invoiceId/export-logs" -Headers $h
   Assert-True ($exportLogs.data.Count -ge 1) "Expected invoice export log"
   Invoke-RestMethod -Method Post -Uri "$BaseUrl/billing/invoices/$invoiceId/mark-paid" -Headers $h | Out-Null
-  $stats = & $mysql -h 127.0.0.1 -P 3306 -u root -p1234 -N -B -D wms_test -e "SELECT status, COUNT(*) FROM billing_events WHERE client_id=$clientId AND DATE_FORMAT(event_date,'%Y-%m')='2026-02' AND deleted_at IS NULL GROUP BY status"
+  $stats = & $mysql -h 127.0.0.1 -P 3306 -u root -p1234 -N -B -D wms_test -e "SELECT status, COUNT(*) FROM billing_events WHERE client_id=$clientId AND DATE_FORMAT(event_date,'%Y-%m')='$invoiceMonth' AND deleted_at IS NULL GROUP BY status"
   Assert-True ($stats -match "INVOICED") "Expected invoiced events after generation"
 
   Write-Host "PASS: Billing production 10-step scenario"

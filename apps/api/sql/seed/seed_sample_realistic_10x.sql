@@ -2,6 +2,18 @@ SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 START TRANSACTION;
 
+SET @seed_today := CURDATE();
+SET @seed_month_start := DATE_SUB(@seed_today, INTERVAL DAY(@seed_today) - 1 DAY);
+SET @seed_mfg_date := DATE_SUB(@seed_month_start, INTERVAL 1 MONTH);
+SET @seed_expiry_date := LAST_DAY(DATE_ADD(@seed_month_start, INTERVAL 24 MONTH));
+SET @seed_inbound_date := @seed_month_start;
+SET @seed_inbound_received_at := TIMESTAMP(DATE_FORMAT(@seed_inbound_date, '%Y-%m-%d 10:00:00'));
+SET @seed_inbound_txn_at := TIMESTAMP(DATE_FORMAT(@seed_inbound_date, '%Y-%m-%d 10:30:00'));
+SET @seed_outbound_date := DATE_ADD(@seed_month_start, INTERVAL 1 DAY);
+SET @seed_outbound_packed_at := TIMESTAMP(DATE_FORMAT(@seed_outbound_date, '%Y-%m-%d 14:20:00'));
+SET @seed_outbound_shipped_at := TIMESTAMP(DATE_FORMAT(@seed_outbound_date, '%Y-%m-%d 15:00:00'));
+SET @seed_outbound_txn_at := TIMESTAMP(DATE_FORMAT(@seed_outbound_date, '%Y-%m-%d 15:10:00'));
+
 DROP TEMPORARY TABLE IF EXISTS tmp_seed_10x;
 CREATE TEMPORARY TABLE tmp_seed_10x (
   row_no INT PRIMARY KEY,
@@ -150,8 +162,8 @@ INSERT INTO product_lots (product_id, lot_no, expiry_date, mfg_date, status, cre
 SELECT
   p.id,
   s.lot_no,
-  DATE('2027-12-31'),
-  DATE('2026-02-01'),
+  @seed_expiry_date,
+  @seed_mfg_date,
   'active',
   NOW(),
   NOW(),
@@ -174,11 +186,11 @@ SELECT
   s.inbound_no,
   c.id,
   @seed_warehouse_id,
-  DATE('2026-03-01'),
+  @seed_inbound_date,
   'received',
   CONCAT('Sample inbound load for ', s.client_name_en),
   @seed_user_id,
-  TIMESTAMP('2026-03-01 10:00:00'),
+  @seed_inbound_received_at,
   NOW(),
   NOW(),
   NULL
@@ -243,7 +255,7 @@ SELECT
   NULL,
   NULL,
   'inbound_receive',
-  TIMESTAMP('2026-03-01 10:30:00'),
+  @seed_inbound_txn_at,
   s.inbound_qty,
   0,
   'inbound_item',
@@ -292,13 +304,13 @@ SELECT
   s.outbound_no,
   c.id,
   @seed_warehouse_id,
-  DATE('2026-03-02'),
+  @seed_outbound_date,
   'Naver SmartStore',
   s.order_no,
   s.tracking_no,
   'shipped',
-  TIMESTAMP('2026-03-02 14:20:00'),
-  TIMESTAMP('2026-03-02 15:00:00'),
+  @seed_outbound_packed_at,
+  @seed_outbound_shipped_at,
   @seed_user_id,
   NOW(),
   NOW(),
@@ -376,7 +388,7 @@ SELECT
   wl.id,
   NULL,
   'outbound_ship',
-  TIMESTAMP('2026-03-02 15:10:00'),
+  @seed_outbound_txn_at,
   0,
   s.outbound_qty,
   'outbound_item',

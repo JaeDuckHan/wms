@@ -1,6 +1,11 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS=0;
 
+SET @seed_today := CURDATE();
+SET @seed_month_start := DATE_SUB(@seed_today, INTERVAL DAY(@seed_today) - 1 DAY);
+SET @seed_effective_from := @seed_month_start;
+SET @seed_lot_expiry := LAST_DAY(DATE_ADD(@seed_month_start, INTERVAL 24 MONTH));
+
 -- Phase1 integrated seed (step 1/5)
 -- 목적: 입고/출고/정산 연동 테스트를 위한 기준 마스터 데이터 보장
 
@@ -83,7 +88,7 @@ SET @product_id := (
 );
 
 INSERT INTO product_lots (product_id, lot_no, expiry_date, status, created_at, updated_at, deleted_at)
-VALUES (@product_id, 'LOT-501', '2027-12-31', 'active', NOW(), NOW(), NULL)
+VALUES (@product_id, 'LOT-501', @seed_lot_expiry, 'active', NOW(), NOW(), NULL)
 ON DUPLICATE KEY UPDATE
   expiry_date=VALUES(expiry_date),
   status='active',
@@ -116,8 +121,8 @@ INSERT INTO price_policies (
   client_id, service_id, unit_price, currency, effective_from, effective_to, status, created_at, updated_at, deleted_at
 )
 VALUES
-  (@client_id, @svc_box_id, 700.0000, 'KRW', '2026-01-01', NULL, 'active', NOW(), NOW(), NULL),
-  (@client_id, @svc_order_id, 3500.0000, 'KRW', '2026-01-01', NULL, 'active', NOW(), NOW(), NULL)
+  (@client_id, @svc_box_id, 700.0000, 'KRW', @seed_effective_from, NULL, 'active', NOW(), NOW(), NULL),
+  (@client_id, @svc_order_id, 3500.0000, 'KRW', @seed_effective_from, NULL, 'active', NOW(), NOW(), NULL)
 ON DUPLICATE KEY UPDATE
   unit_price=VALUES(unit_price),
   currency=VALUES(currency),
