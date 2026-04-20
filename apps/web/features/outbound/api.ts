@@ -213,6 +213,18 @@ async function requestJson<T>(
   return json.data;
 }
 
+async function requestJsonOrDefault<T>(
+  path: string,
+  fallback: T,
+  options?: AuthRequestOptions
+): Promise<T> {
+  try {
+    return await requestJson<T>(path, undefined, options);
+  } catch {
+    return fallback;
+  }
+}
+
 function cloneOrder(order: OutboundOrder): OutboundOrder {
   return JSON.parse(JSON.stringify(order)) as OutboundOrder;
 }
@@ -527,13 +539,13 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
     }
 
     const [clients, rawItems, products, lots, balances] = await Promise.all([
-      requestJson<RawClient[]>("/clients", undefined, options),
+      requestJsonOrDefault<RawClient[]>("/clients", [], options),
       requestJson<RawOutboundItem[]>(`/outbound-items?outbound_order_id=${rawOrder.id}`, undefined, options),
-      requestJson<RawProduct[]>("/products", undefined, options),
-      requestJson<RawLot[]>("/product-lots", undefined, options),
-      requestJson<RawStockBalance[]>(
+      requestJsonOrDefault<RawProduct[]>("/products", [], options),
+      requestJsonOrDefault<RawLot[]>("/product-lots", [], options),
+      requestJsonOrDefault<RawStockBalance[]>(
         `/stock-balances?client_id=${rawOrder.client_id}&warehouse_id=${rawOrder.warehouse_id}`,
-        undefined,
+        [],
         options
       ),
     ]);
