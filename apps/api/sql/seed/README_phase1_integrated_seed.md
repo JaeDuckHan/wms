@@ -1,7 +1,7 @@
 # Phase1 통합 샘플 데이터(운영유사) 실행 가이드
 
 사용자/테스터가 도메인을 잘 몰라도 순서대로 실행하면,
-**입고 -> 재고 -> 출고 -> 서비스이벤트 -> 정산 -> 인보이스(sent)** 까지 한 번에 재현되도록 구성한 seed입니다.
+**입고 -> 재고 -> 출고 -> 서비스이벤트 -> 정산 -> 인보이스(issued)** 까지 한 번에 재현되도록 구성한 seed입니다.
 
 ## 실행 순서
 
@@ -27,7 +27,8 @@
 - outbound_shipped = PASS
 - service_events_ready = PASS
 - settlement_closed = PASS
-- invoice_sent = PASS
+- billing_events_invoiced = PASS
+- invoice_issued = PASS
 - invoice_amount_match = PASS
 
 ## 참고
