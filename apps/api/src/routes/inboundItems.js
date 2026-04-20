@@ -30,6 +30,10 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
+function isMysqlMissingTable(error) {
+  return error && error.code === "ER_NO_SUCH_TABLE";
+}
+
 function resolveActorUserId(req, fallbackUserId) {
   const tokenUserId = Number(req.user?.sub || 0);
   if (Number.isFinite(tokenUserId) && tokenUserId > 0) return tokenUserId;
@@ -39,11 +43,17 @@ function resolveActorUserId(req, fallbackUserId) {
 }
 
 async function appendInboundOrderLog(conn, { inboundOrderId, action, note, actorUserId }) {
-  await conn.query(
-    `INSERT INTO inbound_order_logs (inbound_order_id, action, note, actor_user_id)
-     VALUES (?, ?, ?, ?)`,
-    [inboundOrderId, action, note || null, actorUserId]
-  );
+  try {
+    await conn.query(
+      `INSERT INTO inbound_order_logs (inbound_order_id, action, note, actor_user_id)
+       VALUES (?, ?, ?, ?)`,
+      [inboundOrderId, action, note || null, actorUserId]
+    );
+  } catch (error) {
+    if (!isMysqlMissingTable(error)) {
+      throw error;
+    }
+  }
 }
 
 async function validateLotBelongsToProduct(conn, productId, lotId) {

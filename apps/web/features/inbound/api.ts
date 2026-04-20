@@ -323,7 +323,9 @@ export async function getInboundOrderByNo(inboundNo: string, options?: RequestOp
     try {
       rawLogs = await requestJson<RawInboundLog[]>(`/inbound-orders/${rawOrder.id}/logs`, undefined, options);
     } catch (error) {
-      if (!(error instanceof ApiError && error.status === 404)) throw error;
+      // Some deployments may not have runtime log tables yet.
+      if (!(error instanceof ApiError)) throw error;
+      rawLogs = [];
     }
     const clientName = formatClientLabel(clients.find((client) => client.id === rawOrder.client_id));
     const items = mapItems(rawItems, products, lots);

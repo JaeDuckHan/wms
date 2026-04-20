@@ -53,6 +53,10 @@ function isMysqlForeignKey(error) {
   return error && error.code === "ER_NO_REFERENCED_ROW_2";
 }
 
+function isMysqlMissingTable(error) {
+  return error && error.code === "ER_NO_SUCH_TABLE";
+}
+
 function toMysqlDateTime(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -328,11 +332,17 @@ async function appendOutboundOrderLog({
   note = null,
   actorUserId = null
 }) {
-  await getPool().query(
-    `INSERT INTO outbound_order_logs (outbound_order_id, action, from_status, to_status, note, actor_user_id)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [outboundOrderId, action, fromStatus, toStatus, note, actorUserId]
-  );
+  try {
+    await getPool().query(
+      `INSERT INTO outbound_order_logs (outbound_order_id, action, from_status, to_status, note, actor_user_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [outboundOrderId, action, fromStatus, toStatus, note, actorUserId]
+    );
+  } catch (error) {
+    if (!isMysqlMissingTable(error)) {
+      throw error;
+    }
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -387,6 +397,9 @@ router.get("/:id/logs", async (req, res) => {
     );
     return res.json({ ok: true, data: rows });
   } catch (error) {
+    if (isMysqlMissingTable(error)) {
+      return res.json({ ok: true, data: [] });
+    }
     return res.status(500).json({ ok: false, message: error.message });
   }
 });
