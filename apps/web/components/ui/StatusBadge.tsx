@@ -17,7 +17,7 @@ const statusMap: Record<OutboundStatus, { label: string; variant: "default" | "i
 
 export function StatusBadge({ status }: { status: OutboundStatus }) {
   const { t } = useI18n();
-  const current = statusMap[status];
+  const current = statusMap[status] ?? { label: String(status || "Unknown"), variant: "default" as const };
   return <Badge variant={current.variant}>{t(current.label)}</Badge>;
 }
 

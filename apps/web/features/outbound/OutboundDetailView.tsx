@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2, PackagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,76 @@ import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 const tabs = ["overview", "items", "boxes", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
+
+function asText(value: unknown, fallback = "-") {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeOutboundOrder(order: OutboundOrder): OutboundOrder {
+  const items = Array.isArray(order.items)
+    ? order.items.map((item) => ({
+        ...item,
+        barcode_full: asText(item.barcode_full),
+        product_name: asText(item.product_name),
+        lot: asText(item.lot),
+        location: asText(item.location),
+        requested_qty: asNumber(item.requested_qty),
+        picked_qty: asNumber(item.picked_qty),
+        available_qty: asNumber(item.available_qty),
+        reserved_qty: asNumber(item.reserved_qty),
+        allocatable_qty: asNumber(item.allocatable_qty),
+        network_allocatable_qty: asNumber(item.network_allocatable_qty),
+        shortage_qty: asNumber(item.shortage_qty),
+        allocation_plan: Array.isArray(item.allocation_plan)
+          ? item.allocation_plan.map((plan) => ({
+              lot: asText(plan.lot),
+              location: asText(plan.location),
+              allocatable_qty: asNumber(plan.allocatable_qty),
+              suggested_qty: asNumber(plan.suggested_qty),
+            }))
+          : [],
+      }))
+    : [];
+  const boxes = Array.isArray(order.boxes)
+    ? order.boxes.map((box) => ({
+        ...box,
+        box_no: asText(box.box_no),
+        courier: asText(box.courier),
+        tracking_no: asText(box.tracking_no),
+        item_count: asNumber(box.item_count),
+      }))
+    : [];
+  const timeline = Array.isArray(order.timeline)
+    ? order.timeline.map((log) => ({
+        ...log,
+        title: asText(log.title),
+        at: asText(log.at),
+        actor: asText(log.actor),
+        note: log.note ? asText(log.note) : undefined,
+      }))
+    : [];
+
+  return {
+    ...order,
+    outbound_no: asText(order.outbound_no),
+    client: asText(order.client),
+    eta_date: asText(order.eta_date),
+    memo: asText(order.memo),
+    ship_to: asText(order.ship_to),
+    summary: asText(order.summary),
+    items,
+    boxes,
+    boxes_supported: Boolean(order.boxes_supported),
+    timeline,
+  };
+}
 
 function normalizeTab(tab?: string): TabValue {
   if (tab && tabs.includes(tab as TabValue)) return tab as TabValue;
@@ -58,7 +128,6 @@ export function OutboundDetailView({
   const { pushToast } = useToast();
   const { t } = useI18n();
 
-  const [order, setOrder] = useState(initialOrder);
   const [tab, setTab] = useState<TabValue>(normalizeTab(initialTab));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [boxNo, setBoxNo] = useState("");
@@ -70,26 +139,31 @@ export function OutboundDetailView({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const currentAction = actionByStatus(order.status);
+  const normalizedOrder = useMemo(() => normalizeOutboundOrder(initialOrder), [initialOrder]);
+  const [currentOrder, setCurrentOrder] = useState(normalizedOrder);
+  useEffect(() => {
+    setCurrentOrder(normalizedOrder);
+  }, [normalizedOrder]);
+  const currentAction = actionByStatus(currentOrder.status);
   const shortageItems = useMemo(
-    () => order.items.filter((item) => item.status === "shortage"),
-    [order.items]
+    () => currentOrder.items.filter((item) => item.status === "shortage"),
+    [currentOrder.items]
   );
   const reallocationItems = useMemo(
-    () => order.items.filter((item) => item.status === "reallocate"),
-    [order.items]
+    () => currentOrder.items.filter((item) => item.status === "reallocate"),
+    [currentOrder.items]
   );
   const totalRequestedQty = useMemo(
-    () => order.items.reduce((sum, item) => sum + item.requested_qty, 0),
-    [order.items]
+    () => currentOrder.items.reduce((sum, item) => sum + item.requested_qty, 0),
+    [currentOrder.items]
   );
   const totalAllocatableQty = useMemo(
-    () => order.items.reduce((sum, item) => sum + item.allocatable_qty, 0),
-    [order.items]
+    () => currentOrder.items.reduce((sum, item) => sum + item.allocatable_qty, 0),
+    [currentOrder.items]
   );
   const totalNetworkAllocatableQty = useMemo(
-    () => order.items.reduce((sum, item) => sum + item.network_allocatable_qty, 0),
-    [order.items]
+    () => currentOrder.items.reduce((sum, item) => sum + item.network_allocatable_qty, 0),
+    [currentOrder.items]
   );
 
   const setTabWithQuery = (nextTab: string) => {
@@ -111,8 +185,8 @@ export function OutboundDetailView({
 
     setLoading(true);
     try {
-      const updated = await transitionOutboundStatus(order.outbound_no, pendingAction);
-      setOrder(updated);
+      const updated = await transitionOutboundStatus(currentOrder.outbound_no, pendingAction);
+      setCurrentOrder(normalizeOutboundOrder(updated));
       setConfirmOpen(false);
       pushToast({
         title: `${t(actionLabel(pendingAction))} ${t("completed")}`,
@@ -197,13 +271,13 @@ export function OutboundDetailView({
     setFormError(null);
     setLoading(true);
     try {
-      const boxes = await addOutboundBox(order.outbound_no, {
+      const boxes = await addOutboundBox(currentOrder.outbound_no, {
         box_no: boxNo.trim(),
         courier: courier.trim(),
         tracking_no: trackingNo.trim(),
         item_count: parsedItemCount,
       });
-      setOrder((prev) => ({ ...prev, boxes }));
+      setCurrentOrder((prev) => normalizeOutboundOrder({ ...prev, boxes }));
       setDialogOpen(false);
       setBoxNo("");
       setCourier("");
@@ -224,13 +298,13 @@ export function OutboundDetailView({
         breadcrumbs={[
           { label: "Operations" },
           { label: "Outbounds", href: "/outbounds" },
-          { label: order.outbound_no },
+          { label: currentOrder.outbound_no },
         ]}
-        title={order.outbound_no}
-        subtitle={`${order.client} | ${t("ETA")} ${order.eta_date}`}
+        title={currentOrder.outbound_no}
+        subtitle={`${currentOrder.client} | ${t("ETA")} ${currentOrder.eta_date}`}
         rightSlot={
           <div className="flex items-center gap-2">
-            <StatusBadge status={order.status} />
+            <StatusBadge status={currentOrder.status} />
             {currentAction && (
               <Button onClick={openActionConfirm} disabled={loading}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t(actionLabel(currentAction))}
@@ -254,7 +328,7 @@ export function OutboundDetailView({
               <CardTitle>{t("Client")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm font-medium">{order.client}</p>
+              <p className="text-sm font-medium">{currentOrder.client}</p>
             </CardContent>
           </Card>
           <Card>
@@ -262,7 +336,7 @@ export function OutboundDetailView({
               <CardTitle>{t("Shipping Address")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm">{order.ship_to}</p>
+              <p className="text-sm">{currentOrder.ship_to}</p>
             </CardContent>
           </Card>
           <Card>
@@ -270,8 +344,8 @@ export function OutboundDetailView({
               <CardTitle>{t("Summary")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <p className="text-sm">{t(order.summary)}</p>
-              <p className="text-sm text-slate-500">{t(order.memo)}</p>
+              <p className="text-sm">{t(currentOrder.summary)}</p>
+              <p className="text-sm text-slate-500">{t(currentOrder.memo)}</p>
               <div className="flex flex-wrap gap-2 pt-1">
                 <Badge variant={shortageItems.length > 0 ? "danger" : "success"}>
                   {shortageItems.length > 0
@@ -296,7 +370,7 @@ export function OutboundDetailView({
         </TabsContent>
 
         <TabsContent value="items">
-          <DataTable rows={order.items} columns={itemColumns} emptyText={t("No items available.")} />
+          <DataTable rows={currentOrder.items} columns={itemColumns} emptyText={t("No items available.")} />
           {reallocationItems.length > 0 && (
             <div className="mt-4 rounded-xl border bg-amber-50 p-4">
               <p className="text-sm font-medium text-amber-900">{t("Reallocation Suggestions")}</p>
@@ -342,7 +416,7 @@ export function OutboundDetailView({
           <div className="mb-4 flex justify-end">
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="secondary" disabled={!order.boxes_supported} title={!order.boxes_supported ? t("Box API is unavailable in current backend.") : undefined}>
+                <Button variant="secondary" disabled={!currentOrder.boxes_supported} title={!currentOrder.boxes_supported ? t("Box API is unavailable in current backend.") : undefined}>
                   <PackagePlus className="h-4 w-4" />
                   {t("Add Box")}
                 </Button>
@@ -377,7 +451,7 @@ export function OutboundDetailView({
             </Dialog>
           </div>
           <DataTable
-            rows={order.boxes}
+            rows={currentOrder.boxes}
             columns={[
               { key: "box_no", label: "Box No", render: (row) => row.box_no },
               { key: "courier", label: "Courier", render: (row) => row.courier },
@@ -391,7 +465,7 @@ export function OutboundDetailView({
             ]}
             emptyText="No boxes packed yet."
           />
-          {!order.boxes_supported && (
+          {!currentOrder.boxes_supported && (
             <p className="mt-3 text-sm text-amber-700">
               {t("Box API is unavailable on current backend, so box create/update is disabled.")}
             </p>
@@ -399,15 +473,15 @@ export function OutboundDetailView({
         </TabsContent>
 
         <TabsContent value="timeline">
-          {order.timeline.length === 0 ? (
+          {currentOrder.timeline.length === 0 ? (
             <div className="rounded-xl border bg-white px-6 py-8 text-center text-sm text-slate-500">{t("No timeline logs.")}</div>
           ) : (
             <div className="rounded-xl border bg-white px-6 py-2">
-              {order.timeline.map((log, idx) => (
+              {currentOrder.timeline.map((log, idx) => (
                 <div key={log.id} className="relative flex gap-4 py-4">
                   <div className="flex w-5 flex-col items-center">
                     <span className="mt-1 h-2 w-2 rounded-full bg-slate-500" />
-                    {idx < order.timeline.length - 1 && <span className="mt-1 h-full w-px bg-slate-200" />}
+                    {idx < currentOrder.timeline.length - 1 && <span className="mt-1 h-full w-px bg-slate-200" />}
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{t(log.title)}</p>
