@@ -9,13 +9,18 @@ SET @admin_user_id := (SELECT id FROM users WHERE email='admin@example.com' AND 
 SET @manager_email := (SELECT email FROM users WHERE email='manager101@example.com' AND deleted_at IS NULL LIMIT 1);
 SET @svc_box_id := (SELECT id FROM service_catalog WHERE service_code='SV_OUTBOUND_BOX' AND deleted_at IS NULL LIMIT 1);
 SET @svc_order_id := (SELECT id FROM service_catalog WHERE service_code='SV_OUTBOUND_ORDER' AND deleted_at IS NULL LIMIT 1);
+SET @seed_month_start := DATE_SUB(CURDATE(), INTERVAL DAY(CURDATE()) - 1 DAY);
+SET @seed_month := DATE_FORMAT(@seed_month_start, '%Y-%m');
+SET @seed_yyyymm := DATE_FORMAT(@seed_month_start, '%Y%m');
+SET @seed_month_end := LAST_DAY(@seed_month_start);
+SET @seed_due_date := DATE_ADD(@seed_month_end, INTERVAL 10 DAY);
 
 -- FX rate (3월 정산 기준)
 INSERT INTO exchange_rates (
   id, base_currency, quote_currency, rate, rate_date, status, entered_by, activated_by, activated_at, created_at, updated_at, deleted_at
 )
 VALUES (
-  700701, 'THB', 'KRW', 39.250000, '2026-03-31', 'active', @admin_user_id, @admin_user_id, NOW(), NOW(), NOW(), NULL
+  700701, 'THB', 'KRW', 39.250000, @seed_month_end, 'active', @admin_user_id, @admin_user_id, NOW(), NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
   rate=VALUES(rate),
@@ -32,7 +37,7 @@ INSERT INTO settlement_batches (
   closed_at, closed_by, created_by, created_at, updated_at, deleted_at
 )
 VALUES (
-  700501, @client_id, '2026-03', 700701, 'reviewed', 1,
+  700501, @client_id, @seed_month, 700701, 'reviewed', 1,
   0, 0, 0,
   NULL, NULL, @admin_user_id, NOW(), NOW(), NULL
 )
@@ -113,7 +118,7 @@ WHERE sb.id = 700501;
 
 -- Invoice sequence + invoice
 INSERT INTO invoice_sequences (client_id, yyyymm, last_seq, created_at, updated_at, deleted_at)
-VALUES (@client_id, '202603', 1, NOW(), NOW(), NULL)
+VALUES (@client_id, @seed_yyyymm, 1, NOW(), NOW(), NULL)
 ON DUPLICATE KEY UPDATE
   last_seq = GREATEST(last_seq, 1),
   deleted_at=NULL,
@@ -125,8 +130,8 @@ INSERT INTO invoices (
   sent_at, created_by, created_at, updated_at, deleted_at
 )
 VALUES (
-  700601, 700501, @client_id, 'INV-202603-C101-001', 'sent',
-  '2026-03-31', '2026-04-10', @manager_email, 'KRW',
+  700601, 700501, @client_id, CONCAT('INV-', @seed_yyyymm, '-C101-001'), 'sent',
+  @seed_month_end, @seed_due_date, @manager_email, 'KRW',
   (SELECT total_krw FROM settlement_batches WHERE id=700501),
   NOW(), @admin_user_id, NOW(), NOW(), NULL
 )

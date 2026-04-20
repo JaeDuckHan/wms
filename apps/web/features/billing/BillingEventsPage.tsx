@@ -21,9 +21,6 @@ function currentYear() {
   return String(new Date().getFullYear());
 }
 
-function currentMonth2Digits() {
-  return String(new Date().getMonth() + 1).padStart(2, "0");
-}
 export function BillingEventsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
@@ -34,7 +31,7 @@ export function BillingEventsPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const [year, setYear] = useState(currentYear());
-  const [month, setMonth] = useState(currentMonth2Digits());
+  const [month, setMonth] = useState("");
   const [clientId, setClientId] = useState("");
   const [status, setStatus] = useState("");
   const [serviceCode, setServiceCode] = useState("");
@@ -139,7 +136,7 @@ export function BillingEventsPage() {
           <Input placeholder="Service code" value={serviceCode} onChange={(e) => setServiceCode(e.target.value.toUpperCase())} />
           <Button variant="secondary" onClick={() => void reload()}>Search</Button>
         </div>
-        <div className="mt-2 text-xs text-slate-500">기본 조회는 당월입니다. 년도 선택 + 월 비움이면 해당년도 전체를 조회합니다.</div>
+        <div className="mt-2 text-xs text-slate-500">기본 조회는 올해 전체입니다. 특정 월만 보려면 월을 함께 선택합니다.</div>
         <div className="mt-3 flex flex-wrap gap-2">
           <a href={csvHref} className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50">{t("Export CSV")}</a>
           {isAdmin && (

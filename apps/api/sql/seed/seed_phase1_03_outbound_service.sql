@@ -16,14 +16,22 @@ SET @product_id := (SELECT id FROM products WHERE client_id=@client_id AND barco
 SET @lot_id := (SELECT id FROM product_lots WHERE product_id=@product_id AND lot_no='LOT-501' AND deleted_at IS NULL LIMIT 1);
 SET @svc_box_id := (SELECT id FROM service_catalog WHERE service_code='SV_OUTBOUND_BOX' AND deleted_at IS NULL LIMIT 1);
 SET @svc_order_id := (SELECT id FROM service_catalog WHERE service_code='SV_OUTBOUND_ORDER' AND deleted_at IS NULL LIMIT 1);
+SET @seed_month_start := DATE_SUB(CURDATE(), INTERVAL DAY(CURDATE()) - 1 DAY);
+SET @seed_ship_date := DATE_ADD(@seed_month_start, INTERVAL 9 DAY);
+SET @seed_packed_date := DATE_ADD(@seed_month_start, INTERVAL 10 DAY);
+SET @seed_ship_packed_at := CONCAT(DATE_FORMAT(@seed_ship_date, '%Y-%m-%d'), ' 09:00:00');
+SET @seed_ship_shipped_at := CONCAT(DATE_FORMAT(@seed_ship_date, '%Y-%m-%d'), ' 11:30:00');
+SET @seed_service_event_1_at := CONCAT(DATE_FORMAT(@seed_ship_date, '%Y-%m-%d'), ' 11:31:00');
+SET @seed_service_event_2_at := CONCAT(DATE_FORMAT(@seed_ship_date, '%Y-%m-%d'), ' 11:31:10');
+SET @seed_packed_at := CONCAT(DATE_FORMAT(@seed_packed_date, '%Y-%m-%d'), ' 16:20:00');
 
 SET @box_unit_krw := COALESCE((
   SELECT pp.unit_price
   FROM price_policies pp
   WHERE pp.client_id=@client_id
     AND pp.service_id=@svc_box_id
-    AND pp.effective_from <= '2026-03-10'
-    AND (pp.effective_to IS NULL OR pp.effective_to >= '2026-03-10')
+    AND pp.effective_from <= @seed_ship_date
+    AND (pp.effective_to IS NULL OR pp.effective_to >= @seed_ship_date)
     AND pp.deleted_at IS NULL
   ORDER BY pp.effective_from DESC
   LIMIT 1
@@ -34,8 +42,8 @@ SET @order_unit_krw := COALESCE((
   FROM price_policies pp
   WHERE pp.client_id=@client_id
     AND pp.service_id=@svc_order_id
-    AND pp.effective_from <= '2026-03-10'
-    AND (pp.effective_to IS NULL OR pp.effective_to >= '2026-03-10')
+    AND pp.effective_from <= @seed_ship_date
+    AND (pp.effective_to IS NULL OR pp.effective_to >= @seed_ship_date)
     AND pp.deleted_at IS NULL
   ORDER BY pp.effective_from DESC
   LIMIT 1
@@ -47,8 +55,8 @@ INSERT INTO outbound_orders (
   status, packed_at, shipped_at, created_by, created_at, updated_at, deleted_at
 )
 VALUES (
-  700201, 'OUT-20260310-001', @client_id, @warehouse_id, '2026-03-10', 'COUPANG', 'ORD-20260310-001', 'TRK-20260310-001',
-  'shipped', '2026-03-10 09:00:00', '2026-03-10 11:30:00', @manager_user_id, NOW(), NOW(), NULL
+  700201, 'OUT-20260310-001', @client_id, @warehouse_id, @seed_ship_date, 'COUPANG', 'ORD-20260310-001', 'TRK-20260310-001',
+  'shipped', @seed_ship_packed_at, @seed_ship_shipped_at, @manager_user_id, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
   status=VALUES(status),
@@ -82,7 +90,7 @@ INSERT INTO stock_transactions (
 )
 VALUES (
   700303, @client_id, @product_id, @lot_id, @warehouse_id, @loc_301_id,
-  'outbound_ship', '2026-03-10 11:30:00', 0, 70, 'outbound_item', 700211,
+  'outbound_ship', @seed_ship_shipped_at, 0, 70, 'outbound_item', 700211,
   'OUT-20260310-001 shipped', @manager_user_id, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
@@ -101,12 +109,12 @@ INSERT INTO service_events (
 VALUES
   (
     700401, @client_id, @svc_box_id, 700201, 700303,
-    '2026-03-10 11:31:00', 'outbound_shipped', 'BOX', 0, 7,
+    @seed_service_event_1_at, 'outbound_shipped', 'BOX', 0, 7,
     @box_unit_krw, ROUND(7 * @box_unit_krw, 4), 'KRW', '박스 과금 이벤트', NOW(), NOW(), NULL
   ),
   (
     700402, @client_id, @svc_order_id, 700201, 700303,
-    '2026-03-10 11:31:10', 'outbound_shipped', 'ORDER', 1, 0,
+    @seed_service_event_2_at, 'outbound_shipped', 'ORDER', 1, 0,
     @order_unit_krw, ROUND(1 * @order_unit_krw, 4), 'KRW', '오더 처리 과금 이벤트', NOW(), NOW(), NULL
   )
 ON DUPLICATE KEY UPDATE
@@ -127,8 +135,8 @@ INSERT INTO outbound_orders (
   status, packed_at, shipped_at, created_by, created_at, updated_at, deleted_at
 )
 VALUES (
-  700202, 'OUT-20260311-001', @client_id, @warehouse_id, '2026-03-11', 'NAVER', 'ORD-20260311-001', NULL,
-  'packed', '2026-03-11 16:20:00', NULL, @manager_user_id, NOW(), NOW(), NULL
+  700202, 'OUT-20260311-001', @client_id, @warehouse_id, @seed_packed_date, 'NAVER', 'ORD-20260311-001', NULL,
+  'packed', @seed_packed_at, NULL, @manager_user_id, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
   status=VALUES(status),

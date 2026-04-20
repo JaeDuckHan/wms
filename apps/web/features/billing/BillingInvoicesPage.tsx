@@ -34,9 +34,9 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function startOfYearIso() {
+function startOfYearsAgoIso(yearsAgo = 3) {
   const d = new Date();
-  return `${d.getFullYear()}-01-01`;
+  return `${d.getFullYear() - yearsAgo}-01-01`;
 }
 
 function normalizeDate(value: string) {
@@ -60,7 +60,7 @@ export function BillingInvoicesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [clientIdInput, setClientIdInput] = useState("");
-  const [fromDateInput, setFromDateInput] = useState(startOfYearIso());
+  const [fromDateInput, setFromDateInput] = useState(startOfYearsAgoIso());
   const [toDateInput, setToDateInput] = useState(todayIso());
   const [status, setStatus] = useState("");
 

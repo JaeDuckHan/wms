@@ -14,14 +14,19 @@ SET @loc_301_id := (
 SET @manager_user_id := (SELECT id FROM users WHERE email='manager101@example.com' AND deleted_at IS NULL LIMIT 1);
 SET @product_id := (SELECT id FROM products WHERE client_id=@client_id AND barcode_full='FULL401' AND deleted_at IS NULL LIMIT 1);
 SET @lot_id := (SELECT id FROM product_lots WHERE product_id=@product_id AND lot_no='LOT-501' AND deleted_at IS NULL LIMIT 1);
+SET @seed_month_start := DATE_SUB(CURDATE(), INTERVAL DAY(CURDATE()) - 1 DAY);
+SET @seed_inbound_1_date := @seed_month_start;
+SET @seed_inbound_2_date := DATE_ADD(@seed_month_start, INTERVAL 2 DAY);
+SET @seed_inbound_1_received_at := CONCAT(DATE_FORMAT(@seed_inbound_1_date, '%Y-%m-%d'), ' 10:30:00');
+SET @seed_inbound_2_received_at := CONCAT(DATE_FORMAT(@seed_inbound_2_date, '%Y-%m-%d'), ' 15:00:00');
 
 -- Inbound order #1
 INSERT INTO inbound_orders (
   id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at, deleted_at
 )
 VALUES (
-  700101, 'INB-20260301-001', @client_id, @warehouse_id, '2026-03-01', 'received',
-  '3월 1차 입고(실데이터 유사 샘플)', @manager_user_id, '2026-03-01 10:30:00', NOW(), NOW(), NULL
+  700101, 'INB-20260301-001', @client_id, @warehouse_id, @seed_inbound_1_date, 'received',
+  '3월 1차 입고(실데이터 유사 샘플)', @manager_user_id, @seed_inbound_1_received_at, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
   status=VALUES(status),
@@ -52,7 +57,7 @@ INSERT INTO stock_transactions (
 )
 VALUES (
   700301, @client_id, @product_id, @lot_id, @warehouse_id, @loc_301_id,
-  'inbound_receive', '2026-03-01 10:30:00', 120, 0, 'inbound_item', 700111,
+  'inbound_receive', @seed_inbound_1_received_at, 120, 0, 'inbound_item', 700111,
   'INB-20260301-001 수령 완료', @manager_user_id, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
@@ -68,8 +73,8 @@ INSERT INTO inbound_orders (
   id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at, deleted_at
 )
 VALUES (
-  700102, 'INB-20260303-001', @client_id, @warehouse_id, '2026-03-03', 'received',
-  '3월 2차 입고(보충)', @manager_user_id, '2026-03-03 15:00:00', NOW(), NOW(), NULL
+  700102, 'INB-20260303-001', @client_id, @warehouse_id, @seed_inbound_2_date, 'received',
+  '3월 2차 입고(보충)', @manager_user_id, @seed_inbound_2_received_at, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
   status=VALUES(status),
@@ -100,7 +105,7 @@ INSERT INTO stock_transactions (
 )
 VALUES (
   700302, @client_id, @product_id, @lot_id, @warehouse_id, @loc_301_id,
-  'inbound_receive', '2026-03-03 15:00:00', 80, 0, 'inbound_item', 700112,
+  'inbound_receive', @seed_inbound_2_received_at, 80, 0, 'inbound_item', 700112,
   'INB-20260303-001 수령 완료', @manager_user_id, NOW(), NOW(), NULL
 )
 ON DUPLICATE KEY UPDATE
