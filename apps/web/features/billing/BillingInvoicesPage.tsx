@@ -289,14 +289,14 @@ export function BillingInvoicesPage() {
 
       <div className="mb-4 rounded-xl border bg-white p-4">
         <div className="grid gap-3 md:grid-cols-6">
-          <Input list="billing-invoice-client-options" type="number" placeholder="Client ID (empty=all)" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)} />
-          <datalist id="billing-invoice-client-options">
+          <select className="h-9 rounded-md border px-3 text-sm" value={clientIdInput} onChange={(e) => setClientIdInput(e.target.value)}>
+            <option value="">{t("All clients")}</option>
             {clients.map((item) => (
-              <option key={item.id} value={item.id} label={`${item.client_code} | ${item.name}`}>
-                {item.id} | {item.client_code} | {item.name}
+              <option key={item.id} value={item.id}>
+                {item.client_code} | {item.name}
               </option>
             ))}
-          </datalist>
+          </select>
           <Input type="date" value={fromDateInput} onChange={(e) => setFromDateInput(e.target.value)} />
           <Input type="date" value={toDateInput} onChange={(e) => setToDateInput(e.target.value)} />
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -410,7 +410,7 @@ export function BillingInvoicesPage() {
             emptyText={loading ? t("Loading...") : t("No invoices")}
             columns={[
               { key: "invoice_no", label: "Invoice No", render: (row) => <Link href={`/billing/${row.id}`} className="font-medium hover:underline">{row.invoice_no}</Link> },
-              { key: "client", label: "Client", render: (row) => `${row.client_code} (${row.client_id})` },
+              { key: "client", label: "Client", render: (row) => `${row.client_code} | ${row.name_kr}` },
               { key: "date", label: "Date", render: (row) => row.invoice_date },
               { key: "fx", label: "FX", render: (row) => Number(row.fx_rate_thbkrw).toFixed(4) },
               { key: "subtotal_thb", label: t("Original THB"), render: (row) => Number(row.subtotal_thb ?? 0).toLocaleString() },

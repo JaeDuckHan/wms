@@ -12,6 +12,7 @@ import { BillingTabs } from "@/components/billing/BillingTabs";
 import {
   billingEventsCsvUrl,
   listBillingEvents,
+  listServiceRates,
   markBillingEventsPending,
   type BillingEvent,
 } from "@/features/billing/api";
@@ -28,6 +29,7 @@ export function BillingEventsPage() {
   const { isAdmin, canAccessBillingEvents, ready } = useCurrentUser();
   const [rows, setRows] = useState<BillingEvent[]>([]);
   const [clients, setClients] = useState<Array<{ id: string; client_code: string; name: string }>>([]);
+  const [serviceLabels, setServiceLabels] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -74,6 +76,13 @@ export function BillingEventsPage() {
     void listClients()
       .then((data) => setClients(data.map((item) => ({ id: item.id, client_code: item.client_code, name: item.name }))))
       .catch(() => setClients([]));
+  }, [ready, canAccessBillingEvents]);
+
+  useEffect(() => {
+    if (!ready || !canAccessBillingEvents) return;
+    void listServiceRates()
+      .then((data) => setServiceLabels(new Map(data.map((item) => [item.service_code, `${item.service_code} | ${item.service_name}`]))))
+      .catch(() => setServiceLabels(new Map()));
   }, [ready, canAccessBillingEvents]);
 
   const accessDenied = ready && !canAccessBillingEvents;
@@ -140,14 +149,14 @@ export function BillingEventsPage() {
               );
             })}
           </select>
-          <Input list="billing-event-client-options" placeholder="Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
-          <datalist id="billing-event-client-options">
+          <select className="h-9 rounded-md border px-3 text-sm" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            <option value="">{t("All clients")}</option>
             {clients.map((item) => (
-              <option key={item.id} value={item.id} label={`${item.client_code} | ${item.name}`}>
-                {item.id} | {item.client_code} | {item.name}
+              <option key={item.id} value={item.id}>
+                {item.client_code} | {item.name}
               </option>
             ))}
-          </datalist>
+          </select>
           <select className="h-9 rounded-md border px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">{t("All status")}</option>
             <option value="PENDING">{t("PENDING")}</option>
@@ -189,8 +198,8 @@ export function BillingEventsPage() {
                   ),
               },
               { key: "event_date", label: "Event Date", render: (row) => row.event_date.slice(0, 10) },
-              { key: "client", label: "Client", render: (row) => `${row.client_code} (${row.client_id})` },
-              { key: "service_code", label: "Service", render: (row) => row.service_code },
+              { key: "client", label: "Client", render: (row) => `${row.client_code} | ${row.name_kr}` },
+              { key: "service_code", label: "Service", render: (row) => serviceLabels.get(row.service_code) ?? row.service_code },
               { key: "qty", label: "Qty", render: (row) => Number(row.qty).toLocaleString() },
               { key: "amount_thb", label: "Amount THB", render: (row) => (row.amount_thb == null ? "-" : Number(row.amount_thb).toLocaleString()) },
               { key: "fx_rate_thbkrw", label: "FX", render: (row) => (row.fx_rate_thbkrw == null ? "-" : Number(row.fx_rate_thbkrw).toFixed(4)) },

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +14,12 @@ import {
   createClientContractRate,
   deleteClientContractRate,
   listClientContractRates,
+  listServiceRates,
   type ClientContractRate,
+  type ServiceRate,
   updateClientContractRate,
 } from "@/features/billing/api";
+import { listClients } from "@/features/settings/clients/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 const blank: Omit<ClientContractRate, "id"> = {
   client_id: 1,
@@ -35,12 +38,21 @@ export function ClientContractRatesSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<Omit<ClientContractRate, "id">>(blank);
+  const [clients, setClients] = useState<Array<{ id: string; client_code: string; name: string }>>([]);
+  const [serviceRates, setServiceRates] = useState<ServiceRate[]>([]);
 
   const reload = async () => {
     setLoading(true);
     setError(null);
     try {
-      setRows(await listClientContractRates());
+      const [rateRows, clientRows, serviceRows] = await Promise.all([
+        listClientContractRates(),
+        listClients(),
+        listServiceRates(),
+      ]);
+      setRows(rateRows);
+      setClients(clientRows.map((item) => ({ id: item.id, client_code: item.client_code, name: item.name })));
+      setServiceRates(serviceRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("Failed to load contract rates."));
     } finally {
@@ -54,6 +66,14 @@ export function ClientContractRatesSettingsPage() {
   }, [ready, canManageBillingSettings]);
 
   const accessDenied = ready && !canManageBillingSettings;
+  const clientLabelById = useMemo(
+    () => new Map(clients.map((item) => [Number(item.id), `${item.client_code} | ${item.name}`])),
+    [clients]
+  );
+  const serviceLabelByCode = useMemo(
+    () => new Map(serviceRates.map((item) => [item.service_code, `${item.service_code} | ${item.service_name}`])),
+    [serviceRates]
+  );
 
   const startCreate = () => {
     setEditingId(null);
@@ -126,8 +146,8 @@ export function ClientContractRatesSettingsPage() {
               rows={rows}
               emptyText={loading ? t("Loading...") : t("No contract rates")}
               columns={[
-                { key: "client_id", label: "Client ID", render: (row) => row.client_id },
-                { key: "service_code", label: "Service", render: (row) => <span className="font-medium">{row.service_code}</span> },
+                { key: "client_id", label: "Client", render: (row) => clientLabelById.get(row.client_id) ?? row.client_id },
+                { key: "service_code", label: "Service", render: (row) => <span className="font-medium">{serviceLabelByCode.get(row.service_code) ?? row.service_code}</span> },
                 { key: "custom_rate", label: "Rate", render: (row) => `${row.currency} ${Number(row.custom_rate).toLocaleString()}` },
                 { key: "effective_date", label: "Effective", render: (row) => row.effective_date?.slice(0, 10) },
                 {
@@ -150,8 +170,22 @@ export function ClientContractRatesSettingsPage() {
             <h3 className="text-sm font-semibold">{editingId ? t("Edit contract rate") : t("New contract rate")}</h3>
             {editingId && <Button size="sm" variant="ghost" onClick={startCreate}>Reset</Button>}
           </div>
-          <Input type="number" placeholder="Client ID" value={form.client_id} onChange={(e) => setForm((p) => ({ ...p, client_id: Number(e.target.value || 0) }))} />
-          <Input placeholder={t("Service code")} value={form.service_code} onChange={(e) => setForm((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))} />
+          <select className="h-9 rounded-md border px-3 text-sm" value={String(form.client_id)} onChange={(e) => setForm((p) => ({ ...p, client_id: Number(e.target.value || 0) }))}>
+            <option value="">{t("Select client")}</option>
+            {clients.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.client_code} | {item.name}
+              </option>
+            ))}
+          </select>
+          <select className="h-9 rounded-md border px-3 text-sm" value={form.service_code} onChange={(e) => setForm((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))}>
+            <option value="">{t("Select service")}</option>
+            {serviceRates.map((item) => (
+              <option key={item.id} value={item.service_code}>
+                {item.service_code} | {item.service_name}
+              </option>
+            ))}
+          </select>
           <Input type="number" placeholder={t("Custom rate")} value={form.custom_rate} onChange={(e) => setForm((p) => ({ ...p, custom_rate: Number(e.target.value || 0) }))} />
           <select className="h-9 rounded-md border px-3 text-sm" value={form.currency} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value as ClientContractRate["currency"] }))}>
             <option value="KRW">KRW</option>

@@ -17,6 +17,8 @@ import {
   type StorageRateSetting,
   updateStorageRateSetting,
 } from "@/features/billing/api";
+import { listClients } from "@/features/settings/clients/api";
+import { listWarehouses } from "@/features/settings/warehouses/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
 const blank: Omit<StorageRateSetting, "id"> = {
@@ -48,6 +50,8 @@ export function StorageRatesSettingsPage() {
   const [warehouseInput, setWarehouseInput] = useState("");
   const [clientInput, setClientInput] = useState("");
   const [form, setForm] = useState<Omit<StorageRateSetting, "id">>(blank);
+  const [clients, setClients] = useState<Array<{ id: string; client_code: string; name: string }>>([]);
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; warehouse_code: string; name: string }>>([]);
 
   const counts = useMemo(() => {
     const active = rows.filter((row) => row.status === "active").length;
@@ -58,7 +62,14 @@ export function StorageRatesSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      setRows(await listStorageRateSettings());
+      const [rateRows, clientRows, warehouseRows] = await Promise.all([
+        listStorageRateSettings(),
+        listClients(),
+        listWarehouses(),
+      ]);
+      setRows(rateRows);
+      setClients(clientRows.map((item) => ({ id: item.id, client_code: item.client_code, name: item.name })));
+      setWarehouses(warehouseRows.map((item) => ({ id: item.id, warehouse_code: item.warehouse_code, name: item.name })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load storage rates.");
     } finally {
@@ -72,6 +83,14 @@ export function StorageRatesSettingsPage() {
   }, [ready, canManageBillingSettings]);
 
   const accessDenied = ready && !canManageBillingSettings;
+  const clientLabelById = useMemo(
+    () => new Map(clients.map((item) => [Number(item.id), `${item.client_code} | ${item.name}`])),
+    [clients]
+  );
+  const warehouseLabelById = useMemo(
+    () => new Map(warehouses.map((item) => [Number(item.id), `${item.warehouse_code} | ${item.name}`])),
+    [warehouses]
+  );
 
   const startCreate = () => {
     setEditingId(null);
@@ -159,8 +178,8 @@ export function StorageRatesSettingsPage() {
               rows={rows}
               emptyText={loading ? "Loading..." : "No storage rates"}
               columns={[
-                { key: "warehouse_id", label: "Warehouse", render: (row) => row.warehouse_id ?? "GLOBAL" },
-                { key: "client_id", label: "Client", render: (row) => row.client_id ?? "GLOBAL" },
+                { key: "warehouse_id", label: "Warehouse", render: (row) => (row.warehouse_id == null ? "GLOBAL" : warehouseLabelById.get(row.warehouse_id) ?? row.warehouse_id) },
+                { key: "client_id", label: "Client", render: (row) => (row.client_id == null ? "GLOBAL" : clientLabelById.get(row.client_id) ?? row.client_id) },
                 { key: "rate_cbm", label: "Rate CBM", render: (row) => Number(row.rate_cbm).toLocaleString() },
                 { key: "rate_pallet", label: "Rate Pallet", render: (row) => Number(row.rate_pallet).toLocaleString() },
                 { key: "currency", label: "Currency", render: (row) => row.currency },
@@ -186,8 +205,22 @@ export function StorageRatesSettingsPage() {
             <h3 className="text-sm font-semibold">{editingId ? "Edit storage rate" : "New storage rate"}</h3>
             {editingId && <Button size="sm" variant="ghost" onClick={startCreate}>Reset</Button>}
           </div>
-          <Input placeholder="Warehouse ID (blank = global/client scope)" value={warehouseInput} onChange={(e) => setWarehouseInput(e.target.value.replace(/[^\d]/g, ""))} />
-          <Input placeholder="Client ID (blank = global/warehouse scope)" value={clientInput} onChange={(e) => setClientInput(e.target.value.replace(/[^\d]/g, ""))} />
+          <select className="h-9 rounded-md border px-3 text-sm" value={warehouseInput} onChange={(e) => setWarehouseInput(e.target.value)}>
+            <option value="">GLOBAL / All warehouses</option>
+            {warehouses.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.warehouse_code} | {item.name}
+              </option>
+            ))}
+          </select>
+          <select className="h-9 rounded-md border px-3 text-sm" value={clientInput} onChange={(e) => setClientInput(e.target.value)}>
+            <option value="">GLOBAL / All clients</option>
+            {clients.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.client_code} | {item.name}
+              </option>
+            ))}
+          </select>
           <Input type="number" placeholder="rate_cbm" value={form.rate_cbm} onChange={(e) => setForm((p) => ({ ...p, rate_cbm: Number(e.target.value || 0) }))} />
           <Input type="number" placeholder="rate_pallet" value={form.rate_pallet} onChange={(e) => setForm((p) => ({ ...p, rate_pallet: Number(e.target.value || 0) }))} />
           <Input placeholder="currency" value={form.currency} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value.toUpperCase() }))} />

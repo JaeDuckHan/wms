@@ -380,19 +380,18 @@ export function ProductsSettingsPage() {
           <div className="space-y-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">{t("Client Code")} / Company</label>
-              <Input
-                list="client-code-options"
+              <select
+                className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
                 value={form.client_code}
                 onChange={(e) => setForm((prev) => ({ ...prev, client_code: e.target.value.toUpperCase() }))}
-                placeholder="예: C101"
-              />
-              <datalist id="client-code-options">
+              >
+                <option value="">{t("Select client")}</option>
                 {clients.map((item) => (
-                  <option key={item.id} value={item.client_code} label={`${item.client_code} | ${item.name}`}>
+                  <option key={item.id} value={item.client_code}>
                     {item.client_code} | {item.name}
                   </option>
                 ))}
-              </datalist>
+              </select>
               <p className="text-xs text-slate-500">
                 {selectedClient
                   ? `${selectedClient.client_code} | ${selectedClient.name}`

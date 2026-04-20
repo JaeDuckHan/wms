@@ -105,7 +105,7 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
       <PageHeader
         breadcrumbs={[{ label: "Billing" }, { label: "Invoices" }, { label: invoice?.invoice_no ?? String(invoiceId) }]}
         title={invoice?.invoice_no ?? t("Invoice Detail")}
-        subtitle={invoice ? `${t("Client")} ${invoice.client_code} | ${invoice.invoice_month}` : t("Loading...")}
+        subtitle={invoice ? `${t("Client")} ${invoice.client_code} | ${invoice.name_kr} | ${invoice.invoice_month}` : t("Loading...")}
         rightSlot={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void runExport()}>{t("Export Invoice")}</Button>
@@ -136,7 +136,7 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
           rows={items}
           emptyText={loading ? t("Loading...") : t("No items")}
           columns={[
-            { key: "service_code", label: "Code", render: (row) => row.service_code },
+            { key: "service_code", label: "Code", render: (row) => `${row.service_code} | ${row.description}` },
             { key: "description", label: "Description", render: (row) => row.description },
             { key: "qty", label: "Qty", render: (row) => Number(row.qty).toLocaleString() },
             { key: "unit_price_krw", label: "Unit KRW", render: (row) => `${Number(row.unit_price_krw).toLocaleString()} (TRUNC100)` },
