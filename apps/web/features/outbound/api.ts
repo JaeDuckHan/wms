@@ -540,7 +540,7 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
 
     const [clients, rawItems, products, lots, balances] = await Promise.all([
       requestJsonOrDefault<RawClient[]>("/clients", [], options),
-      requestJson<RawOutboundItem[]>(`/outbound-items?outbound_order_id=${rawOrder.id}`, undefined, options),
+      requestJsonOrDefault<RawOutboundItem[]>(`/outbound-items?outbound_order_id=${rawOrder.id}`, [], options),
       requestJsonOrDefault<RawProduct[]>("/products", [], options),
       requestJsonOrDefault<RawLot[]>("/product-lots", [], options),
       requestJsonOrDefault<RawStockBalance[]>(
@@ -549,18 +549,11 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
         options
       ),
     ]);
-    let suggestions: RawAllocationSuggestion[] = [];
-    try {
-      suggestions = await requestJson<RawAllocationSuggestion[]>(
-        `/outbound-orders/${rawOrder.id}/allocation-suggestions`,
-        undefined,
-        options
-      );
-    } catch (error) {
-      if (!(error instanceof ApiError && error.status === 404)) {
-        throw error;
-      }
-    }
+    const suggestions = await requestJsonOrDefault<RawAllocationSuggestion[]>(
+      `/outbound-orders/${rawOrder.id}/allocation-suggestions`,
+      [],
+      options
+    );
     let rawBoxes: RawOutboundBox[] = [];
     let boxesSupported = true;
     let rawLogs: RawOutboundLog[] = [];
@@ -571,14 +564,10 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
       if (error instanceof ApiError && error.status === 404) {
         boxesSupported = false;
       } else {
-        throw error;
+        boxesSupported = false;
       }
     }
-    try {
-      rawLogs = await requestJson<RawOutboundLog[]>(`/outbound-orders/${rawOrder.id}/logs`, undefined, options);
-    } catch (error) {
-      if (!(error instanceof ApiError && error.status === 404)) throw error;
-    }
+    rawLogs = await requestJsonOrDefault<RawOutboundLog[]>(`/outbound-orders/${rawOrder.id}/logs`, [], options);
 
     const items = mapItems(rawItems, products, lots, balances, rawOrder.status, suggestions);
     const boxes = mapBoxes(rawBoxes, rawOrder.tracking_no);
