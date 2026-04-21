@@ -1,6 +1,101 @@
 ﻿import { PageHeader } from "@/components/ui/PageHeader";
 
-export default function GuidePage() {
+import { cookies } from "next/headers";
+import { AUTH_COOKIE_KEY, decodeJwtPayload } from "@/lib/auth";
+import { isClientViewer } from "@/lib/authz";
+
+export default async function GuidePage() {
+  const token = (await cookies()).get(AUTH_COOKIE_KEY)?.value ?? "";
+  const payload = decodeJwtPayload<{ role?: string }>(token);
+
+  if (isClientViewer(payload?.role)) {
+    return <CustomerGuidePage />;
+  }
+
+  return <OperatorGuidePage />;
+}
+
+function CustomerGuidePage() {
+  return (
+    <section>
+      <PageHeader
+        breadcrumbs={[{ label: "Customer Portal" }, { label: "User Guide" }]}
+        title="고객사 사용 가이드"
+        subtitle="고객사 계정은 자기 회사의 출고, 재고, 인보이스, 대시보드를 조회하는 읽기 전용 포털입니다."
+      />
+
+      <div className="rounded-xl border bg-white p-6 text-sm text-slate-700">
+        <h2 className="text-base font-semibold text-slate-900">1. 고객사 계정으로 할 수 있는 일</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>`Outbounds`: 우리 회사 출고 오더 상태, 출고 품목, 송장/박스 정보, 부족 여부를 확인합니다.</li>
+          <li>`Inventory`: 우리 회사 상품의 현재고, 예약수량, 출고 가능수량, 거래 이력을 확인합니다.</li>
+          <li>`Billing`: 우리 회사 인보이스와 상세 금액을 확인합니다.</li>
+          <li>`Dashboard`: 보관 추이, 보관 요금 미리보기, 창고 적재율을 조회하고 CSV/복사/PNG로 공유 자료를 추출합니다.</li>
+        </ul>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">2. 고객사 계정으로 할 수 없는 일</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>`Inbounds`와 `Settings` 메뉴는 보이지 않습니다.</li>
+          <li>`Billing Events` 탭은 보이지 않고, `Invoices`만 조회할 수 있습니다.</li>
+          <li>입고 처리, 출고 상태 변경, 박스 추가, 인보이스 생성/발행/수납 처리는 할 수 없습니다.</li>
+          <li>고객사, 상품, 창고, 요율 같은 기준정보를 수정할 수 없습니다.</li>
+        </ul>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">3. 로그인 후 먼저 확인할 것</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>로그인 후 기본 진입 화면이 `Billing / Invoices`인지 확인합니다.</li>
+          <li>좌측 메뉴에 `Outbounds`, `Inventory`, `Billing`, `Dashboard`만 보이는지 확인합니다.</li>
+          <li>상단 데이터 모드 배지(`LIVE`, `LIVE DEV`, `MOCK`, `FALLBACK DEV`)가 현재 확인하려는 환경과 맞는지 봅니다.</li>
+          <li>목록이 비어 있으면 날짜, 월, 검색어 필터를 먼저 초기화하고 다시 조회합니다.</li>
+        </ol>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">4. 출고 현황 확인</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>`Outbounds`에서 출고번호, 주문번호, 상태, 출고 예정일을 확인합니다.</li>
+          <li>상세 화면의 `Items` 탭에서 요청수량, 피킹수량, 가용수량, 부족수량을 확인합니다.</li>
+          <li>`Shortage Alerts`가 보이면 물류 운영자에게 재고 부족 또는 재할당 필요 여부를 문의합니다.</li>
+          <li>`Boxes` 탭에서는 박스번호, 택배사, 송장번호, 아이템 수량을 확인합니다.</li>
+          <li>`Timeline` 탭에서 출고 상태 변경 이력을 확인합니다.</li>
+        </ol>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">5. 재고 확인</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>`Inventory`에서 상품명, 바코드, LOT, 창고, 위치 기준으로 재고를 검색합니다.</li>
+          <li>`Available`은 현재 사용 가능한 재고, `Reserved`는 출고 대기 등으로 잡힌 예약수량입니다.</li>
+          <li>`Allocatable`은 출고 가능 판단에 사용하는 수량입니다.</li>
+          <li>입고 또는 출고 후 수량이 기대와 다르면 거래 이력에서 inbound/outbound 기록을 확인합니다.</li>
+        </ol>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">6. 인보이스 확인</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>`Billing`에서 기간과 상태를 선택해 인보이스를 조회합니다.</li>
+          <li>인보이스 번호를 눌러 상세 화면으로 들어갑니다.</li>
+          <li>상세 화면에서 `Original THB`, `FX Rate`, `Subtotal`, `VAT`, `Total`을 확인합니다.</li>
+          <li>품목별 `Qty`, `Unit KRW`, `Amount KRW` 합계가 총액과 맞는지 확인합니다.</li>
+          <li>금액에 이견이 있으면 인보이스 번호와 품목명을 기준으로 운영 담당자에게 문의합니다.</li>
+        </ol>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">7. 대시보드 확인</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>`Storage Trend`에서 기간별 보관량 추이를 확인합니다.</li>
+          <li>`Storage Billing`에서 월별 보관요금 예상치를 확인합니다.</li>
+          <li>`Capacity`에서 창고 적재율이 `ok`, `warn`, `critical` 중 어디에 해당하는지 확인합니다.</li>
+          <li>공유가 필요하면 CSV 다운로드, 클립보드 복사, PNG 캡처 기능을 사용합니다.</li>
+        </ol>
+
+        <h2 className="mt-6 text-base font-semibold text-slate-900">8. 데이터가 안 보일 때</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>검색어, 날짜, 월 필터를 초기화하고 다시 조회합니다.</li>
+          <li>다른 고객사 데이터는 보이지 않는 것이 정상입니다. 고객사 계정은 자기 회사 데이터로 자동 제한됩니다.</li>
+          <li>출고/재고/인보이스가 모두 비어 있으면 운영 담당자에게 계정의 고객사 연결 상태를 확인 요청합니다.</li>
+          <li>상단 배지가 `MOCK` 또는 `FALLBACK DEV`라면 실제 운영 데이터가 아닐 수 있습니다.</li>
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function OperatorGuidePage() {
   return (
     <section>
       <PageHeader
