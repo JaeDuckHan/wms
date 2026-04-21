@@ -113,7 +113,7 @@
 6. 이상이 없으면 `Issue`로 발행하고, 실제 수금까지 끝났으면 `Mark Paid`로 마감합니다.
 7. 전달용 파일이 필요하면 `Export Invoice`를 사용합니다.
 8. 운영 검증은 `Dashboard`의 `Storage Trend`, `Storage Billing`, `Capacity` 화면으로 이어서 확인합니다.
-9. 대시보드 데이터가 비어 있으면 `Generate Snapshots`를 먼저 실행한 뒤 다시 조회합니다.
+9. 대시보드 데이터가 비어 있으면 먼저 현재 환경이 로컬/개발인지 확인합니다. `Generate Snapshots` 버튼은 비프로덕션 환경에서만 노출될 수 있으므로, 운영/배포 환경에서는 시드 재적용 또는 백엔드 스냅샷 생성 여부를 먼저 점검합니다.
 
 ## 6. 화면별 사용 방법
 
@@ -157,6 +157,9 @@
 - 상세 화면의 `Available`, `Reserved`, `Allocatable`, `Shortage`가 기대와 맞는지 확인
 - `shipped` 처리 후 재고 차감과 정산 이벤트 반영을 함께 확인
 - 박스 정보 수정 후 상세 화면과 API 결과가 일치하는지 확인
+- `Reallocation Suggestions`가 보이면 현재 위치 외 다른 로트/위치로 재할당이 필요하다는 의미로 해석
+- `Shortage Alerts`가 보이면 출고 가능 수량 부족 상태이므로 즉시 출고 완료 처리 전에 재고를 먼저 확인
+- 박스 버튼이 비활성화되어 있으면 현재 백엔드에서 Box API가 비활성화된 상태일 수 있으므로, 박스 등록 불가를 장애로 오인하지 않도록 확인
 
 ### 5.4 Inventory `/inventory`
 
@@ -217,6 +220,7 @@
 - 종료일은 인보이스 기준일과 청구월 계산 기준으로도 사용
 - `Generate` 전에 같은 고객의 Billing Events가 먼저 정리됐는지 확인
 - KRW 합계, 원화 환산 전 THB, 환율 스냅샷을 함께 확인
+- 인보이스 상세의 `Subtotal`, `VAT`, `Total`, 품목별 `Unit KRW`, `Amount KRW`는 `TRUNC100` 기준으로 표시되므로 QA 시 절사 규칙까지 같이 확인
 - 발행 후 `Issue` 버튼이 사라지고 `Mark Paid`로 바뀌는지 확인
 - 상세 화면의 품목별 금액 합계가 총액과 일치하는지 확인
 
@@ -232,19 +236,23 @@
 #### 주요 기능
 
 - 날짜/기간/창고/고객 필터
-- Demo Mode 토글
-- 최근 스냅샷 생성
 - CSV 다운로드
 - 클립보드 복사
 - PNG 캡처
 - 스냅샷 부족 경고 표시
+- 빈 결과 화면에서 최근 스냅샷 생성 버튼 노출 가능(비프로덕션 환경 전용)
 
 #### 운영 체크 포인트
 
-- 스냅샷이 없으면 `Generate Snapshots`로 다시 생성
+- 스냅샷이 없으면 먼저 현재 환경이 비프로덕션인지 확인
+- 비프로덕션이면 빈 결과 화면의 `Generate Snapshots`로 최근 스냅샷 생성
+- 프로덕션이면 버튼이 보이지 않을 수 있으므로 시드/백엔드 스냅샷 생성 상태를 먼저 확인
 - 같은 조건으로 재조회해 수치 일관성 확인
 - 보관 요금 화면에서 고객/창고/월 필터 변경 시 합계가 바뀌는지 확인
+- `Storage Billing`의 SKU별 미리보기는 `warehouse`와 `client`를 함께 선택해야 노출되므로, 상세 검증 시 두 필터를 동시에 지정
+- `rateCbm`, `ratePallet` 수동 입력값이 있으면 미리보기 계산에 즉시 반영되므로, 요율 실험 중이면 입력값을 먼저 확인
 - 정산 검토 시 `Storage Billing` 수치와 실제 인보이스 금액이 크게 어긋나지 않는지 비교
+- `Capacity`에서는 `critical / warn / ok` 상태와 `capacity not set` 메시지를 같이 해석해 과적 여부와 기준정보 누락을 구분
 - 보고용 자료는 CSV, 클립보드, PNG 기능으로 추출
 
 ### 6.8 Settings `/settings/*`
@@ -282,6 +290,122 @@
 
 1. `apps/api`에서 `npm run seed:phase1-integrated`
 2. 입고/출고/정산/인보이스 검증 데이터를 한 번에 준비
+
+### 입고/출고/정산/대시보드 시뮬레이션 순서
+
+이 절차는 "이미 생성된 오더를 콘솔에서 처리하는 흐름"을 검증하는 용도입니다. 현재 웹 콘솔은 입고/출고 오더 신규 생성 화면이 아니라, 시드 또는 외부 연계로 준비된 오더를 조회하고 상태 처리하는 방식입니다.
+
+1. `apps/api`에서 `npm run seed:phase1-integrated`를 실행합니다.
+2. 관리자 계정으로 로그인한 뒤 `Inbounds`에서 현재 월 입고 데이터가 보이는지 확인합니다.
+3. 입고 상세 화면에서 상태를 `Submit -> Arrive -> Receive` 순으로 진행하고, `Items`와 `Timeline` 탭을 같이 확인합니다.
+4. `Inventory`로 이동해 방금 처리한 상품의 수량 증가와 `stock-transactions`의 inbound 기록을 확인합니다.
+5. `Outbounds`에서 현재 월 출고 오더를 열고 `Allocate -> Pack -> Ship` 순으로 진행합니다.
+6. 출고 상세의 `Items` 탭에서 `Available`, `Reserved`, `Allocatable`, `Shortage`를 확인하고, 필요 시 `Boxes` 탭에서 박스 정보를 추가합니다.
+7. `Inventory`에서 수량 감소가 반영됐는지 확인하고, `Billing Events`에서 같은 고객/월 기준 `PENDING` 이벤트가 생겼는지 확인합니다.
+8. `Invoices`에서 같은 고객과 기준일로 조회한 뒤 `Generate -> Issue -> Mark Paid` 순으로 처리합니다.
+9. `Dashboard > Storage Trend`, `Storage Billing`, `Capacity`에서 같은 고객/월/창고 조건으로 수치가 비정상적으로 어긋나지 않는지 비교합니다.
+10. 대시보드가 비어 있으면 로컬/개발 환경에서만 `Generate Snapshots` 버튼을 기대합니다. 배포 환경이라면 버튼 대신 시드 상태와 백엔드 스냅샷 생성 여부를 점검합니다.
+
+### 시뮬레이션 예시 A: 정상 입고 -> 출고 -> 정산
+
+1. `seed:phase1-integrated` 적용 후 현재 월 입고 1건을 열어 `Submit -> Arrive -> Receive`까지 처리합니다.
+2. `Inventory`에서 해당 SKU의 수량 증가와 inbound 트랜잭션을 확인합니다.
+3. 같은 고객의 출고 오더를 열어 `Allocate -> Pack -> Ship`을 진행합니다.
+4. `Billing Events`에서 같은 월 `PENDING` 이벤트가 생성됐는지 확인합니다.
+5. `Invoices`에서 같은 고객으로 `Generate` 후, 상세 화면에서 `Original THB`, `FX`, `Subtotal/VAT/Total (TRUNC100)`를 점검합니다.
+6. 이상이 없으면 `Issue -> Mark Paid`까지 진행하고, `Dashboard`의 `Storage Billing`과 큰 차이가 없는지 비교합니다.
+
+체크리스트:
+- 고객사: `C101`
+- 창고: `WH201`
+- 상품 기준: `barcode_full=FULL401`, `lot=LOT-501`, `location=LOC-301`
+- 입고 오더:
+  - `INB-20260301-001` 수량 `120`, 상태 `received`
+  - `INB-20260303-001` 수량 `80`, 상태 `received`
+- 출고 오더:
+  - `OUT-20260310-001` 수량 `70`, 상태 `shipped`
+  - `OUT-20260311-001` 수량 `30`, 상태 `packed`
+- 재고 기대값:
+  - `available_qty = 130`
+  - `reserved_qty = 30`
+  - 계산 근거: `120 + 80 - 70 = 130`, packed 오더 `30` 예약
+- 정산 배치:
+  - `settlement_batch_id = 700501`
+  - 상태 `closed`
+- 인보이스:
+  - 번호 형식 `INV-현재년월-C101-001`
+  - 상태 `issued`
+  - `FX = 39.2500`
+  - `Subtotal = 9,600 KRW`
+  - `VAT = 0 KRW`
+  - `Total = 9,600 KRW`
+- 인보이스 라인 기대값:
+  - `SV_OUTBOUND_BOX` `7 x 700 = 4,900 KRW`
+  - `SV_OUTBOUND_ORDER` `1 x 3,500 = 3,500 KRW`
+  - `SV_MANUAL_EXPENSE` `1 x 1,200 = 1,200 KRW`
+- Billing Events 기대값:
+  - `700421`, `700422`, `700423`
+  - 상태 모두 `INVOICED`
+
+### 시뮬레이션 예시 B: 출고 부족/재할당 확인
+
+1. 출고 상세의 `Items` 탭에서 `Allocatable Qty`가 `Requested Qty`보다 작은 항목이 있는지 봅니다.
+2. `Reallocation Suggestions`가 보이면 현재 위치 외 다른 로트/위치의 제안 수량을 함께 검토합니다.
+3. `Shortage Alerts`가 보이면 즉시 `Ship`하지 말고 `Inventory`에서 실제 가용 재고와 위치별 잔량을 다시 확인합니다.
+4. 박스 등록 버튼이 비활성화되어 있으면 Box API 미지원 상태일 수 있으므로, 박스 기능 자체가 막힌 환경인지 먼저 구분합니다.
+
+체크리스트:
+- 정상 통합 시드 직후에는 `OUT-20260310-001`은 이미 `shipped`이므로 부족 경고 없이 종료 상태로 보이는 것이 정상
+- `OUT-20260311-001`은 `packed` 상태이며 예약 수량 `30`이 반영되어 있어야 함
+- `Items` 탭에서 최소 확인 항목:
+  - `Requested Qty`
+  - `Available`
+  - `Reserved`
+  - `Allocatable`
+  - `Shortage`
+- 박스 기대값:
+  - `OUT-20260310-001`의 `box_count = 7`
+  - `OUT-20260311-001`의 `box_count = 3`
+- 박스 버튼이 비활성화되어도, 현재 환경의 Box API 비지원이면 문서상 허용된 동작
+
+### 시뮬레이션 예시 C: Storage Billing 상세 검증
+
+1. `Dashboard > Storage Billing`에서 `month`, `warehouse`, `client`를 함께 선택합니다.
+2. 필요하면 `rateCbm`, `ratePallet` 값을 직접 넣어 시뮬레이션 계산을 다시 조회합니다.
+3. 하단 `SKU CBM Billing Preview`가 열리면 SKU별 `available_qty`, `cbm_m3`, `rate_cbm`, `amount_cbm`를 확인합니다.
+4. 상단 요약 금액과 SKU별 금액 합계가 크게 어긋나지 않는지 비교합니다.
+5. 경고 메시지나 금액 차이가 있으면 같은 고객의 인보이스 상세 금액과 교차 검증합니다.
+
+체크리스트:
+- 필수 필터 조합:
+  - `month = 현재 월`
+  - `warehouse = WH201`
+  - `client = C101`
+- 위 조건을 함께 선택해야 `SKU CBM Billing Preview` 카드가 열리는 것이 정상
+- 추가 확인값:
+  - `rateCbm`, `ratePallet` 수동 입력 시 결과가 즉시 바뀌는지
+  - 경고 컬럼(`warnings`)에 예상치 못한 메시지가 없는지
+  - 인보이스 총액 `9,600 KRW`와 큰 괴리가 없는지
+
+### 시뮬레이션 예시 D: Capacity 상태 해석
+
+1. `Dashboard > Capacity`에서 날짜와 창고를 선택해 조회합니다.
+2. 상태가 `ok`이면 정상 범위, `warn`이면 주의, `critical`이면 과적 임계 상태로 해석합니다.
+3. `capacity not set`가 보이면 적재율 자체보다 창고 기준용량 설정 누락을 먼저 의심합니다.
+4. 전일 대비 변화량(Δ)이 급증한 창고는 입고/출고 처리 누락이나 급격한 물량 증가 여부를 추가로 확인합니다.
+
+체크리스트:
+- 조회 기준:
+  - `warehouse = WH201` 우선 확인
+  - 날짜는 현재일 또는 시드 적용 직후 날짜 사용
+- 상태 해석:
+  - `ok`: 정상
+  - `warn`: 주의
+  - `critical`: 과적 위험
+  - `capacity not set`: 창고 기준용량 미설정
+- 확인 포인트:
+  - 같은 날짜 재조회 시 상태와 수치가 일관적인지
+  - 전일 대비 Δ가 급격히 크면 입고 200 / 출고 70 / 예약 30 흐름과 맞는지
 
 ### 정산 데모 데이터만 추가
 
@@ -373,7 +497,7 @@
 2. CSV 다운로드
 3. 클립보드 복사
 4. PNG 캡처
-5. Demo Mode에서 스냅샷 생성 버튼 동작 확인
+5. 비프로덕션 환경에서 데이터가 비어 있을 때만 `Generate Snapshots` 버튼 동작 확인
 6. `/dashboard/storage-billing`과 `/dashboard/capacity`도 동일하게 확인
 
 ## 8. 자동 테스트 방법
@@ -457,7 +581,7 @@ npm run test:e2e:billing-production
 - 인보이스 상세 `Duplicate (Admin)`
 - 인보이스 Export 로그
 - Dashboard의 CSV/클립보드/PNG 내보내기
-- Dashboard Demo Snapshot 생성
+- Dashboard 스냅샷 생성 버튼은 비프로덕션 환경 전용
 - Storage Rates 설정
 - Exchange Rate 스냅샷 기반 환산
 - Outbound 박스 CRUD
@@ -472,7 +596,7 @@ npm run test:e2e:billing-production
 3. `client_viewer`라면 자기 고객사 스코프로 잘려 보이는지 확인
 4. `/health/db`에서 billing readiness 확인
 5. 필요한 seed가 들어갔는지 확인
-6. Dashboard라면 snapshot 부족 경고가 있는지 확인
+6. Dashboard라면 snapshot 부족 경고가 있는지 확인하고, 프로덕션에서는 버튼이 없을 수 있음을 전제
 7. 정산 화면이라면 대상 월에 이벤트가 존재하는지 먼저 확인
 
 ## 11. 참고 문서

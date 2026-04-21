@@ -69,6 +69,7 @@ export default function GuidePage() {
           <li>인보이스 생성/샘플 생성/샘플 정리는 `Client ID` 입력이 필요하며, 입력창 아래에서 고객사 코드와 회사명을 같이 확인할 수 있습니다.</li>
           <li>상태 흐름은 `draft`에서 `issued`, `paid` 순서로 진행됩니다.</li>
           <li>금액은 KRW 기준이며 `Original THB`로 환산 전 금액도 함께 확인할 수 있습니다.</li>
+          <li>상세 화면의 `Subtotal`, `VAT`, `Total`, 품목별 `Unit KRW`, `Amount KRW`는 `TRUNC100` 기준으로 표시됩니다.</li>
           <li>상세 화면에서는 `Export Invoice`와 관리자 전용 `Duplicate (Admin)` 기능을 사용할 수 있습니다.</li>
         </ul>
 
@@ -88,10 +89,41 @@ export default function GuidePage() {
           <li>정리 모달에서 삭제 대상 건수(월/고객 기준)를 먼저 확인할 수 있습니다.</li>
         </ul>
 
+        <h3 className="mt-4 font-semibold text-slate-900">5-1. 한 번에 따라 하는 시뮬레이션</h3>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>`apps/api`에서 `npm run seed:phase1-integrated`를 실행해 입고/출고/정산 검증 데이터를 준비합니다.</li>
+          <li>`Inbounds`에서 현재 월 입고 오더를 열고 `Submit -&gt; Arrive -&gt; Receive` 순으로 처리합니다.</li>
+          <li>`Inventory`에서 재고 증가를 확인한 뒤 `Outbounds`에서 `Allocate -&gt; Pack -&gt; Ship` 순으로 처리합니다.</li>
+          <li>`Billing Events`에서 같은 고객과 월 기준 `PENDING` 이벤트를 확인하고, `Invoices`에서 `Generate -&gt; Issue -&gt; Mark Paid` 순으로 마무리합니다.</li>
+          <li>`Dashboard`에서는 같은 고객/창고/월 조건으로 결과를 비교합니다.</li>
+        </ol>
+
+        <div className="mt-3 rounded-lg border bg-slate-50 p-4 text-sm text-slate-700">
+          <p className="font-semibold text-slate-900">통합 시드 기준 빠른 체크리스트</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>고객/창고: `C101`, `WH201`</li>
+            <li>입고 오더: `INB-20260301-001` 수량 `120`, `INB-20260303-001` 수량 `80`</li>
+            <li>출고 오더: `OUT-20260310-001` 수량 `70` shipped, `OUT-20260311-001` 수량 `30` packed</li>
+            <li>재고 기대값: `available 130`, `reserved 30`</li>
+            <li>인보이스 번호 형식: `INV-현재년월-C101-001`</li>
+            <li>인보이스 기대금액: `4,900 + 3,500 + 1,200 = 9,600 KRW`, `FX 39.2500`</li>
+          </ul>
+        </div>
+
+        <h3 className="mt-4 font-semibold text-slate-900">5-2. 시뮬레이션 중 꼭 보는 포인트</h3>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>출고 상세의 `Reallocation Suggestions`는 다른 위치 재할당이 필요하다는 의미입니다.</li>
+          <li>`Shortage Alerts`가 보이면 바로 출고 완료하지 말고 `Inventory`에서 실제 가용 재고를 다시 확인합니다.</li>
+          <li>박스 버튼이 비활성화되어 있으면 현재 백엔드에서 Box API가 비활성화된 상태일 수 있습니다.</li>
+          <li>`Storage Billing`의 SKU별 미리보기는 `warehouse`와 `client`를 함께 선택해야 열립니다.</li>
+          <li>`Capacity`의 `critical / warn / ok`와 `capacity not set`는 각각 과적 위험과 기준정보 누락을 구분해서 봐야 합니다.</li>
+        </ul>
+
         <h2 className="mt-6 text-base font-semibold text-slate-900">6. Dashboard와 설정에서 자주 쓰는 기능</h2>
         <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>`Dashboard`에서는 Demo Mode 기준으로 `Generate Snapshots`를 실행할 수 있습니다.</li>
           <li>`Storage Trend`, `Storage Billing`, `Capacity` 화면에서 CSV 다운로드, 클립보드 복사, PNG 캡처를 사용할 수 있습니다.</li>
+          <li>대시보드의 `Generate Snapshots` 버튼은 빈 결과 화면에서만 보일 수 있고, 현재 배포/프로덕션 환경에서는 숨겨질 수 있습니다.</li>
+          <li>`Storage Billing`은 필요 시 `rateCbm`, `ratePallet`을 직접 넣어 가정 계산을 다시 볼 수 있습니다.</li>
           <li>`Settings`에서는 공통 기준정보 외에 `Service Rates`, `Contract Rates`, `Storage Rates`, `Exchange Rates`를 관리합니다.</li>
           <li>`Billing Settings` 수정 권한은 관리자에게만 있습니다.</li>
         </ul>
@@ -99,8 +131,10 @@ export default function GuidePage() {
         <h3 className="mt-4 font-semibold text-slate-900">6-1. 대시보드 실무 사용 순서</h3>
         <ol className="mt-2 list-decimal space-y-1 pl-5">
           <li>`Dashboard` 또는 `Storage Trend`에서 고객사, 창고, 기간을 먼저 맞춰 현재 재고 흐름과 보관 추이를 확인합니다.</li>
-          <li>데이터가 비어 있으면 `Generate Snapshots`를 먼저 실행한 뒤 다시 조회합니다.</li>
+          <li>데이터가 비어 있으면 먼저 현재 환경이 로컬/개발인지 확인합니다. 프로덕션에서는 `Generate Snapshots` 버튼이 보이지 않을 수 있습니다.</li>
+          <li>비프로덕션 환경에서 빈 결과 화면이 나오면 `Generate Snapshots`를 실행한 뒤 다시 조회합니다.</li>
           <li>`Storage Billing`에서는 같은 고객과 월 조건으로 보관요금 예상치가 정산 결과와 크게 어긋나지 않는지 비교합니다.</li>
+          <li>SKU 단위 검증이 필요하면 `warehouse`와 `client`를 함께 선택해 하단 `SKU CBM Billing Preview`를 확인합니다.</li>
           <li>`Capacity`에서는 특정 창고가 과적 상태인지, 운영상 추가 조치가 필요한지 확인합니다.</li>
           <li>검증 결과를 공유할 때는 CSV 다운로드, 클립보드 복사, PNG 캡처를 사용합니다.</li>
         </ol>
@@ -128,7 +162,7 @@ export default function GuidePage() {
         <ol className="mt-2 list-decimal space-y-1 pl-5">
           <li>관리자 계정으로 로그인 후 `입고 / 출고 / 재고 / 정산 / 대시보드 / 설정` 메뉴 노출을 확인합니다.</li>
           <li>`Billing Events`에서 CSV 내보내기, `Invoices`에서 `Generate`, `Issue`, `Mark Paid` 순서를 확인합니다.</li>
-          <li>`Dashboard`에서 스냅샷 생성, CSV 다운로드, 클립보드 복사, PNG 캡처를 확인합니다.</li>
+          <li>`Dashboard`에서 CSV 다운로드, 클립보드 복사, PNG 캡처를 확인하고, 비프로덕션 빈 화면일 때만 스냅샷 생성 버튼을 확인합니다.</li>
           <li>`client_viewer` 계정으로 다시 로그인해 `Inbounds`, `Settings`가 보이지 않는지 확인합니다.</li>
           <li>더 자세한 수동/자동 테스트 명령은 `docs/user-guide-ko.md`를 참고합니다.</li>
         </ol>
@@ -139,7 +173,7 @@ export default function GuidePage() {
           <li>기간이 너무 좁지 않은지 확인합니다. (예: 올해 1월 1일 ~ 오늘)</li>
           <li>`Client ID`가 잘못 입력되지 않았는지 확인합니다.</li>
           <li>샘플 데이터가 필요하면 `Create Sample Events`를 실행합니다.</li>
-          <li>Dashboard가 비면 `Generate Snapshots`를 먼저 실행해 봅니다.</li>
+          <li>Dashboard가 비면 현재 환경이 비프로덕션인지 먼저 확인하고, 그때만 `Generate Snapshots`를 기대합니다.</li>
           <li>여전히 0건이면 API `/health/db`의 billing readiness를 확인합니다.</li>
         </ol>
       </div>

@@ -1,5 +1,10 @@
 # Dashboard Demo Help
 
+현재 코드 기준 주의:
+- pre-launch QA 설정으로 `Demo Mode` 토글은 비활성화되어 있습니다.
+- `Generate Snapshots` 버튼은 비프로덕션 환경에서만 노출될 수 있습니다.
+- 아래 내용은 데모 기능이 다시 활성화된 환경에서만 그대로 적용됩니다.
+
 ## 1) Demo Mode
 - 위치: `/dashboard` 및 하위 페이지 헤더의 `Demo Mode: ON/OFF` 버튼
 - 동작:
