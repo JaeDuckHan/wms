@@ -516,6 +516,30 @@ npm run web:check
 - i18n 스냅샷 검사
 - Next.js production build
 
+#### 로컬 Windows 빌드 주의사항
+
+로컬 Windows/샌드박스 환경에서는 `npm run web:check`의 마지막 `next build` 단계가 오래 멈추거나 `spawn EPERM`으로 실패할 수 있습니다. 이 경우 코드 오류가 아니라 빌드 worker 프로세스 생성 권한 또는 오래된 `.next` 캐시 문제일 수 있습니다.
+
+먼저 아래 빠른 검증을 분리해서 실행합니다.
+
+```powershell
+cd apps/web
+npm run typecheck
+npm run i18n:check
+npm run test:snapshot:detail-i18n
+```
+
+프로덕션 빌드까지 꼭 확인해야 할 때는 다음 순서로 진행합니다.
+
+```powershell
+cd apps/web
+Remove-Item -LiteralPath .next -Recurse -Force
+$env:NEXT_TELEMETRY_DISABLED='1'
+npm run build
+```
+
+`next build`가 몇 분 이상 배너 이후 진행되지 않으면 반복 실행하지 말고 남은 `node` 프로세스를 확인/종료한 뒤 다시 시도합니다. `spawn EPERM`이 보이면 권한 있는 실행이 필요합니다.
+
 ### 웹 Playwright 스모크
 
 ```powershell
