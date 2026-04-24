@@ -22,10 +22,15 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.ts ./next.config.ts
+RUN addgroup -g 1001 -S nodejs \
+  && adduser -S nextjs -u 1001 -G nodejs
+
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/next.config.ts ./next.config.ts
 
 EXPOSE 3000
+
+USER nextjs
 
 CMD ["npm", "run", "start", "--", "-p", "3000"]

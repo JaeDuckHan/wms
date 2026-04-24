@@ -34,6 +34,7 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: 3pl-api
+    init: true
     environment:
       NODE_ENV: production
       PORT: 3100
@@ -57,6 +58,14 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
     restart: unless-stopped
     networks:
       - app_net
@@ -66,6 +75,7 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
     container_name: 3pl-web
+    init: true
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -84,6 +94,14 @@ services:
       timeout: 5s
       retries: 10
       start_period: 40s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
     restart: unless-stopped
     networks:
       - app_net

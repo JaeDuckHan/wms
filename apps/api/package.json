@@ -29,5 +29,8 @@
     "mysql2": "^3.11.3",
     "swagger-ui-express": "^5.0.1",
     "zod": "^3.25.76"
+  },
+  "overrides": {
+    "path-to-regexp": "0.1.13"
   }
 }

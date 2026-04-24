@@ -1,4 +1,3 @@
-import { AUTH_COOKIE_KEY } from "@/lib/auth";
 import { ApiError } from "@/features/outbound/api";
 
 type LoginPayload = {
@@ -62,31 +61,19 @@ export async function login(payload: LoginPayload): Promise<{ token: string; ema
     body: JSON.stringify(payload),
   });
 
-  const token = data.token;
-  const secureAttr = window.location.protocol === "https:" ? "; secure" : "";
-  document.cookie = `${AUTH_COOKIE_KEY}=${encodeURIComponent(token)}; path=/; max-age=28800; samesite=lax${secureAttr}`;
-  localStorage.setItem(AUTH_COOKIE_KEY, token);
   localStorage.setItem("kb3pl_user_email", payload.email);
 
-  return { token, email: payload.email };
+  return { token: data.token, email: payload.email };
 }
 
 export async function getMe(): Promise<MeResponse> {
-  const tokenCookie = document.cookie
-    .split("; ")
-    .find((entry) => entry.startsWith(`${AUTH_COOKIE_KEY}=`));
-  const token = tokenCookie ? decodeURIComponent(tokenCookie.split("=")[1]) : "";
-  if (!token) throw new ApiError("Missing auth token", 401);
-
-  return requestJson<MeResponse>("/auth/me", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return requestJson<MeResponse>("/auth/me");
 }
 
-export function logout() {
-  document.cookie = `${AUTH_COOKIE_KEY}=; path=/; max-age=0; samesite=lax`;
-  localStorage.removeItem(AUTH_COOKIE_KEY);
+export async function logout() {
+  await fetch("/api/auth/logout", {
+    method: "POST",
+    cache: "no-store",
+  });
   localStorage.removeItem("kb3pl_user_email");
 }

@@ -10,7 +10,6 @@ import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { getDataMode, getDataModeLabel } from "@/lib/runtime-mode";
-import { AUTH_COOKIE_KEY } from "@/lib/auth";
 
 export function Topbar() {
   const pathname = usePathname();
@@ -21,18 +20,10 @@ export function Topbar() {
 
   const initialQuery = useMemo(() => searchParams.get("q") ?? "", [searchParams]);
   const [query, setQuery] = useState(initialQuery);
-  const [token, setToken] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setQuery(initialQuery);
   }, [initialQuery]);
-
-  useEffect(() => {
-    const tokenCookie = document.cookie
-      .split("; ")
-      .find((entry) => entry.startsWith(`${AUTH_COOKIE_KEY}=`));
-    setToken(tokenCookie ? decodeURIComponent(tokenCookie.split("=")[1]) : undefined);
-  }, []);
 
   const onSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -47,14 +38,14 @@ export function Topbar() {
     router.push(`${nextPath}?${params.toString()}`);
   };
 
-  const onLogout = () => {
-    logout();
+  const onLogout = async () => {
+    await logout();
     pushToast({ title: t("Signed out"), variant: "info" });
     router.push("/login");
   };
 
-  const dataMode = getDataMode(token);
-  const dataModeLabel = getDataModeLabel(token);
+  const dataMode = getDataMode();
+  const dataModeLabel = getDataModeLabel();
   const dataModeClassName =
     dataMode === "mock"
       ? "border-amber-200 bg-amber-50 text-amber-700"
