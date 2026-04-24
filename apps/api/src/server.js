@@ -22,6 +22,7 @@ const settlementsRouter = require("./routes/settlements");
 const billingEngineRouter = require("./routes/billingEngine");
 const { router: dashboardRouter } = require("./routes/dashboard");
 const { startStorageSnapshotSchedule } = require("./jobs/storageSnapshots");
+const { ensureConfiguredAdminUser } = require("./startup/ensureConfiguredAdmin");
 const openapi = require("./openapi.json");
 
 dotenv.config();
@@ -142,6 +143,18 @@ function startServer(port = Number(process.env.PORT || 3100), options = {}) {
       startStorageSnapshotSchedule();
     }
     console.log(`wms-api listening on http://localhost:${port}`);
+    void (async () => {
+      try {
+        const adminSync = await ensureConfiguredAdminUser();
+        if (adminSync.configured) {
+          console.log(`[auth-bootstrap] ${adminSync.action} admin user for ${adminSync.email}`);
+        } else {
+          console.log(`[auth-bootstrap] skipped: ${adminSync.reason}`);
+        }
+      } catch (error) {
+        console.error(`[auth-bootstrap] failed: ${error.message}`);
+      }
+    })();
     void (async () => {
       try {
         const readiness = await getBillingSchemaReadiness();

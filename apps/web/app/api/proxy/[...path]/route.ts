@@ -18,6 +18,22 @@ const ALLOWED_ROOT_SEGMENTS = new Set([
   "warehouses",
 ]);
 
+function readForwardedValue(headerValue: string | null) {
+  return String(headerValue || "")
+    .split(",")[0]
+    .trim();
+}
+
+function getExpectedOrigin(request: NextRequest) {
+  const forwardedProto = readForwardedValue(request.headers.get("x-forwarded-proto"));
+  const forwardedHost = readForwardedValue(request.headers.get("x-forwarded-host"));
+  const host = forwardedHost || readForwardedValue(request.headers.get("host")) || request.nextUrl.host;
+  const protocol = forwardedProto || request.nextUrl.protocol.replace(/:$/, "");
+
+  if (!host || !protocol) return null;
+  return `${protocol}://${host}`;
+}
+
 function buildSessionCookie(token: string, protocol: string) {
   const secureAttr = protocol === "https:" ? "; Secure" : "";
   return `${AUTH_COOKIE_KEY}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; HttpOnly; SameSite=Lax${secureAttr}`;
@@ -40,7 +56,9 @@ function isSameOriginMutation(request: NextRequest) {
   if (!origin) return true;
 
   try {
-    return new URL(origin).origin === request.nextUrl.origin;
+    const expectedOrigin = getExpectedOrigin(request);
+    if (!expectedOrigin) return false;
+    return new URL(origin).origin === expectedOrigin;
   } catch {
     return false;
   }

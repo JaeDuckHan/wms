@@ -12,6 +12,22 @@ const ALLOWED_DASHBOARD_PATHS = new Set([
   "storage/trend",
 ]);
 
+function readForwardedValue(headerValue: string | null) {
+  return String(headerValue || "")
+    .split(",")[0]
+    .trim();
+}
+
+function getExpectedOrigin(request: NextRequest) {
+  const forwardedProto = readForwardedValue(request.headers.get("x-forwarded-proto"));
+  const forwardedHost = readForwardedValue(request.headers.get("x-forwarded-host"));
+  const host = forwardedHost || readForwardedValue(request.headers.get("host")) || request.nextUrl.host;
+  const protocol = forwardedProto || request.nextUrl.protocol.replace(/:$/, "");
+
+  if (!host || !protocol) return null;
+  return `${protocol}://${host}`;
+}
+
 function isAllowedDashboardPath(path: string[]) {
   if (path.length === 0) return false;
   return ALLOWED_DASHBOARD_PATHS.has(path.join("/"));
@@ -24,7 +40,9 @@ function isSameOriginMutation(request: NextRequest) {
   if (!origin) return true;
 
   try {
-    return new URL(origin).origin === request.nextUrl.origin;
+    const expectedOrigin = getExpectedOrigin(request);
+    if (!expectedOrigin) return false;
+    return new URL(origin).origin === expectedOrigin;
   } catch {
     return false;
   }

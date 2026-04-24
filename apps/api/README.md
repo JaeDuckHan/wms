@@ -121,6 +121,7 @@ All CRUD endpoints require a Bearer token.
 
 `GET /auth/me` returns the current user from token.
 Current demo setup validates password with plain text in `users.password_hash` (dev-only).
+On API startup, `ADMIN_EMAIL` and `ADMIN_PASSWORD` are synced into the `users` table so the configured admin can log in even after secret rotation.
 
 ## Role Access
 

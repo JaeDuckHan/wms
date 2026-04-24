@@ -165,13 +165,17 @@ cat apps/api/sql/patch_warehouse_default_cbm_rate.sql | docker compose --env-fil
 cat apps/api/sql/patch_runtime_operational_tables.sql | docker compose --env-file .env.docker exec -T db sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
-## 8) Default login
+## 8) Login credentials
 
-Seed default account:
+Configured admin account:
 
-1. Email: `admin@example.com`
-2. Password: `x`
-3. Manager: `manager101@example.com` / `x`
-4. Warehouse: `warehouse201@example.com` / `x`
-5. Client viewer: `viewer101@example.com` / `x`
-6. Extra sample admin: `ops.admin@amorepacific-partner.co.kr` / `1234`
+1. API startup syncs `ADMIN_EMAIL` / `ADMIN_PASSWORD` from your env file into the admin user row.
+2. Use the values currently set in `.env.docker` for production login.
+
+Local/demo seed examples:
+
+1. `admin@example.com` / `x`
+2. `manager101@example.com` / `x`
+3. `warehouse201@example.com` / `x`
+4. `viewer101@example.com` / `x`
+5. `ops.admin@amorepacific-partner.co.kr` / `1234`
