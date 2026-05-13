@@ -1,13 +1,16 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getOutboundOrders } from "@/features/outbound/api";
 import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { TranslatedText } from "@/components/i18n/TranslatedText";
 import type { OutboundListStatus } from "@/features/outbound/types";
-import { AUTH_COOKIE_KEY } from "@/lib/auth";
+import { AUTH_COOKIE_KEY, decodeJwtPayload } from "@/lib/auth";
+import { canWrite } from "@/lib/authz";
 
 const filterItems: Array<{ label: string; value: OutboundListStatus }> = [
   { label: "All", value: "all" },
@@ -24,6 +27,8 @@ export default async function OutboundsPage({
 }) {
   const { q, status } = await searchParams;
   const token = (await cookies()).get(AUTH_COOKIE_KEY)?.value;
+  const payload = decodeJwtPayload<{ role?: string }>(token ?? "");
+  const canCreate = canWrite(payload?.role);
   const currentStatus = filterItems.some((item) => item.value === status) ? status : "all";
   const orders = await getOutboundOrders({ q, status: currentStatus }, { token });
 
@@ -33,6 +38,16 @@ export default async function OutboundsPage({
         breadcrumbs={[{ label: "Operations" }, { label: "Outbounds" }]}
         title="Outbounds"
         subtitle="Outbound order queue overview"
+        rightSlot={
+          canCreate ? (
+            <Link href="/outbounds/new">
+              <Button>
+                <Plus className="h-4 w-4" />
+                New
+              </Button>
+            </Link>
+          ) : undefined
+        }
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

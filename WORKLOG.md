@@ -1,3 +1,36 @@
+## 2026-05-13 (Internal inventory flow test readiness)
+
+- [Request] Defer Shopee API work until the internal WMS flow is testable end to end.
+- [Web] Added missing inbound/outbound creation entry points and flow support.
+  - `/inbounds/new`
+  - `/outbounds/new`
+  - list-page `New` buttons remain write-role gated.
+- [Web] Added warehouse location selection to inbound/outbound item creation.
+  - New API proxy allowlist entry: `warehouse-locations`
+  - New web helper: `apps/web/features/operations/warehouseLocationsApi.ts`
+  - If active locations exist for the selected warehouse, testers can select by location code instead of typing numeric Location ID.
+- [API] Added warehouse location lookup route.
+  - `GET /warehouse-locations`
+  - Supports `warehouse_id` and `status` filters.
+- [API/Test data] Added repeatable internal flow seed.
+  - Script: `npm run seed:flow-test`
+  - Creates/reactivates active client, warehouse, location, admin login, product, lot, and stock balance.
+  - Default login: `flow.admin@example.com` / `flow1234`
+- [API/E2E] Added inventory flow regression script.
+  - Script: `npm run test:e2e:inventory-flow`
+  - Verifies inbound `received`, outbound `allocated`, outbound `shipped`, and `INSUFFICIENT_STOCK` behavior.
+- [Docs] Added flow-test seed guide: `apps/api/sql/seed/README_flow_test_data.md`.
+- [Verification]
+  - `node --check src/routes/warehouseLocations.js` passed.
+  - `node --check scripts/seed_flow_test_data.js` passed.
+  - `node --check scripts/e2e_inventory_flow.js` passed.
+  - `apps/api`: `npm run build` passed.
+  - `apps/web`: `npm run web:check` passed after stopping the prior 3001 dev server that locked `.next/trace`.
+  - `http://127.0.0.1:3001/inbounds/new` returned 200 OK.
+  - `http://127.0.0.1:3001/outbounds/new` returned 200 OK.
+- [Runtime blocker]
+  - `npm run seed:flow-test` could not run against local DB because MySQL was not listening on `127.0.0.1:3306`.
+  - Docker Desktop daemon was also not running, so DB-backed E2E remains pending until MySQL/Docker is started.
 ## 2026-02-26
 
 - [Request] Confirmed where the top navigation "User Guide" item is defined in the web code.

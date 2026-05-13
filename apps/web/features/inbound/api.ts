@@ -63,6 +63,27 @@ type RawProduct = { id: number; barcode_full: string; name_kr: string };
 type RawLot = { id: number; lot_no: string };
 type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
 
+export type CreateInboundItemInput = {
+  product_id: number;
+  lot_id: number;
+  location_id?: number | null;
+  qty: number;
+  invoice_price?: number | null;
+  currency?: "KRW" | "THB" | null;
+  remark?: string | null;
+};
+
+export type CreateInboundOrderInput = {
+  inbound_no: string;
+  client_id: number;
+  warehouse_id: number;
+  inbound_date: string;
+  status?: InboundStatus;
+  memo?: string | null;
+  created_by: number;
+  items?: CreateInboundItemInput[];
+};
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -397,4 +418,84 @@ export async function transitionInboundStatus(
   const updated = await getInboundOrderByNo(current.inbound_no, options);
   if (!updated) throw new ApiError("Inbound order not found", 404);
   return updated;
+}
+
+export async function createInboundOrderWithItems(
+  input: CreateInboundOrderInput,
+  options?: RequestOptions
+): Promise<InboundOrder> {
+  const items = input.items ?? [];
+
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const now = new Date().toISOString();
+    const rawOrder: RawInboundOrder = {
+      id: Date.now(),
+      inbound_no: input.inbound_no,
+      client_id: input.client_id,
+      warehouse_id: input.warehouse_id,
+      inbound_date: input.inbound_date,
+      status: input.status ?? "draft",
+      memo: input.memo ?? null,
+      created_by: input.created_by,
+      received_at: null,
+      created_at: now,
+      updated_at: now,
+    };
+    const mappedItems: InboundItem[] = items.map((item, index) => ({
+      id: `mock-inbound-item-${Date.now()}-${index}`,
+      barcode_full: `P-${item.product_id}`,
+      product_name: `Product #${item.product_id}`,
+      lot: `LOT-${item.lot_id}`,
+      location: item.location_id ? `LOC-${item.location_id}` : "-",
+      qty: item.qty,
+      invoice_price: item.invoice_price ?? null,
+      currency: item.currency ?? null,
+      remark: item.remark ?? null,
+    }));
+    const created = mapInboundOrder(rawOrder, `Client #${input.client_id}`, mappedItems);
+    mockDb.unshift(created);
+    return cloneOrder(created);
+  }
+
+  const created = await requestJson<RawInboundOrder>(
+    "/inbound-orders",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        inbound_no: input.inbound_no,
+        client_id: input.client_id,
+        warehouse_id: input.warehouse_id,
+        inbound_date: input.inbound_date,
+        status: input.status ?? "draft",
+        memo: input.memo ?? null,
+        created_by: input.created_by,
+        received_at: null,
+      }),
+    },
+    options
+  );
+
+  for (const item of items) {
+    await requestJson<RawInboundItem>(
+      "/inbound-items",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          inbound_order_id: created.id,
+          product_id: item.product_id,
+          lot_id: item.lot_id,
+          location_id: item.location_id ?? null,
+          qty: item.qty,
+          invoice_price: item.invoice_price ?? null,
+          currency: item.currency ?? null,
+          remark: item.remark ?? null,
+        }),
+      },
+      options
+    );
+  }
+
+  const reloaded = await getInboundOrderByNo(created.inbound_no, options);
+  return reloaded ?? mapInboundOrder(created, "", []);
 }

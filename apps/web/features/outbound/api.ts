@@ -130,6 +130,29 @@ type JsonResponse<T> = {
   message?: string;
 };
 
+export type CreateOutboundItemInput = {
+  product_id: number;
+  lot_id: number;
+  location_id?: number | null;
+  qty: number;
+  box_type?: string | null;
+  box_count?: number;
+  remark?: string | null;
+};
+
+export type CreateOutboundOrderInput = {
+  outbound_no: string;
+  client_id: number;
+  warehouse_id: number;
+  order_date: string;
+  sales_channel?: string | null;
+  order_no?: string | null;
+  tracking_no?: string | null;
+  status?: OutboundStatus;
+  created_by: number;
+  items?: CreateOutboundItemInput[];
+};
+
 export class ApiError extends Error {
   status: number;
 
@@ -695,4 +718,95 @@ export async function addOutboundBox(
   const updated = { ...mockDb[idx], boxes: [nextBox, ...mockDb[idx].boxes] };
   mockDb[idx] = updated;
   return updated.boxes.map((box) => ({ ...box }));
+}
+
+export async function createOutboundOrderWithItems(
+  input: CreateOutboundOrderInput,
+  options?: RequestOptions
+): Promise<OutboundOrder> {
+  const items = input.items ?? [];
+
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const now = new Date().toISOString();
+    const rawOrder: RawOutboundOrder = {
+      id: Date.now(),
+      outbound_no: input.outbound_no,
+      client_id: input.client_id,
+      warehouse_id: input.warehouse_id,
+      order_date: input.order_date,
+      sales_channel: input.sales_channel ?? null,
+      order_no: input.order_no ?? null,
+      tracking_no: input.tracking_no ?? null,
+      status: input.status ?? "draft",
+      packed_at: null,
+      shipped_at: null,
+      created_by: input.created_by,
+      created_at: now,
+      updated_at: now,
+    };
+    const mappedItems: OutboundItem[] = items.map((item, index) => ({
+      id: `mock-outbound-item-${Date.now()}-${index}`,
+      barcode_full: `P-${item.product_id}`,
+      product_name: `Product #${item.product_id}`,
+      lot: `LOT-${item.lot_id}`,
+      location: item.location_id ? `LOC-${item.location_id}` : "-",
+      requested_qty: item.qty,
+      picked_qty: 0,
+      available_qty: 0,
+      reserved_qty: 0,
+      allocatable_qty: 0,
+      network_allocatable_qty: 0,
+      shortage_qty: item.qty,
+      status: "shortage",
+      allocation_plan: [],
+    }));
+    const created = mapOutboundOrder(rawOrder, `Client #${input.client_id}`, mappedItems, []);
+    mockDb.unshift(created);
+    return cloneOrder(created);
+  }
+
+  const created = await requestJson<RawOutboundOrder>(
+    "/outbound-orders",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        outbound_no: input.outbound_no,
+        client_id: input.client_id,
+        warehouse_id: input.warehouse_id,
+        order_date: input.order_date,
+        sales_channel: input.sales_channel ?? null,
+        order_no: input.order_no ?? null,
+        tracking_no: input.tracking_no ?? null,
+        status: input.status ?? "draft",
+        packed_at: null,
+        shipped_at: null,
+        created_by: input.created_by,
+      }),
+    },
+    options
+  );
+
+  for (const item of items) {
+    await requestJson<RawOutboundItem>(
+      "/outbound-items",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          outbound_order_id: created.id,
+          product_id: item.product_id,
+          lot_id: item.lot_id,
+          location_id: item.location_id ?? null,
+          qty: item.qty,
+          box_type: item.box_type ?? null,
+          box_count: item.box_count ?? 0,
+          remark: item.remark ?? null,
+        }),
+      },
+      options
+    );
+  }
+
+  const reloaded = await getOutboundOrderByNo(created.outbound_no, options);
+  return reloaded ?? mapOutboundOrder(created, "", [], []);
 }

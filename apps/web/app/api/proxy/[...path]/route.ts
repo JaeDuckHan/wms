@@ -15,6 +15,7 @@ const ALLOWED_ROOT_SEGMENTS = new Set([
   "products",
   "stock-balances",
   "stock-transactions",
+  "warehouse-locations",
   "warehouses",
 ]);
 

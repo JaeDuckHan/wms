@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { TranslatedText } from "@/components/i18n/TranslatedText";
-import { AUTH_COOKIE_KEY } from "@/lib/auth";
+import { AUTH_COOKIE_KEY, decodeJwtPayload } from "@/lib/auth";
+import { canWrite } from "@/lib/authz";
 import { getInboundOrders } from "@/features/inbound/api";
 import type { InboundListStatus, InboundStatus } from "@/features/inbound/types";
 
@@ -40,6 +43,8 @@ export default async function InboundsPage({
 }) {
   const { q, status } = await searchParams;
   const token = (await cookies()).get(AUTH_COOKIE_KEY)?.value;
+  const payload = decodeJwtPayload<{ role?: string }>(token ?? "");
+  const canCreate = canWrite(payload?.role);
   const currentStatus = filterItems.some((item) => item.value === status) ? status : "all";
   const orders = await getInboundOrders({ q, status: currentStatus }, { token });
 
@@ -49,6 +54,16 @@ export default async function InboundsPage({
         breadcrumbs={[{ label: "Operations" }, { label: "Inbounds" }]}
         title="Inbounds"
         subtitle="Inbound order queue overview"
+        rightSlot={
+          canCreate ? (
+            <Link href="/inbounds/new">
+              <Button>
+                <Plus className="h-4 w-4" />
+                New
+              </Button>
+            </Link>
+          ) : undefined
+        }
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

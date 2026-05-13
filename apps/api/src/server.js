@@ -8,6 +8,7 @@ const authRouter = require("./routes/auth");
 const productsRouter = require("./routes/products");
 const productLotsRouter = require("./routes/productLots");
 const warehousesRouter = require("./routes/warehouses");
+const warehouseLocationsRouter = require("./routes/warehouseLocations");
 const clientsRouter = require("./routes/clients");
 const inboundOrdersRouter = require("./routes/inboundOrders");
 const inboundItemsRouter = require("./routes/inboundItems");
@@ -98,6 +99,7 @@ function createApp() {
   app.use("/products", productsRouter);
   app.use("/product-lots", productLotsRouter);
   app.use("/warehouses", warehousesRouter);
+  app.use("/warehouse-locations", warehouseLocationsRouter);
   app.use("/clients", clientsRouter);
   app.use("/inbound-orders", inboundOrdersRouter);
   app.use("/inbound-items", inboundItemsRouter);
