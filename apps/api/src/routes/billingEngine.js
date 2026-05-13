@@ -1303,6 +1303,8 @@ router.post("/billing/events", validate(billingEventSchema), async (req, res) =>
   }
 });
 router.post("/billing/events/sample", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   const clientId = Number(req.body?.client_id || 1);
   const warehouseId = req.body?.warehouse_id ? Number(req.body.warehouse_id) : null;
   const month = String(req.body?.invoice_month || "2026-01");
@@ -1453,6 +1455,8 @@ router.post("/billing/events/sample", async (req, res) => {
 });
 
 router.post("/billing/events/sample/cleanup", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   const clientId = Number(req.body?.client_id || 1);
   const month = String(req.body?.invoice_month || "2026-01");
   const [year, monthNum] = month.split("-").map(Number);
@@ -1489,6 +1493,8 @@ router.post("/billing/events/sample/cleanup", async (req, res) => {
 });
 
 router.post("/billing/invoices/generate", validate(generateInvoiceSchema), async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   try {
     const result = await withTransaction(async (conn) => {
       const payload = req.body;
@@ -1711,6 +1717,8 @@ router.post("/billing/invoices/generate", validate(generateInvoiceSchema), async
   }
 });
 router.post("/billing/invoices/:id/issue", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   try {
     const result = await withTransaction(async (conn) => {
       const invoiceId = Number(req.params.id);
@@ -1733,6 +1741,8 @@ router.post("/billing/invoices/:id/issue", async (req, res) => {
 });
 
 router.post("/billing/invoices/:id/mark-paid", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   try {
     const result = await withTransaction(async (conn) => {
       const invoiceId = Number(req.params.id);

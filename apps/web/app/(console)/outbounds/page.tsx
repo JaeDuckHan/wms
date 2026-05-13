@@ -16,7 +16,8 @@ const filterItems: Array<{ label: string; value: OutboundListStatus }> = [
   { label: "All", value: "all" },
   { label: "Draft", value: "draft" },
   { label: "Allocated", value: "allocated" },
-  { label: "Packing", value: "packing" },
+  { label: "Picking", value: "picking" },
+  { label: "Packed", value: "packed" },
   { label: "Shipped", value: "shipped" },
 ];
 

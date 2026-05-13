@@ -2,6 +2,7 @@
 require("dotenv").config();
 
 const { startServer } = require("../src/server");
+const { closePool } = require("../src/db");
 const { ensureFlowTestData } = require("./seed_flow_test_data");
 
 const BASE_URL = process.env.FLOW_TEST_BASE_URL || process.env.API_BASE_URL || "http://localhost:3100";
@@ -347,6 +348,7 @@ async function main() {
     if (server) {
       await new Promise((resolve) => server.close(resolve));
     }
+    await closePool();
   }
 }
 

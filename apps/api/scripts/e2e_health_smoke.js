@@ -1,5 +1,6 @@
 const http = require("node:http");
 const { startServer } = require("../src/server");
+const { closePool } = require("../src/db");
 
 const BASE_URL = process.env.BASE_URL || "http://127.0.0.1:3100";
 const TIMEOUT_MS = 20000;
@@ -57,6 +58,7 @@ async function main() {
     }
   } finally {
     await new Promise((resolve) => server.close(resolve));
+    await closePool();
   }
 }
 

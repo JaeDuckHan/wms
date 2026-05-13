@@ -72,6 +72,12 @@ type RawLot = {
   lot_no: string;
 };
 
+type RawWarehouseLocation = {
+  id: number;
+  location_code: string;
+  zone: string | null;
+};
+
 type RawStockBalance = {
   product_id: number;
   lot_id: number;
@@ -171,16 +177,35 @@ function shouldUseFallback(token?: string) {
 }
 
 function toDateOnly(value: string | null | undefined): string {
-  if (!value) return new Date().toISOString().slice(0, 10);
+  const fallback = formatDateInAppZone(new Date());
+  if (!value) return fallback;
   const trimmed = value.trim();
-  const matched = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (matched) return matched[1];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const hasExplicitTimeZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+  if (!hasExplicitTimeZone) {
+    const matched = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (matched) return matched[1];
+  }
 
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
-    return new Date().toISOString().slice(0, 10);
+    return fallback;
   }
-  return parsed.toISOString().slice(0, 10);
+  return formatDateInAppZone(parsed);
+}
+
+function formatDateInAppZone(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
 }
 
 function toIsoDateTime(value: string | null | undefined): string | null {
@@ -360,23 +385,42 @@ function mapOutboundOrder(
   items: OutboundItem[],
   boxes: OutboundBox[],
   boxesSupported = true,
-  timeline?: OutboundTimeline[]
+  timeline?: OutboundTimeline[],
+  summary?: { itemCount: number; totalQty: number }
 ): OutboundOrder {
-  const totalQty = items.reduce((acc, item) => acc + item.requested_qty, 0);
+  const itemCount = summary?.itemCount ?? items.length;
+  const totalQty = summary?.totalQty ?? items.reduce((acc, item) => acc + item.requested_qty, 0);
   return {
     id: String(order.outbound_no),
     outbound_no: order.outbound_no,
     client: clientName || `Client #${order.client_id}`,
-    eta_date: order.order_date,
+    eta_date: toDateOnly(order.order_date),
     status: order.status,
     memo: order.sales_channel ?? "N/A",
     ship_to: `Warehouse #${order.warehouse_id}`,
-    summary: mapOrderSummary(order, items.length, totalQty),
+    summary: mapOrderSummary(order, itemCount, totalQty),
     items,
     boxes,
     boxes_supported: boxesSupported,
     timeline: timeline && timeline.length > 0 ? timeline : buildTimeline(order),
   };
+}
+
+function summarizeRawItems(items: RawOutboundItem[]): { itemCount: number; totalQty: number } {
+  return {
+    itemCount: items.length,
+    totalQty: items.reduce((acc, item) => acc + Number(item.qty || 0), 0),
+  };
+}
+
+function groupRawItemsByOrderId(items: RawOutboundItem[]): Map<number, RawOutboundItem[]> {
+  const grouped = new Map<number, RawOutboundItem[]>();
+  for (const item of items) {
+    const current = grouped.get(item.outbound_order_id) ?? [];
+    current.push(item);
+    grouped.set(item.outbound_order_id, current);
+  }
+  return grouped;
 }
 
 function mapBoxes(rawBoxes: RawOutboundBox[], trackingNo: string | null): OutboundBox[] {
@@ -397,16 +441,23 @@ function toNetworkKey(productId: number, lotId: number) {
   return `${productId}:${lotId}`;
 }
 
+function formatLocationLabel(location?: RawWarehouseLocation): string {
+  if (!location) return "";
+  return location.zone ? `${location.location_code} | ${location.zone}` : location.location_code;
+}
+
 function mapItems(
   rawItems: RawOutboundItem[],
   products: RawProduct[],
   lots: RawLot[],
+  locations: RawWarehouseLocation[],
   balances: RawStockBalance[],
   orderStatus: OutboundStatus,
   suggestions?: RawAllocationSuggestion[]
 ): OutboundItem[] {
   const productMap = new Map(products.map((product) => [product.id, product]));
   const lotMap = new Map(lots.map((lot) => [lot.id, lot]));
+  const locationMap = new Map(locations.map((location) => [location.id, formatLocationLabel(location)]));
   const balanceMap = new Map(
     balances.map((balance) => [
       toKey(balance.product_id, balance.lot_id, balance.location_id),
@@ -427,8 +478,9 @@ function mapItems(
   for (const balance of balances) {
     const networkKey = toNetworkKey(balance.product_id, balance.lot_id);
     const existing = balanceGroups.get(networkKey) ?? [];
+    const balanceLocation = balance.location_id ? locationMap.get(balance.location_id) ?? `LOC-${balance.location_id}` : "-";
     existing.push({
-      location: balance.location_id ? `LOC-${balance.location_id}` : "-",
+      location: balanceLocation,
       allocatable_qty: Math.max(0, Number(balance.available_qty) - Number(balance.reserved_qty || 0)),
     });
     balanceGroups.set(networkKey, existing);
@@ -441,9 +493,10 @@ function mapItems(
       available_qty: 0,
       reserved_qty: 0,
     };
+    const itemLocation = item.location_id ? locationMap.get(item.location_id) ?? `LOC-${item.location_id}` : "-";
     const candidateAllocations = [...(balanceGroups.get(toNetworkKey(item.product_id, item.lot_id)) ?? [])].sort((a, b) => {
-      if (a.location === (item.location_id ? `LOC-${item.location_id}` : "-")) return -1;
-      if (b.location === (item.location_id ? `LOC-${item.location_id}` : "-")) return 1;
+      if (a.location === itemLocation) return -1;
+      if (b.location === itemLocation) return 1;
       return b.allocatable_qty - a.allocatable_qty;
     });
     const available = balance.available_qty;
@@ -493,7 +546,7 @@ function mapItems(
       barcode_full: productMap.get(item.product_id)?.barcode_full ?? `P-${item.product_id}`,
       product_name: productMap.get(item.product_id)?.name_kr ?? `Product #${item.product_id}`,
       lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
-      location: item.location_id ? `LOC-${item.location_id}` : "-",
+      location: itemLocation,
       requested_qty: requested,
       picked_qty: picked,
       available_qty: available,
@@ -516,14 +569,17 @@ export async function getOutboundOrders(query?: OutboundListQuery, options?: Req
   }
   const token = await resolveToken(options?.token);
   try {
-    const [orders, clients] = await Promise.all([
+    const [orders, clients, rawItems] = await Promise.all([
       requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
+      requestJson<RawOutboundItem[]>("/outbound-items", undefined, options),
     ]);
     const clientMap = new Map(clients.map((client) => [client.id, client.name_kr]));
-    const mapped = orders.map((order) =>
-      mapOutboundOrder(order, clientMap.get(order.client_id) ?? "", [], [])
-    );
+    const itemsByOrderId = groupRawItemsByOrderId(rawItems);
+    const mapped = orders.map((order) => {
+      const orderItems = itemsByOrderId.get(order.id) ?? [];
+      return mapOutboundOrder(order, clientMap.get(order.client_id) ?? "", [], [], true, undefined, summarizeRawItems(orderItems));
+    });
     if (mapped.length === 0 && shouldUseFallback(token)) {
       return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
     }
@@ -555,11 +611,12 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
       return null;
     }
 
-    const [clients, rawItems, products, lots, balances] = await Promise.all([
+    const [clients, rawItems, products, lots, locations, balances] = await Promise.all([
       requestJsonOrDefault<RawClient[]>("/clients", [], options),
       requestJsonOrDefault<RawOutboundItem[]>(`/outbound-items?outbound_order_id=${rawOrder.id}`, [], options),
       requestJsonOrDefault<RawProduct[]>("/products", [], options),
       requestJsonOrDefault<RawLot[]>("/product-lots", [], options),
+      requestJsonOrDefault<RawWarehouseLocation[]>("/warehouse-locations", [], options),
       requestJsonOrDefault<RawStockBalance[]>(
         `/stock-balances?client_id=${rawOrder.client_id}&warehouse_id=${rawOrder.warehouse_id}`,
         [],
@@ -586,7 +643,7 @@ export async function getOutboundOrderByNo(outboundNo: string, options?: Request
     }
     rawLogs = await requestJsonOrDefault<RawOutboundLog[]>(`/outbound-orders/${rawOrder.id}/logs`, [], options);
 
-    const items = mapItems(rawItems, products, lots, balances, rawOrder.status, suggestions);
+    const items = mapItems(rawItems, products, lots, locations, balances, rawOrder.status, suggestions);
     const boxes = mapBoxes(rawBoxes, rawOrder.tracking_no);
     const clientName = clients.find((client) => client.id === rawOrder.client_id)?.name_kr ?? "";
     const timeline = mapOutboundLogs(rawLogs);

@@ -1,5 +1,14 @@
 ﻿# Settlement + Invoice Integrated Flow
 
+## Menu Billing Decision
+
+The current console menu should treat `billingEngine.js` and `/billing/*` as the official billing path.
+
+- `/billing/events` and `/billing/invoices/*` are the active menu-backed flow.
+- `billingEngine.js` owns billing-event review, invoice generation, FX locking, VAT lines, invoice issue/paid actions, CSV export, and invoice export metadata.
+- `settlements.js` and `/settlement-batches/*` remain useful regression coverage for the older batch/close/reopen model, but they should not be exposed as a second official menu flow until their lifecycle is merged with `/billing/*`.
+- Invoice generation, issue, mark-paid, and sample billing-event seed/cleanup actions are admin-only.
+
 One-shot integration test flow:
 
 1. Login

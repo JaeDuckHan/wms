@@ -20,7 +20,8 @@ const txnTypeFilter = [
   { label: "All Types", value: "" },
   { label: "Inbound Receive", value: "inbound_receive" },
   { label: "Outbound Ship", value: "outbound_ship" },
-  { label: "Return Receive", value: "return_receive" },
+  { label: "Return Restock", value: "return_restock" },
+  { label: "Return Dispose", value: "return_dispose" },
 ];
 
 export default async function InventoryPage({

@@ -13,7 +13,7 @@ import { createInboundOrderWithItems, type CreateInboundItemInput } from "@/feat
 import { createOutboundOrderWithItems, type CreateOutboundItemInput } from "@/features/outbound/api";
 import { listClients } from "@/features/settings/clients/api";
 import type { Client } from "@/features/settings/clients/types";
-import { listProductLots, type ProductLotOption } from "@/features/operations/productLotsApi";
+import { createProductLot, listProductLots, type ProductLotOption } from "@/features/operations/productLotsApi";
 import { listWarehouseLocations, type WarehouseLocationOption } from "@/features/operations/warehouseLocationsApi";
 import { listProducts } from "@/features/settings/products/api";
 import type { Product } from "@/features/settings/products/types";
@@ -28,10 +28,11 @@ type ItemDraft = {
   id: string;
   product_id: string;
   lot_id: string;
+  lot_no: string;
   location_id: string;
   qty: string;
   invoice_price: string;
-  currency: "" | "KRW" | "THB";
+  currency: "" | "KRW" | "THB" | "USD";
   box_type: string;
   box_count: string;
   remark: string;
@@ -50,7 +51,32 @@ const selectClass =
   "h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300";
 
 function toDateInputValue(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  return formatDateInAppZone(date);
+}
+
+function formatDateInAppZone(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
+function formatTimeInAppZone(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = parts.find((part) => part.type === "hour")?.value ?? "00";
+  const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
+  return `${hour}${minute}`;
 }
 
 function toPositiveIntId(value: string | number | undefined | null) {
@@ -64,8 +90,8 @@ function toPositiveIntId(value: string | number | undefined | null) {
 
 function makeDefaultOrderNo(mode: OrderMode) {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const time = `${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  const date = formatDateInAppZone(now).replace(/-/g, "");
+  const time = formatTimeInAppZone(now);
   return `${mode === "inbound" ? "INB" : "OUT"}-${date}-${time}`;
 }
 
@@ -74,10 +100,11 @@ function makeItemDraft(): ItemDraft {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     product_id: "",
     lot_id: "",
+    lot_no: "",
     location_id: "",
     qty: "1",
     invoice_price: "",
-    currency: "",
+    currency: "USD",
     box_type: "",
     box_count: "0",
     remark: "",
@@ -218,13 +245,18 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
   function validateItemDraft(item: ItemDraft, index: number) {
     const productId = toOptionalPositiveInt(item.product_id);
     const lotId = toOptionalPositiveInt(item.lot_id);
+    const lotNo = item.lot_no.trim();
     const qty = toOptionalPositiveInt(item.qty);
     const locationId = toOptionalPositiveInt(item.location_id);
     const invoicePrice = toOptionalPositiveNumber(item.invoice_price);
     const boxCount = toOptionalNonNegativeInt(item.box_count);
 
     if (!productId) throw new Error(`Item ${index + 1}: product is required.`);
-    if (!lotId) throw new Error(`Item ${index + 1}: lot is required.`);
+    if (mode === "inbound") {
+      if (!lotNo) throw new Error(`Item ${index + 1}: lot no is required.`);
+    } else if (!lotId) {
+      throw new Error(`Item ${index + 1}: lot is required.`);
+    }
     if (!qty) throw new Error(`Item ${index + 1}: qty must be a positive integer.`);
     if (item.location_id.trim() && !locationId) {
       throw new Error(`Item ${index + 1}: location_id must be a positive integer.`);
@@ -234,7 +266,25 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
     }
     if (boxCount == null) throw new Error(`Item ${index + 1}: box count must be zero or greater.`);
 
-    return { productId, lotId, qty, locationId, invoicePrice, boxCount };
+    return { productId, lotId, lotNo, qty, locationId, invoicePrice, boxCount };
+  }
+
+  async function resolveInboundLotId(productId: number, lotNo: string) {
+    const normalizedLotNo = lotNo.trim().toLowerCase();
+    const existing = masters.lots.find(
+      (lot) => Number(lot.product_id) === productId && lot.lot_no.trim().toLowerCase() === normalizedLotNo
+    );
+    const existingId = toPositiveIntId(existing?.id);
+    if (existingId) return existingId;
+
+    const created = await createProductLot({
+      product_id: productId,
+      lot_no: lotNo.trim(),
+      status: "active",
+    });
+    const createdId = toPositiveIntId(created.id);
+    if (!createdId) throw new Error(`Unable to create lot ${lotNo}.`);
+    return createdId;
   }
 
   async function submit() {
@@ -260,15 +310,17 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
       const validatedItems = items.map((item, index) => validateItemDraft(item, index));
 
       if (mode === "inbound") {
-        const itemPayloads: CreateInboundItemInput[] = validatedItems.map((item, index) => ({
-          product_id: item.productId,
-          lot_id: item.lotId,
-          location_id: item.locationId,
-          qty: item.qty,
-          invoice_price: item.invoicePrice,
-          currency: items[index].currency || null,
-          remark: items[index].remark.trim() || null,
-        }));
+        const itemPayloads: CreateInboundItemInput[] = await Promise.all(
+          validatedItems.map(async (item, index) => ({
+            product_id: item.productId,
+            lot_id: await resolveInboundLotId(item.productId, item.lotNo),
+            location_id: item.locationId,
+            qty: item.qty,
+            invoice_price: item.invoicePrice,
+            currency: item.invoicePrice === null ? null : "USD",
+            remark: items[index].remark.trim() || null,
+          }))
+        );
         const created = await createInboundOrderWithItems({
           inbound_no: orderNo.trim(),
           client_id: client,
@@ -281,15 +333,18 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
         });
         router.push(`/inbounds/${encodeURIComponent(created.inbound_no)}`);
       } else {
-        const itemPayloads: CreateOutboundItemInput[] = validatedItems.map((item, index) => ({
-          product_id: item.productId,
-          lot_id: item.lotId,
-          location_id: item.locationId,
-          qty: item.qty,
-          box_type: items[index].box_type.trim() || null,
-          box_count: item.boxCount,
-          remark: items[index].remark.trim() || null,
-        }));
+        const itemPayloads: CreateOutboundItemInput[] = validatedItems.map((item, index) => {
+          if (!item.lotId) throw new Error(`Item ${index + 1}: lot is required.`);
+          return {
+            product_id: item.productId,
+            lot_id: item.lotId,
+            location_id: item.locationId,
+            qty: item.qty,
+            box_type: items[index].box_type.trim() || null,
+            box_count: item.boxCount,
+            remark: items[index].remark.trim() || null,
+          };
+        });
         const created = await createOutboundOrderWithItems({
           outbound_no: orderNo.trim(),
           client_id: client,
@@ -473,7 +528,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           <select
                             className={selectClass}
                             value={item.product_id}
-                            onChange={(event) => updateItem(item.id, { product_id: event.target.value, lot_id: "" })}
+                            onChange={(event) => updateItem(item.id, { product_id: event.target.value, lot_id: "", lot_no: "" })}
                           >
                             <option value="">Select product</option>
                             {filteredProducts.map((nextProduct) => {
@@ -487,24 +542,44 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             })}
                           </select>
                         </label>
+                        {mode === "inbound" ? (
+                          <label>
+                            <span className={inputLabelClass}>LOT No / Lot No</span>
+                            <Input
+                              list={`lot-options-${item.id}`}
+                              placeholder={product ? "Enter lot no" : "Select product first"}
+                              value={item.lot_no}
+                              onChange={(event) => updateItem(item.id, { lot_no: event.target.value, lot_id: "" })}
+                              disabled={!item.product_id}
+                            />
+                            {lots.length > 0 ? (
+                              <datalist id={`lot-options-${item.id}`}>
+                                {lots.map((lot) => (
+                                  <option key={lot.id} value={lot.lot_no} />
+                                ))}
+                              </datalist>
+                            ) : null}
+                          </label>
+                        ) : (
+                          <label>
+                            <span className={inputLabelClass}>{t("Lot")}</span>
+                            <select
+                              className={selectClass}
+                              value={item.lot_id}
+                              onChange={(event) => updateItem(item.id, { lot_id: event.target.value })}
+                              disabled={!item.product_id}
+                            >
+                              <option value="">{product ? "Select lot" : "Select product first"}</option>
+                              {lots.map((lot) => (
+                                <option key={lot.id} value={lot.id}>
+                                  {lot.lot_no}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
                         <label>
-                          <span className={inputLabelClass}>{t("Lot")}</span>
-                          <select
-                            className={selectClass}
-                            value={item.lot_id}
-                            onChange={(event) => updateItem(item.id, { lot_id: event.target.value })}
-                            disabled={!item.product_id}
-                          >
-                            <option value="">{product ? "Select lot" : "Select product first"}</option>
-                            {lots.map((lot) => (
-                              <option key={lot.id} value={lot.id}>
-                                {lot.lot_no}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          <span className={inputLabelClass}>{t("Location")}</span>
+                          <span className={inputLabelClass}>{mode === "inbound" ? "입고 위치 / Stock Location" : t("Location")}</span>
                           {activeLocations.length > 0 ? (
                             <select
                               className={selectClass}
@@ -537,7 +612,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                       {mode === "inbound" ? (
                         <div className="mt-3 grid gap-3 md:grid-cols-3">
                           <label>
-                            <span className={inputLabelClass}>{t("Invoice Price")}</span>
+                            <span className={inputLabelClass}>인보이스 단가(USD) / Invoice Price (USD)</span>
                             <Input
                               type="number"
                               min={0}
@@ -548,10 +623,8 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           </label>
                           <label>
                             <span className={inputLabelClass}>{t("Currency")}</span>
-                            <select className={selectClass} value={item.currency} onChange={(event) => updateItem(item.id, { currency: event.target.value as ItemDraft["currency"] })}>
-                              <option value="">None</option>
-                              <option value="THB">THB</option>
-                              <option value="KRW">KRW</option>
+                            <select className={selectClass} value={item.currency || "USD"} disabled>
+                              <option value="USD">USD</option>
                             </select>
                           </label>
                           <label>

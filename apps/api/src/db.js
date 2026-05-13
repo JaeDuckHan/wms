@@ -25,6 +25,13 @@ function getPool() {
   return pool;
 }
 
+async function closePool() {
+  if (!pool) return;
+  const activePool = pool;
+  pool = undefined;
+  await activePool.end();
+}
+
 async function pingDb() {
   const [rows] = await getPool().query(
     "SELECT DATABASE() AS db, NOW() AS server_time"
@@ -77,6 +84,7 @@ async function getBillingSchemaReadiness() {
 module.exports = {
   BILLING_REQUIRED_TABLES,
   getPool,
+  closePool,
   pingDb,
   getBillingSchemaReadiness
 };

@@ -21,7 +21,8 @@ import { useI18n } from "@/lib/i18n/I18nProvider";
 export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const { pushToast } = useToast();
   const { t } = useI18n();
-  const { canWrite, isAdmin } = useCurrentUser();
+  const { isAdmin } = useCurrentUser();
+  const canManageInvoices = isAdmin;
   const [invoice, setInvoice] = useState<BillingInvoice | null>(null);
   const [items, setItems] = useState<BillingInvoiceItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -109,8 +110,8 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
         rightSlot={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void runExport()}>{t("Export Invoice")}</Button>
-            {canWrite && invoice?.status === "draft" && <Button onClick={() => void runIssue()} disabled={acting}>Issue</Button>}
-            {canWrite && invoice?.status === "issued" && <Button onClick={() => void runMarkPaid()} disabled={acting}>Mark Paid</Button>}
+            {canManageInvoices && invoice?.status === "draft" && <Button onClick={() => void runIssue()} disabled={acting}>Issue</Button>}
+            {canManageInvoices && invoice?.status === "issued" && <Button onClick={() => void runMarkPaid()} disabled={acting}>Mark Paid</Button>}
             {isAdmin && invoice?.status !== "draft" && (
               <Button variant="secondary" onClick={() => void runDuplicateAdmin()} disabled={acting}>
                 {t("Duplicate (Admin)")}

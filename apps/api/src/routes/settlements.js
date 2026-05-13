@@ -244,7 +244,7 @@ router.post("/settlement-batches/generate", validate(generateSchema), async (req
             lineCurrency,
             lineAmount,
             lineAmount,
-            ev.id
+            ev.source_kind === "service_event" ? ev.id : null
           ]
         );
       }

@@ -22,7 +22,7 @@ const inboundItemSchema = z.object({
   location_id: z.coerce.number().int().positive().nullable().optional(),
   qty: z.coerce.number().int().positive(),
   invoice_price: z.coerce.number().positive().nullable().optional(),
-  currency: z.enum(["KRW", "THB"]).nullable().optional(),
+  currency: z.enum(["KRW", "THB", "USD"]).nullable().optional(),
   remark: z.string().max(500).nullable().optional()
 });
 

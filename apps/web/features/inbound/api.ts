@@ -42,7 +42,7 @@ type RawInboundItem = {
   location_id: number | null;
   qty: number;
   invoice_price: number | null;
-  currency: "KRW" | "THB" | null;
+  currency: "KRW" | "THB" | "USD" | null;
   remark: string | null;
 };
 
@@ -61,6 +61,7 @@ type RawInboundLog = {
 type RawClient = { id: number; client_code?: string; name_kr?: string; name_en?: string };
 type RawProduct = { id: number; barcode_full: string; name_kr: string };
 type RawLot = { id: number; lot_no: string };
+type RawWarehouseLocation = { id: number; location_code: string; zone: string | null };
 type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
 
 export type CreateInboundItemInput = {
@@ -69,7 +70,7 @@ export type CreateInboundItemInput = {
   location_id?: number | null;
   qty: number;
   invoice_price?: number | null;
-  currency?: "KRW" | "THB" | null;
+  currency?: "KRW" | "THB" | "USD" | null;
   remark?: string | null;
 };
 
@@ -93,12 +94,33 @@ function shouldUseFallback(token?: string) {
 }
 
 function toDateOnly(value: string | null | undefined): string {
-  if (!value) return new Date().toISOString().slice(0, 10);
-  const m = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
-  if (m) return m[1];
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return new Date().toISOString().slice(0, 10);
-  return parsed.toISOString().slice(0, 10);
+  const fallback = formatDateInAppZone(new Date());
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const hasExplicitTimeZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+  if (!hasExplicitTimeZone) {
+    const matched = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (matched) return matched[1];
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return formatDateInAppZone(parsed);
+}
+
+function formatDateInAppZone(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
 }
 
 function toIsoDateTime(value: string | null | undefined): string | null {
@@ -247,21 +269,40 @@ function mapInboundOrder(
   order: RawInboundOrder,
   clientName: string,
   items: InboundItem[],
-  timeline?: InboundTimeline[]
+  timeline?: InboundTimeline[],
+  summary?: { itemCount: number; totalQty: number }
 ): InboundOrder {
-  const totalQty = items.reduce((acc, item) => acc + item.qty, 0);
+  const itemCount = summary?.itemCount ?? items.length;
+  const totalQty = summary?.totalQty ?? items.reduce((acc, item) => acc + item.qty, 0);
   return {
     id: String(order.id),
     inbound_no: order.inbound_no,
     client: clientName || `Client #${order.client_id}`,
-    inbound_date: order.inbound_date,
+    inbound_date: toDateOnly(order.inbound_date),
     status: order.status,
     memo: order.memo ?? "-",
     warehouse: `Warehouse #${order.warehouse_id}`,
-    summary: `${items.length} SKUs / ${totalQty} EA`,
+    summary: `${itemCount} SKUs / ${totalQty} EA`,
     items,
     timeline: timeline && timeline.length > 0 ? timeline : buildTimeline(order),
   };
+}
+
+function summarizeRawItems(items: RawInboundItem[]): { itemCount: number; totalQty: number } {
+  return {
+    itemCount: items.length,
+    totalQty: items.reduce((acc, item) => acc + Number(item.qty || 0), 0),
+  };
+}
+
+function groupRawItemsByOrderId(items: RawInboundItem[]): Map<number, RawInboundItem[]> {
+  const grouped = new Map<number, RawInboundItem[]>();
+  for (const item of items) {
+    const current = grouped.get(item.inbound_order_id) ?? [];
+    current.push(item);
+    grouped.set(item.inbound_order_id, current);
+  }
+  return grouped;
 }
 
 function formatClientLabel(client?: RawClient): string {
@@ -272,15 +313,26 @@ function formatClientLabel(client?: RawClient): string {
   return name || code;
 }
 
-function mapItems(rawItems: RawInboundItem[], products: RawProduct[], lots: RawLot[]): InboundItem[] {
+function formatLocationLabel(location?: RawWarehouseLocation): string {
+  if (!location) return "";
+  return location.zone ? `${location.location_code} | ${location.zone}` : location.location_code;
+}
+
+function mapItems(
+  rawItems: RawInboundItem[],
+  products: RawProduct[],
+  lots: RawLot[],
+  locations: RawWarehouseLocation[]
+): InboundItem[] {
   const productMap = new Map(products.map((product) => [product.id, product]));
   const lotMap = new Map(lots.map((lot) => [lot.id, lot]));
+  const locationMap = new Map(locations.map((location) => [location.id, formatLocationLabel(location)]));
   return rawItems.map((item) => ({
     id: String(item.id),
     barcode_full: productMap.get(item.product_id)?.barcode_full ?? `P-${item.product_id}`,
     product_name: productMap.get(item.product_id)?.name_kr ?? `Product #${item.product_id}`,
     lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
-    location: item.location_id ? `LOC-${item.location_id}` : "-",
+    location: item.location_id ? locationMap.get(item.location_id) ?? `LOC-${item.location_id}` : "-",
     qty: Number(item.qty),
     invoice_price: item.invoice_price === null ? null : Number(item.invoice_price),
     currency: item.currency,
@@ -297,12 +349,17 @@ export async function getInboundOrders(query?: InboundListQuery, options?: Reque
   }
   const token = await resolveToken(options?.token);
   try {
-    const [orders, clients] = await Promise.all([
+    const [orders, clients, rawItems] = await Promise.all([
       requestJson<RawInboundOrder[]>("/inbound-orders", undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
+      requestJson<RawInboundItem[]>("/inbound-items", undefined, options),
     ]);
     const clientMap = new Map(clients.map((client) => [client.id, formatClientLabel(client)]));
-    const mapped = orders.map((order) => mapInboundOrder(order, clientMap.get(order.client_id) ?? "", []));
+    const itemsByOrderId = groupRawItemsByOrderId(rawItems);
+    const mapped = orders.map((order) => {
+      const orderItems = itemsByOrderId.get(order.id) ?? [];
+      return mapInboundOrder(order, clientMap.get(order.client_id) ?? "", [], undefined, summarizeRawItems(orderItems));
+    });
     if (mapped.length === 0 && shouldUseFallback(token)) {
       return applyListFilter(mockDb, query).map((order) => cloneOrder(order));
     }
@@ -332,11 +389,12 @@ export async function getInboundOrderByNo(inboundNo: string, options?: RequestOp
       }
       return null;
     }
-    const [clients, rawItems, products, lots] = await Promise.all([
+    const [clients, rawItems, products, lots, locations] = await Promise.all([
       requestJson<RawClient[]>("/clients", undefined, options),
       requestJson<RawInboundItem[]>(`/inbound-items?inbound_order_id=${rawOrder.id}`, undefined, options),
       requestJson<RawProduct[]>("/products", undefined, options),
       requestJson<RawLot[]>("/product-lots", undefined, options),
+      requestJson<RawWarehouseLocation[]>("/warehouse-locations", undefined, options),
     ]);
     let rawLogs: RawInboundLog[] = [];
     try {
@@ -347,7 +405,7 @@ export async function getInboundOrderByNo(inboundNo: string, options?: RequestOp
       rawLogs = [];
     }
     const clientName = formatClientLabel(clients.find((client) => client.id === rawOrder.client_id));
-    const items = mapItems(rawItems, products, lots);
+    const items = mapItems(rawItems, products, lots, locations);
     return mapInboundOrder(rawOrder, clientName, items, mapInboundLogs(rawLogs));
   } catch (error) {
     if (shouldUseFallback(token)) {

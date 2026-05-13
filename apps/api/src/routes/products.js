@@ -132,6 +132,32 @@ function computeCbmM3(widthCm, lengthCm, heightCm) {
   return Number(cbm.toFixed(6));
 }
 
+async function getProductUsageSummary(productId) {
+  const [rows] = await getPool().query(
+    `SELECT
+       (SELECT COUNT(*) FROM stock_balances
+        WHERE product_id = ? AND deleted_at IS NULL AND (available_qty <> 0 OR reserved_qty <> 0)) AS stock_balances,
+       (SELECT COUNT(*) FROM inbound_items
+        WHERE product_id = ? AND deleted_at IS NULL) AS inbound_items,
+       (SELECT COUNT(*) FROM outbound_items
+        WHERE product_id = ? AND deleted_at IS NULL) AS outbound_items,
+       (SELECT COUNT(*) FROM return_items
+        WHERE product_id = ? AND deleted_at IS NULL) AS return_items`,
+    [productId, productId, productId, productId]
+  );
+  const row = rows[0] || {};
+  return {
+    stock_balances: Number(row.stock_balances || 0),
+    inbound_items: Number(row.inbound_items || 0),
+    outbound_items: Number(row.outbound_items || 0),
+    return_items: Number(row.return_items || 0)
+  };
+}
+
+function hasProductUsage(usage) {
+  return Object.values(usage).some((count) => Number(count) > 0);
+}
+
 async function resolveClientId(inputClientId, inputClientCode) {
   const numericClientId = Number(inputClientId || 0);
   if (Number.isInteger(numericClientId) && numericClientId > 0) {
@@ -431,6 +457,16 @@ router.put("/:id", validate(productUpdateSchema), async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
+    const usage = await getProductUsageSummary(req.params.id);
+    if (hasProductUsage(usage)) {
+      return res.status(409).json({
+        ok: false,
+        code: "PRODUCT_IN_USE",
+        message: "Product has stock or order history. Archive it instead of deleting.",
+        data: { usage }
+      });
+    }
+
     const [result] = await getPool().query(
       "UPDATE products SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",
       [req.params.id]

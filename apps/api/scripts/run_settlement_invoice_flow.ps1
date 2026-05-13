@@ -1,15 +1,18 @@
 ﻿param(
   [string]$BaseUrl = "http://localhost:3100",
-  [string]$Email = "admin@example.com",
-  [string]$Password = "x",
+  [string]$Email = "flow.admin@example.com",
+  [string]$Password = "flow1234",
   [int]$ClientId = 0,
-  [int]$WarehouseId = 201,
+  [string]$ClientCode = "FLOW-CLIENT-001",
+  [int]$WarehouseId = 0,
+  [int]$LocationId = 0,
   [int]$UserId = 0,
-  [int]$ProductId = 401,
-  [int]$LotId = 501,
-  [string]$LotNo = "LOT-DEMO-001",
-  [string]$WarehouseCode = "WH-DEMO-001",
-  [string]$ProductBarcodeFull = "880000000001-TH",
+  [int]$ProductId = 0,
+  [int]$LotId = 0,
+  [string]$LotNo = "FLOW-LOT-001",
+  [string]$WarehouseCode = "FLOW-WH-001",
+  [string]$LocationCode = "FLOW-A-01",
+  [string]$ProductBarcodeFull = "FLOWBARCODE001-TH",
   [int]$InboundQty = 20,
   [int]$OutboundQty = 10,
   [switch]$StartServerIfDown = $true
@@ -79,6 +82,10 @@ function Select-IdByField {
   return $null
 }
 
+function Get-IsoUtcNow {
+  return [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+}
+
 $serverProcess = $null
 $cleanupErrors = @()
 
@@ -125,7 +132,18 @@ try {
     $UserId = [int]$me.data.id
   }
   if ($ClientId -le 0) {
-    $ClientId = [int]$me.data.client_id
+    if ($null -ne $me.data.client_id) {
+      $ClientId = [int]$me.data.client_id
+    }
+  }
+
+  if ($ClientId -le 0) {
+    $clientList = Invoke-Api -Method GET -Url "$BaseUrl/clients" -Headers $authHeader
+    Assert-Ok -Response $clientList -Step "clients-list"
+    $ClientId = Select-IdByField -Rows @($clientList.data) -FieldName "client_code" -ExpectedValue $ClientCode
+    if (-not $ClientId -and @($clientList.data).Count -gt 0) {
+      $ClientId = [int]$clientList.data[0].id
+    }
   }
 
   if ($WarehouseId -le 0) {
@@ -156,11 +174,20 @@ try {
     }
   }
 
-  if ($WarehouseId -le 0 -or $ProductId -le 0 -or $LotId -le 0) {
-    throw "[preflight] invalid IDs. Use -WarehouseId/-ProductId/-LotId explicitly."
+  if ($LocationId -le 0) {
+    $locationList = Invoke-Api -Method GET -Url "$BaseUrl/warehouse-locations?warehouse_id=$WarehouseId" -Headers $authHeader
+    Assert-Ok -Response $locationList -Step "warehouse-locations-list"
+    $LocationId = Select-IdByField -Rows @($locationList.data) -FieldName "location_code" -ExpectedValue $LocationCode
+    if (-not $LocationId -and @($locationList.data).Count -gt 0) {
+      $LocationId = [int]$locationList.data[0].id
+    }
   }
 
-  Write-Host "CTX_USER_ID=$UserId CTX_CLIENT_ID=$ClientId CTX_WAREHOUSE_ID=$WarehouseId CTX_PRODUCT_ID=$ProductId CTX_LOT_ID=$LotId"
+  if ($WarehouseId -le 0 -or $LocationId -le 0 -or $ProductId -le 0 -or $LotId -le 0) {
+    throw "[preflight] invalid IDs. Use -WarehouseId/-LocationId/-ProductId/-LotId explicitly."
+  }
+
+  Write-Host "CTX_USER_ID=$UserId CTX_CLIENT_ID=$ClientId CTX_WAREHOUSE_ID=$WarehouseId CTX_LOCATION_ID=$LocationId CTX_PRODUCT_ID=$ProductId CTX_LOT_ID=$LotId"
 
   # 1) Prepare stock by inbound (precondition for outbound shipment)
   $inboundOrder = Invoke-Api -Method POST -Url "$BaseUrl/inbound-orders" -Headers $authHeader -Body @{
@@ -179,13 +206,32 @@ try {
     inbound_order_id = $created.inboundOrderId
     product_id = $ProductId
     lot_id = $LotId
+    location_id = $LocationId
     qty = $InboundQty
     invoice_price = 10.5
-    currency = "THB"
+    currency = "USD"
     remark = "integration-flow inbound item"
   }
   Assert-Ok -Response $inboundItem -Step "inbound-item-create"
   $created.inboundItemId = [int]$inboundItem.data.id
+
+  foreach ($status in @("submitted", "arrived", "received")) {
+    $inboundBody = @{
+      inbound_no = $inboundOrder.data.inbound_no
+      client_id = $ClientId
+      warehouse_id = $WarehouseId
+      inbound_date = $today
+      status = $status
+      memo = "integration-flow inbound"
+      created_by = $UserId
+    }
+    if ($status -eq "received") {
+      $inboundBody.received_at = Get-IsoUtcNow
+    }
+    $inboundOrder = Invoke-Api -Method PUT -Url "$BaseUrl/inbound-orders/$($created.inboundOrderId)" -Headers $authHeader -Body $inboundBody
+    Assert-Ok -Response $inboundOrder -Step "inbound-status-$status"
+  }
+  Write-Host "INBOUND_RECEIVED_OK=True"
 
   # 2) Outbound -> service event auto-generation
   $outboundOrder = Invoke-Api -Method POST -Url "$BaseUrl/outbound-orders" -Headers $authHeader -Body @{
@@ -206,6 +252,7 @@ try {
     outbound_order_id = $created.outboundOrderId
     product_id = $ProductId
     lot_id = $LotId
+    location_id = $LocationId
     qty = $OutboundQty
     box_type = "BOX"
     box_count = 1
@@ -213,6 +260,29 @@ try {
   }
   Assert-Ok -Response $outboundItem -Step "outbound-item-create"
   $created.outboundItemId = [int]$outboundItem.data.id
+
+  foreach ($status in @("allocated", "packed", "shipped")) {
+    $outboundBody = @{
+      outbound_no = $outboundOrder.data.outbound_no
+      client_id = $ClientId
+      warehouse_id = $WarehouseId
+      order_date = $today
+      sales_channel = "integration-test"
+      order_no = "SO-$ts"
+      tracking_no = "TRK-$ts"
+      status = $status
+      created_by = $UserId
+    }
+    if ($status -eq "packed" -or $status -eq "shipped") {
+      $outboundBody.packed_at = Get-IsoUtcNow
+    }
+    if ($status -eq "shipped") {
+      $outboundBody.shipped_at = Get-IsoUtcNow
+    }
+    $outboundOrder = Invoke-Api -Method PUT -Url "$BaseUrl/outbound-orders/$($created.outboundOrderId)" -Headers $authHeader -Body $outboundBody
+    Assert-Ok -Response $outboundOrder -Step "outbound-status-$status"
+  }
+  Write-Host "OUTBOUND_SHIPPED_OK=True"
 
   $events = Invoke-Api -Method GET -Url "$BaseUrl/service-events?outbound_order_id=$($created.outboundOrderId)" -Headers $authHeader
   Assert-Ok -Response $events -Step "service-events"
@@ -279,15 +349,9 @@ try {
 
   Write-Host "FLOW_OK=True"
 } finally {
-  # Cleanup in reverse order for stock consistency
-  if ($created.outboundItemId) {
-    try { $null = Invoke-Api -Method DELETE -Url "$BaseUrl/outbound-items/$($created.outboundItemId)" -Headers $authHeader } catch { $cleanupErrors += "outbound-item delete failed: $($_.Exception.Message)" }
-  }
+  # Delete orders rather than shipped/received items directly; order delete rolls back stock effects.
   if ($created.outboundOrderId) {
     try { $null = Invoke-Api -Method DELETE -Url "$BaseUrl/outbound-orders/$($created.outboundOrderId)" -Headers $authHeader } catch { $cleanupErrors += "outbound-order delete failed: $($_.Exception.Message)" }
-  }
-  if ($created.inboundItemId) {
-    try { $null = Invoke-Api -Method DELETE -Url "$BaseUrl/inbound-items/$($created.inboundItemId)" -Headers $authHeader } catch { $cleanupErrors += "inbound-item delete failed: $($_.Exception.Message)" }
   }
   if ($created.inboundOrderId) {
     try { $null = Invoke-Api -Method DELETE -Url "$BaseUrl/inbound-orders/$($created.inboundOrderId)" -Headers $authHeader } catch { $cleanupErrors += "inbound-order delete failed: $($_.Exception.Message)" }

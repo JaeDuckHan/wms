@@ -17,7 +17,7 @@ export type InboundItem = {
   location: string;
   qty: number;
   invoice_price: number | null;
-  currency: "KRW" | "THB" | null;
+  currency: "KRW" | "THB" | "USD" | null;
   remark: string | null;
 };
 

@@ -16,6 +16,8 @@ type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
 type RawClient = { id: number; name_kr: string };
 type RawProduct = { id: number; name_kr: string };
 type RawLot = { id: number; lot_no: string };
+type RawWarehouse = { id: number; code?: string | null; warehouse_code?: string | null; name?: string | null };
+type RawWarehouseLocation = { id: number; location_code?: string | null; zone?: string | null };
 
 type RawBalance = {
   id: number;
@@ -69,13 +71,13 @@ const mockBalances: StockBalanceRow[] = Array.from({ length: 20 }, (_, index) =>
   };
 });
 
-const transactionTypes = ["inbound_receive", "outbound_ship", "return_receive"] as const;
+const transactionTypes = ["inbound_receive", "outbound_ship", "return_restock", "return_dispose"] as const;
 
 const mockTransactions: StockTransactionRow[] = Array.from({ length: 20 }, (_, index) => {
   const seq = index + 1;
   const txnType = transactionTypes[index % transactionTypes.length];
-  const qtyIn = txnType !== "outbound_ship" ? 10 + seq : 0;
-  const qtyOut = txnType === "outbound_ship" ? 6 + seq : 0;
+  const qtyIn = txnType === "inbound_receive" || txnType === "return_restock" ? 10 + seq : 0;
+  const qtyOut = txnType === "outbound_ship" || txnType === "return_dispose" ? 6 + seq : 0;
   return {
     id: `mt-${seq}`,
     txn_date: `2026-02-${pad2((seq % 28) + 1)} ${pad2(8 + (seq % 10))}:20`,
@@ -87,7 +89,11 @@ const mockTransactions: StockTransactionRow[] = Array.from({ length: 20 }, (_, i
     location: `LOC-${String(200 + seq)}`,
     qty_in: qtyIn,
     qty_out: qtyOut,
-    ref: txnType === "outbound_ship" ? `outbound:${5000 + seq}` : `inbound:${3000 + seq}`,
+    ref: txnType === "outbound_ship"
+      ? `outbound:${5000 + seq}`
+      : txnType.startsWith("return_")
+        ? `return:${4000 + seq}`
+        : `inbound:${3000 + seq}`,
     note: `Inventory sample txn #${pad2(seq)}`,
   };
 });
@@ -134,6 +140,22 @@ function toReservationStatus(ratePct: number): StockBalanceRow["reservation_stat
   return "low";
 }
 
+function formatWarehouseLabel(warehouse?: RawWarehouse): string {
+  if (!warehouse) return "";
+  const code = (warehouse.code ?? warehouse.warehouse_code ?? "").trim();
+  const name = (warehouse.name ?? "").trim();
+  if (code && name) return `${code} | ${name}`;
+  return code || name;
+}
+
+function formatLocationLabel(location?: RawWarehouseLocation): string {
+  if (!location) return "";
+  const code = (location.location_code ?? "").trim();
+  const zone = (location.zone ?? "").trim();
+  if (code && zone) return `${code} | ${zone}`;
+  return code || zone;
+}
+
 function shouldUseFallback(token?: string) {
   return shouldUseImplicitFallback(token);
 }
@@ -146,16 +168,20 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
   }
   const token = await resolveToken(options?.token);
   try {
-    const [balances, clients, products, lots] = await Promise.all([
+    const [balances, clients, products, lots, warehouses, locations] = await Promise.all([
       requestJson<RawBalance[]>("/stock-balances", undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
       requestJson<RawProduct[]>("/products", undefined, options),
       requestJson<RawLot[]>("/product-lots", undefined, options),
+      requestJson<RawWarehouse[]>("/warehouses", undefined, options),
+      requestJson<RawWarehouseLocation[]>("/warehouse-locations", undefined, options),
     ]);
 
     const clientMap = new Map(clients.map((item) => [item.id, item.name_kr]));
     const productMap = new Map(products.map((item) => [item.id, item.name_kr]));
     const lotMap = new Map(lots.map((item) => [item.id, item.lot_no]));
+    const warehouseMap = new Map(warehouses.map((item) => [item.id, formatWarehouseLabel(item)]));
+    const locationMap = new Map(locations.map((item) => [item.id, formatLocationLabel(item)]));
 
     const mapped = balances.map((row) => {
       const availableQty = Number(row.available_qty);
@@ -166,8 +192,8 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
         client: clientMap.get(row.client_id) ?? `Client #${row.client_id}`,
         product: productMap.get(row.product_id) ?? `Product #${row.product_id}`,
         lot: lotMap.get(row.lot_id) ?? `LOT-${row.lot_id}`,
-        warehouse: `WH-${row.warehouse_id}`,
-        location: row.location_id ? `LOC-${row.location_id}` : "-",
+        warehouse: warehouseMap.get(row.warehouse_id) || `WH-${row.warehouse_id}`,
+        location: row.location_id ? locationMap.get(row.location_id) || `LOC-${row.location_id}` : "-",
         available_qty: availableQty,
         reserved_qty: reservedQty,
         allocatable_qty: Math.max(0, availableQty - reservedQty),
@@ -213,16 +239,20 @@ export async function getStockTransactions(
   const path = `/stock-transactions${params.toString() ? `?${params.toString()}` : ""}`;
 
   try {
-    const [txns, clients, products, lots] = await Promise.all([
+    const [txns, clients, products, lots, warehouses, locations] = await Promise.all([
       requestJson<RawTxn[]>(path, undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
       requestJson<RawProduct[]>("/products", undefined, options),
       requestJson<RawLot[]>("/product-lots", undefined, options),
+      requestJson<RawWarehouse[]>("/warehouses", undefined, options),
+      requestJson<RawWarehouseLocation[]>("/warehouse-locations", undefined, options),
     ]);
 
     const clientMap = new Map(clients.map((item) => [item.id, item.name_kr]));
     const productMap = new Map(products.map((item) => [item.id, item.name_kr]));
     const lotMap = new Map(lots.map((item) => [item.id, item.lot_no]));
+    const warehouseMap = new Map(warehouses.map((item) => [item.id, formatWarehouseLabel(item)]));
+    const locationMap = new Map(locations.map((item) => [item.id, formatLocationLabel(item)]));
 
     const mapped = txns.map((row) => ({
       id: String(row.id),
@@ -231,8 +261,8 @@ export async function getStockTransactions(
       client: clientMap.get(row.client_id) ?? `Client #${row.client_id}`,
       product: productMap.get(row.product_id) ?? `Product #${row.product_id}`,
       lot: lotMap.get(row.lot_id) ?? `LOT-${row.lot_id}`,
-      warehouse: `WH-${row.warehouse_id}`,
-      location: row.location_id ? `LOC-${row.location_id}` : "-",
+      warehouse: warehouseMap.get(row.warehouse_id) || `WH-${row.warehouse_id}`,
+      location: row.location_id ? locationMap.get(row.location_id) || `LOC-${row.location_id}` : "-",
       qty_in: Number(row.qty_in),
       qty_out: Number(row.qty_out),
       ref: row.ref_type && row.ref_id ? `${row.ref_type}:${row.ref_id}` : "-",
