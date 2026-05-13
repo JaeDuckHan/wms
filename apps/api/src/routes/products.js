@@ -79,7 +79,9 @@ async function getAvailableOptionalProductColumns() {
     OPTIONAL_PRODUCT_COLUMNS
   );
 
-  optionalProductColumnsCache = new Set(rows.map((row) => String(row.column_name)));
+  optionalProductColumnsCache = new Set(
+    rows.map((row) => String(row.column_name ?? row.COLUMN_NAME ?? Object.values(row)[0] ?? ""))
+  );
   optionalProductColumnsCachedAt = now;
   return optionalProductColumnsCache;
 }

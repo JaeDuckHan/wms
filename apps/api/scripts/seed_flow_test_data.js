@@ -60,7 +60,9 @@ async function getTablePresence(conn, tableNames) {
        AND table_name IN (${placeholders})`,
     tableNames
   );
-  const existing = new Set(rows.map((row) => row.table_name));
+  const existing = new Set(
+    rows.map((row) => String(row.table_name ?? row.TABLE_NAME ?? Object.values(row)[0] ?? ""))
+  );
   return Object.fromEntries(tableNames.map((table) => [table, existing.has(table)]));
 }
 
@@ -83,7 +85,7 @@ async function getColumnSet(conn, tableName) {
        AND table_name = ?`,
     [tableName]
   );
-  return new Set(rows.map((row) => row.column_name));
+  return new Set(rows.map((row) => String(row.column_name ?? row.COLUMN_NAME ?? Object.values(row)[0] ?? "")));
 }
 
 function filterColumns(values, columns) {

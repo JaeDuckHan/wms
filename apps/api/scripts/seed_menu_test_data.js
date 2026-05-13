@@ -100,7 +100,7 @@ async function columnSet(conn, tableName) {
        AND table_name = ?`,
     [tableName]
   );
-  return new Set(rows.map((row) => String(row.column_name)));
+  return new Set(rows.map((row) => String(row.column_name ?? row.COLUMN_NAME ?? Object.values(row)[0] ?? "")));
 }
 
 async function columnIsNullable(conn, tableName, columnName) {
@@ -113,7 +113,7 @@ async function columnIsNullable(conn, tableName, columnName) {
      LIMIT 1`,
     [tableName, columnName]
   );
-  return rows.length > 0 && String(rows[0].is_nullable).toUpperCase() === "YES";
+  return rows.length > 0 && String(rows[0].is_nullable ?? rows[0].IS_NULLABLE ?? Object.values(rows[0])[0] ?? "").toUpperCase() === "YES";
 }
 
 async function assertTables(conn) {

@@ -1723,12 +1723,15 @@ router.post("/billing/invoices/:id/issue", async (req, res) => {
     const result = await withTransaction(async (conn) => {
       const invoiceId = Number(req.params.id);
       const [rows] = await conn.query(
-        `SELECT id, status FROM invoices WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
+        `SELECT id, status, total_krw FROM invoices WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
         [invoiceId]
       );
       if (rows.length === 0) return { ok: false, code: "NOT_FOUND", message: "Invoice not found" };
       if (String(rows[0].status).toLowerCase() !== "draft") {
         return { ok: false, code: "INVALID_STATUS", message: "Only DRAFT invoice can be issued" };
+      }
+      if (Number(rows[0].total_krw || 0) <= 0) {
+        return { ok: false, code: "ZERO_TOTAL_INVOICE", message: "Cannot issue invoice with zero total" };
       }
       await conn.query("UPDATE invoices SET status = 'issued' WHERE id = ?", [invoiceId]);
       return { ok: true, data: { id: invoiceId, status: "issued" } };
@@ -1747,12 +1750,15 @@ router.post("/billing/invoices/:id/mark-paid", async (req, res) => {
     const result = await withTransaction(async (conn) => {
       const invoiceId = Number(req.params.id);
       const [rows] = await conn.query(
-        `SELECT id, status FROM invoices WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
+        `SELECT id, status, total_krw FROM invoices WHERE id = ? AND deleted_at IS NULL LIMIT 1 FOR UPDATE`,
         [invoiceId]
       );
       if (rows.length === 0) return { ok: false, code: "NOT_FOUND", message: "Invoice not found" };
       if (String(rows[0].status).toLowerCase() !== "issued") {
         return { ok: false, code: "INVALID_STATUS", message: "Only ISSUED invoice can be marked paid" };
+      }
+      if (Number(rows[0].total_krw || 0) <= 0) {
+        return { ok: false, code: "ZERO_TOTAL_INVOICE", message: "Cannot mark zero-total invoice as paid" };
       }
       await conn.query("UPDATE invoices SET status = 'paid' WHERE id = ?", [invoiceId]);
       return { ok: true, data: { id: invoiceId, status: "paid" } };
