@@ -99,7 +99,33 @@ function normalizeInvoiceStatus(status) {
 
 function formatDisplayDate(value) {
   if (!value) return "-";
-  return String(value).slice(0, 10);
+  const text = String(value);
+  const dateOnly = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateOnly) return dateOnly[1];
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return text.slice(0, 10);
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
+function attachDisplayDate(row, sourceField = "invoice_date") {
+  if (!row) return row;
+  const displayDate = formatDisplayDate(row[sourceField]);
+  return {
+    ...row,
+    [sourceField]: displayDate === "-" ? row[sourceField] : displayDate,
+    display_date_kst: displayDate === "-" ? null : displayDate
+  };
 }
 
 function escapeHtml(value) {
@@ -173,7 +199,7 @@ async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
     : [[]];
 
   return {
-    invoice: invoiceRows[0],
+    invoice: attachDisplayDate(invoiceRows[0]),
     items: itemRows
   };
 }
@@ -1132,7 +1158,7 @@ router.get("/billing/events", async (req, res) => {
       : [{ missing_warehouse_id: 0 }];
     return res.json({
       ok: true,
-      data: rows,
+      data: rows.map((row) => attachDisplayDate(row, "event_date")),
       alerts: {
         missing_warehouse_id: Number(alertRows[0]?.missing_warehouse_id || 0)
       }
@@ -1169,7 +1195,7 @@ router.get("/billing/events/export.csv", async (req, res) => {
     const header = "event_date,client,service_code,qty,amount_thb,fx_rate_thbkrw,amount_krw,reference_type,reference_id,warehouse_id,status";
     const lines = rows.map((r) => {
       const values = [
-        r.event_date,
+        formatDisplayDate(r.event_date),
         r.client_code,
         r.service_code,
         r.qty,
@@ -1297,7 +1323,7 @@ router.post("/billing/events", validate(billingEventSchema), async (req, res) =>
        WHERE id = ?`,
       [result.insertId]
     );
-    return res.status(201).json({ ok: true, data: rows[0] });
+    return res.status(201).json({ ok: true, data: attachDisplayDate(rows[0], "event_date") });
   } catch (error) {
     return res.status(500).json({ ok: false, message: error.message });
   }
@@ -1492,7 +1518,7 @@ router.post("/billing/events/sample/cleanup", async (req, res) => {
   }
 });
 
-router.post("/billing/invoices/generate", validate(generateInvoiceSchema), async (req, res) => {
+async function handleGenerateBillingInvoice(req, res) {
   if (!requireAdmin(req, res)) return;
 
   try {
@@ -1525,9 +1551,21 @@ router.post("/billing/invoices/generate", validate(generateInvoiceSchema), async
         }
 
         if (!payload.regenerate_draft) {
+          const detail = await loadInvoiceDetail(conn, existing.id);
+          const [eventCountRows] = await conn.query(
+            `SELECT COUNT(*) AS cnt
+             FROM billing_events
+             WHERE invoice_id = ? AND deleted_at IS NULL`,
+            [existing.id]
+          );
           return {
             ok: true,
-            data: { invoice_id: existing.id, reused: true }
+            data: {
+              invoice: attachDisplayDate(detail?.invoice),
+              invoice_id: existing.id,
+              events_count: Number(eventCountRows[0]?.cnt || 0),
+              reused: true
+            }
           };
         }
 
@@ -1702,7 +1740,7 @@ router.post("/billing/invoices/generate", validate(generateInvoiceSchema), async
       return {
         ok: true,
         data: {
-          invoice: invoiceRows[0],
+          invoice: attachDisplayDate(invoiceRows[0]),
           events_count: events.length,
           reused: false,
           fx_rate_id: fxRateId
@@ -1715,7 +1753,11 @@ router.post("/billing/invoices/generate", validate(generateInvoiceSchema), async
   } catch (error) {
     return res.status(500).json({ ok: false, message: error.message });
   }
-});
+}
+
+router.post("/billing/invoices", validate(generateInvoiceSchema), handleGenerateBillingInvoice);
+router.post("/billing/invoices/generate", validate(generateInvoiceSchema), handleGenerateBillingInvoice);
+
 router.post("/billing/invoices/:id/issue", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
@@ -1838,7 +1880,7 @@ router.post("/billing/invoices/:id/duplicate-admin", async (req, res) => {
         [newInvoiceId]
       );
 
-      return { ok: true, data: newRows[0] };
+      return { ok: true, data: attachDisplayDate(newRows[0]) };
     });
 
     if (!result.ok) return res.status(400).json(result);
@@ -1929,7 +1971,7 @@ router.get("/billing/invoices", async (req, res) => {
 
     query += ` ORDER BY ${monthExpr} DESC, i.id DESC`;
     const [rows] = await getPool().query(query, params);
-    return res.json({ ok: true, data: rows });
+    return res.json({ ok: true, data: rows.map((row) => attachDisplayDate(row)) });
   } catch (error) {
     return res.status(500).json({ ok: false, message: error.message });
   }

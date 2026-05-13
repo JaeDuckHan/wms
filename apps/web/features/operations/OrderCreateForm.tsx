@@ -392,7 +392,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
       <PageHeader
         breadcrumbs={[{ label: "Operations" }, { label: title }]}
         title={title}
-        subtitle={mode === "inbound" ? "Create a draft inbound order." : "Create a draft outbound order."}
+        subtitle={mode === "inbound" ? "Create a draft inbound order." : "Create as draft, add items, then ship from detail."}
         rightSlot={
           <div className="flex gap-2">
             <Link href={listHref}>

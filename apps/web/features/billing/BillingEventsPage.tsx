@@ -197,7 +197,7 @@ export function BillingEventsPage() {
                     ""
                   ),
               },
-              { key: "event_date", label: "Event Date", render: (row) => row.event_date.slice(0, 10) },
+              { key: "event_date", label: "Event Date", render: (row) => row.display_date_kst ?? row.event_date.slice(0, 10) },
               { key: "client", label: "Client", render: (row) => `${row.client_code} | ${row.name_kr}` },
               { key: "service_code", label: "Service", render: (row) => serviceLabels.get(row.service_code) ?? row.service_code },
               { key: "qty", label: "Qty", render: (row) => Number(row.qty).toLocaleString() },

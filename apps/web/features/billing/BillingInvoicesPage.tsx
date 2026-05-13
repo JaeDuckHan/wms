@@ -412,7 +412,7 @@ export function BillingInvoicesPage() {
             columns={[
               { key: "invoice_no", label: "Invoice No", render: (row) => <Link href={`/billing/${row.id}`} className="font-medium hover:underline">{row.invoice_no}</Link> },
               { key: "client", label: "Client", render: (row) => `${row.client_code} | ${row.name_kr}` },
-              { key: "date", label: "Date", render: (row) => row.invoice_date },
+              { key: "date", label: "Date", render: (row) => row.display_date_kst ?? row.invoice_date },
               { key: "fx", label: "FX", render: (row) => Number(row.fx_rate_thbkrw).toFixed(4) },
               { key: "subtotal_thb", label: t("Original THB"), render: (row) => Number(row.subtotal_thb ?? 0).toLocaleString() },
               { key: "subtotal", label: "Subtotal", render: (row) => Number(row.subtotal_krw).toLocaleString() },

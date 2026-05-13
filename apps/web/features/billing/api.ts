@@ -57,6 +57,7 @@ export type BillingInvoice = {
   invoice_no: string;
   invoice_month: string;
   invoice_date: string;
+  display_date_kst?: string | null;
   currency: "KRW";
   fx_rate_thbkrw: number;
   subtotal_thb?: number | null;
@@ -81,6 +82,7 @@ export type BillingInvoiceItem = {
 export type BillingEvent = {
   id: number;
   event_date: string;
+  display_date_kst?: string | null;
   client_id: number;
   client_code: string;
   name_kr: string;
@@ -775,7 +777,7 @@ export async function generateBillingInvoice(
     options,
     () =>
       requestJson<{ invoice: BillingInvoice; events_count: number; reused: boolean; invoice_id?: number }>(
-        "/billing/invoices/generate",
+        "/billing/invoices",
         { method: "POST", body: JSON.stringify(input) },
         options
       ),

@@ -23,7 +23,10 @@ const inboundOrderCreateSchema = z.object({
   status: z.enum(["draft", "submitted", "arrived", "qc_hold", "received", "cancelled"]).default("draft"),
   memo: z.string().max(1000).nullable().optional(),
   created_by: z.coerce.number().int().positive(),
-  received_at: z.string().datetime().nullable().optional()
+  received_at: z.string().datetime({
+    offset: true,
+    message: "Use timezone-aware ISO datetime, e.g. 2026-05-14T01:30:00Z or 2026-05-14T10:30:00+09:00"
+  }).nullable().optional()
 });
 
 const inboundOrderUpdateSchema = inboundOrderCreateSchema.extend({

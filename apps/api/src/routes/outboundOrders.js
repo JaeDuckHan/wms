@@ -40,8 +40,14 @@ const outboundOrderSchema = z.object({
       "cancelled"
     ])
     .default("draft"),
-  packed_at: z.string().datetime().nullable().optional(),
-  shipped_at: z.string().datetime().nullable().optional(),
+  packed_at: z.string().datetime({
+    offset: true,
+    message: "Use timezone-aware ISO datetime, e.g. 2026-05-14T01:30:00Z or 2026-05-14T10:30:00+09:00"
+  }).nullable().optional(),
+  shipped_at: z.string().datetime({
+    offset: true,
+    message: "Use timezone-aware ISO datetime, e.g. 2026-05-14T01:30:00Z or 2026-05-14T10:30:00+09:00"
+  }).nullable().optional(),
   created_by: z.coerce.number().int().positive()
 });
 
@@ -435,6 +441,14 @@ router.post("/", validate(outboundOrderSchema), async (req, res) => {
     shipped_at = null,
     created_by
   } = req.body;
+
+  if (isShipmentAppliedStatus(status)) {
+    return res.status(400).json({
+      ok: false,
+      code: "ORDER_CREATION_REQUIRES_DRAFT_ITEMS_FIRST",
+      message: "Create outbound orders as draft, add items, then change status to shipped."
+    });
+  }
 
   try {
     const [result] = await getPool().query(

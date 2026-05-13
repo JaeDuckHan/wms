@@ -18,7 +18,8 @@ function getPool() {
       password: process.env.DB_PASSWORD || "",
       database: process.env.DB_NAME || "wms_test",
       waitForConnections: true,
-      connectionLimit: 10
+      connectionLimit: 10,
+      dateStrings: ["DATE"]
     });
   }
 

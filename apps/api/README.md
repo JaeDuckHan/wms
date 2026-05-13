@@ -196,6 +196,8 @@ On API startup, `ADMIN_EMAIL` and `ADMIN_PASSWORD` are synced into the `users` t
 - `GET /stock-balances`
 - `GET /stock-transactions`
 
+Stock balances and transactions are read-only ledger resources. Create stock movement through inbound/return/outbound flows, not direct POSTs to these endpoints.
+
 `return-orders`
 - `GET /return-orders`
 - `GET /return-orders/:id`
@@ -223,6 +225,14 @@ Outbound item create/update/delete automatically syncs `service_events` using ac
 `invoice`
 - `POST /invoices/issue`
 - `GET /invoices/:id`
+
+`billing-invoice`
+- `GET /billing/invoices`
+- `POST /billing/invoices` (generate draft invoice from PENDING billing events and mark them INVOICED)
+- `POST /billing/invoices/generate` (legacy alias)
+- `GET /billing/invoices/:id`
+- `POST /billing/invoices/:id/issue`
+- `POST /billing/invoices/:id/mark-paid`
 
 `settlement close/reopen`
 - `POST /settlement-batches/:id/close`

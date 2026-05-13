@@ -371,6 +371,11 @@ export function OutboundDetailView({
 
         <TabsContent value="items">
           <DataTable rows={currentOrder.items} columns={itemColumns} emptyText={t("No items available.")} />
+          {["shipped", "delivered"].includes(currentOrder.status) && (
+            <p className="mt-3 text-sm text-amber-700">
+              출고 완료 후에는 아이템을 추가할 수 없습니다. draft에서 아이템을 먼저 등록한 뒤 Ship 하세요.
+            </p>
+          )}
           {reallocationItems.length > 0 && (
             <div className="mt-4 rounded-xl border bg-amber-50 p-4">
               <p className="text-sm font-medium text-amber-900">{t("Reallocation Suggestions")}</p>

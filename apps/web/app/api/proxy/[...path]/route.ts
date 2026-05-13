@@ -18,6 +18,8 @@ const ALLOWED_ROOT_SEGMENTS = new Set([
   "warehouse-locations",
   "warehouses",
 ]);
+const DEFAULT_PROXY_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"];
+const READ_ONLY_ROOT_SEGMENTS = new Set(["stock-balances", "stock-transactions"]);
 
 function readForwardedValue(headerValue: string | null) {
   return String(headerValue || "")
@@ -50,6 +52,29 @@ function isAllowedProxyPath(path: string[]) {
   return ALLOWED_ROOT_SEGMENTS.has(path[0]);
 }
 
+function allowedMethodsForProxyPath(path: string[]) {
+  if (!isAllowedProxyPath(path)) return [];
+  if (path.length === 1 && READ_ONLY_ROOT_SEGMENTS.has(path[0])) {
+    return ["GET", "HEAD", "OPTIONS"];
+  }
+  if (path[0] === "billing" && path[1] === "invoices" && path.length === 2) {
+    return ["GET", "POST", "HEAD", "OPTIONS"];
+  }
+  return DEFAULT_PROXY_METHODS;
+}
+
+function isMethodAllowed(method: string, allowedMethods: string[]) {
+  const normalized = method.toUpperCase();
+  return allowedMethods.includes(normalized) || (normalized === "HEAD" && allowedMethods.includes("GET"));
+}
+
+function methodNotAllowedResponse(allowedMethods: string[]) {
+  return Response.json(
+    { ok: false, message: "Proxy method is not allowed for this path." },
+    { status: 405, headers: { Allow: allowedMethods.join(", ") } }
+  );
+}
+
 function isSameOriginMutation(request: NextRequest) {
   if (request.method === "GET" || request.method === "HEAD") return true;
 
@@ -68,6 +93,10 @@ function isSameOriginMutation(request: NextRequest) {
 async function forward(request: NextRequest, params: { path: string[] }) {
   if (!isAllowedProxyPath(params.path)) {
     return Response.json({ ok: false, message: "Proxy path is not allowed." }, { status: 404 });
+  }
+  const allowedMethods = allowedMethodsForProxyPath(params.path);
+  if (!isMethodAllowed(request.method, allowedMethods)) {
+    return methodNotAllowedResponse(allowedMethods);
   }
 
   if (!isSameOriginMutation(request)) {
@@ -138,4 +167,21 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ path: s
 
 export async function DELETE(request: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   return forward(request, await ctx.params);
+}
+
+export async function OPTIONS(_request: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  const params = await ctx.params;
+  if (!isAllowedProxyPath(params.path)) {
+    return new Response(null, { status: 404 });
+  }
+
+  const allowedMethods = allowedMethodsForProxyPath(params.path);
+  return new Response(null, {
+    status: 204,
+    headers: {
+      Allow: allowedMethods.join(", "),
+      "Access-Control-Allow-Methods": allowedMethods.join(", "),
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
 }
