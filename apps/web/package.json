@@ -12,7 +12,7 @@
     "test:e2e:smoke": "playwright test tests/e2e/smoke.spec.ts",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:codegen": "playwright codegen",
-    "web:check": "npm run typecheck && npm run i18n:check && npm run test:snapshot:detail-i18n && npm run build",
+    "web:check": "tsc --noEmit --pretty false --incremental false && node scripts/check_i18n_keys.mjs && node scripts/test_detail_i18n_snapshot.mjs && next build",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
