@@ -226,10 +226,12 @@ function getInvoicePdfFontPath() {
   const candidates = [
     process.env.PDF_FONT_PATH,
     "C:\\Windows\\Fonts\\malgun.ttf",
-    "C:\\Windows\\Fonts\\arial.ttf",
+    "C:\\Windows\\Fonts\\NotoSansKR-VF.ttf",
+    "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansKR-VF.ttf"
   ].filter(Boolean);
 
   return candidates.find((candidate) => {
@@ -241,9 +243,39 @@ function getInvoicePdfFontPath() {
   });
 }
 
+function hasNonAsciiPdfText(value) {
+  return /[^\x20-\x7E]/.test(String(value ?? ""));
+}
+
+function invoicePdfNeedsCjkFont(detail) {
+  const invoice = detail?.invoice || {};
+  const items = Array.isArray(detail?.items) ? detail.items : [];
+  const values = [
+    invoice.invoice_no,
+    invoice.client_code,
+    invoice.name_kr,
+    invoice.invoice_month,
+    invoice.invoice_date,
+    invoice.status,
+    ...items.flatMap((item) => [item.service_code, item.description])
+  ];
+
+  return values.some(hasNonAsciiPdfText);
+}
+
 function buildInvoicePdfBuffer(detail) {
   return new Promise((resolve, reject) => {
     const { invoice, items } = detail;
+    const fontPath = getInvoicePdfFontPath();
+    if (!fontPath && invoicePdfNeedsCjkFont(detail)) {
+      reject(
+        new Error(
+          "PDF_CJK_FONT_MISSING: Install a CJK-capable font or set PDF_FONT_PATH before exporting invoices with Korean text."
+        )
+      );
+      return;
+    }
+
     const doc = new PDFDocument({
       size: "A4",
       margin: 48,
@@ -254,13 +286,8 @@ function buildInvoicePdfBuffer(detail) {
       }
     });
     const chunks = [];
-    const fontPath = getInvoicePdfFontPath();
     const fontName = fontPath ? "InvoiceFont" : "Helvetica";
-    const unicodeText = Boolean(fontPath);
-    const text = (value) => {
-      const raw = String(value ?? "");
-      return unicodeText ? raw : raw.replace(/[^\x20-\x7E]/g, "?");
-    };
+    const text = (value) => String(value ?? "");
 
     if (fontPath) {
       doc.registerFont(fontName, fontPath);

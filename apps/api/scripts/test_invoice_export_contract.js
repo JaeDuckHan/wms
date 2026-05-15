@@ -31,7 +31,7 @@ function createMockPool() {
             id: 1,
             client_id: 10,
             client_code: "CL10",
-            name_kr: "Test Client",
+            name_kr: "안마재테스트 주식회사",
             invoice_no: "THB-TEST-001",
             invoice_month: "2026-05",
             invoice_date: "2026-05-15",
@@ -59,7 +59,7 @@ function createMockPool() {
             id: 101,
             invoice_id: 1,
             service_code: "OUTBOUND_FEE",
-            description: "Outbound handling",
+            description: "출고 처리 / Outbound handling",
             qty: 1,
             unit_price_thb: 100,
             amount_thb: 100,
@@ -192,6 +192,9 @@ async function main() {
     }
     if (body.slice(0, 5).toString("ascii") !== "%PDF-") {
       throw new Error(`Expected PDF binary body, got first bytes ${body.slice(0, 16).toString("hex")}`);
+    }
+    if (body.includes(Buffer.from("????", "ascii"))) {
+      throw new Error("Expected Korean invoice text not to be exported as question marks.");
     }
   } finally {
     await new Promise((resolve) => server.close(resolve));
