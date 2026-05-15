@@ -95,6 +95,8 @@ function normalizeOutboundOrder(order: OutboundOrder): OutboundOrder {
   return {
     ...order,
     outbound_no: asText(order.outbound_no),
+    order_no: asText(order.order_no, ""),
+    tracking_no: asText(order.tracking_no, ""),
     client: asText(order.client),
     eta_date: asText(order.eta_date),
     memo: asText(order.memo),
@@ -150,6 +152,8 @@ export function OutboundDetailView({
   const [itemCount, setItemCount] = useState("1");
   const [editDate, setEditDate] = useState(normalizedOrder.eta_date);
   const [editSalesChannel, setEditSalesChannel] = useState(normalizedOrder.memo === "N/A" ? "" : normalizedOrder.memo);
+  const [editOrderNo, setEditOrderNo] = useState(normalizedOrder.order_no);
+  const [editTrackingNo, setEditTrackingNo] = useState(normalizedOrder.tracking_no);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<OutboundAction | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -244,6 +248,8 @@ export function OutboundDetailView({
   const openEdit = () => {
     setEditDate(currentOrder.eta_date);
     setEditSalesChannel(currentOrder.memo === "N/A" ? "" : currentOrder.memo);
+    setEditOrderNo(currentOrder.order_no);
+    setEditTrackingNo(currentOrder.tracking_no);
     setEditOpen(true);
   };
 
@@ -253,6 +259,8 @@ export function OutboundDetailView({
       const updated = await updateOutboundOrderDetails(currentOrder.outbound_no, {
         order_date: editDate,
         sales_channel: editSalesChannel.trim() || null,
+        order_no: editOrderNo.trim() || null,
+        tracking_no: editTrackingNo.trim() || null,
       });
       setCurrentOrder(normalizeOutboundOrder(updated));
       setEditOpen(false);
@@ -400,13 +408,30 @@ export function OutboundDetailView({
         render: (row: OutboundOrder["items"][number]) =>
           canMutate ? (
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="secondary" onClick={() => openItemEdit(row)} disabled={loading}>
+              <Button
+                size="sm"
+                variant="secondary"
+                data-testid={`outbound-item-edit-${row.id}`}
+                aria-label={`Edit outbound item ${row.product_name}`}
+                title={`Edit outbound item ${row.product_name}`}
+                onClick={() => openItemEdit(row)}
+                disabled={loading}
+              >
                 <Pencil className="h-3.5 w-3.5" />
-                Edit
+                Edit Item
               </Button>
-              <Button size="sm" variant="ghost" className="text-rose-700" onClick={() => void removeOutboundItem(row)} disabled={loading}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-rose-700"
+                data-testid={`outbound-item-delete-${row.id}`}
+                aria-label={`Delete outbound item ${row.product_name}`}
+                title={`Delete outbound item ${row.product_name}`}
+                onClick={() => void removeOutboundItem(row)}
+                disabled={loading}
+              >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete
+                Delete Item
               </Button>
             </div>
           ) : null,
@@ -516,6 +541,8 @@ export function OutboundDetailView({
             <CardContent className="space-y-2">
               <p className="text-sm">{t(currentOrder.summary)}</p>
               <p className="text-sm text-slate-500">{t(currentOrder.memo)}</p>
+              <p className="text-sm text-slate-500">{`${t("Order No")}: ${currentOrder.order_no || "-"}`}</p>
+              <p className="text-sm text-slate-500">{`${t("Tracking No")}: ${currentOrder.tracking_no || "-"}`}</p>
               <div className="flex flex-wrap gap-2 pt-1">
                 <Badge variant={shortageItems.length > 0 ? "danger" : "success"}>
                   {shortageItems.length > 0
@@ -722,6 +749,14 @@ export function OutboundDetailView({
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="block text-xs font-medium text-slate-600">
+              Order No
+              <Input className="mt-1" value={editOrderNo} onChange={(event) => setEditOrderNo(event.target.value)} />
+            </label>
+            <label className="block text-xs font-medium text-slate-600">
+              Tracking No
+              <Input className="mt-1" value={editTrackingNo} onChange={(event) => setEditTrackingNo(event.target.value)} />
             </label>
           </div>
           <DialogFooter>

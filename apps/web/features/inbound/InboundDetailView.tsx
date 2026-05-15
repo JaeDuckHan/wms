@@ -230,13 +230,30 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
         render: (row: InboundOrder["items"][number]) =>
           canMutate ? (
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="secondary" onClick={() => openItemEdit(row)} disabled={loading}>
+              <Button
+                size="sm"
+                variant="secondary"
+                data-testid={`inbound-item-edit-${row.id}`}
+                aria-label={`Edit inbound item ${row.product_name}`}
+                title={`Edit inbound item ${row.product_name}`}
+                onClick={() => openItemEdit(row)}
+                disabled={loading}
+              >
                 <Pencil className="h-3.5 w-3.5" />
-                Edit
+                Edit Item
               </Button>
-              <Button size="sm" variant="ghost" className="text-rose-700" onClick={() => void removeInboundItem(row)} disabled={loading}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-rose-700"
+                data-testid={`inbound-item-delete-${row.id}`}
+                aria-label={`Delete inbound item ${row.product_name}`}
+                title={`Delete inbound item ${row.product_name}`}
+                onClick={() => void removeInboundItem(row)}
+                disabled={loading}
+              >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete
+                Delete Item
               </Button>
             </div>
           ) : null,

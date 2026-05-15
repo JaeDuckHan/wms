@@ -59,6 +59,8 @@ export type OutboundTimeline = {
 export type OutboundOrder = {
   id: string;
   outbound_no: string;
+  order_no: string;
+  tracking_no: string;
   client: string;
   eta_date: string;
   status: OutboundStatus;

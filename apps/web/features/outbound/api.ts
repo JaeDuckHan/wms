@@ -422,6 +422,8 @@ function mapOutboundOrder(
   return {
     id: String(order.outbound_no),
     outbound_no: order.outbound_no,
+    order_no: order.order_no ?? "",
+    tracking_no: order.tracking_no ?? "",
     client: clientName || `Client #${order.client_id}`,
     eta_date: toDateOnly(order.order_date),
     status: order.status,
@@ -794,6 +796,8 @@ export async function updateOutboundOrder(
     const updated: OutboundOrder = {
       ...current,
       eta_date: input.order_date ?? current.eta_date,
+      order_no: input.order_no !== undefined ? input.order_no ?? "" : current.order_no,
+      tracking_no: input.tracking_no !== undefined ? input.tracking_no ?? "" : current.tracking_no,
       status: nextStatus,
       memo: input.sales_channel !== undefined ? input.sales_channel ?? "N/A" : current.memo,
       timeline: [

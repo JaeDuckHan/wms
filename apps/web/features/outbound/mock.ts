@@ -120,6 +120,8 @@ export const outboundOrdersMock: OutboundOrder[] = Array.from({ length: 20 }, (_
   return {
     id: outboundNo,
     outbound_no: outboundNo,
+    order_no: `ORD-${pad4(seq)}`,
+    tracking_no: boxes[0]?.tracking_no ?? `TRK-${String(80000000 + seq).padStart(8, "0")}`,
     client: `Sample Client ${pad2(((seq - 1) % 20) + 1)}`,
     eta_date: current.toISOString().slice(0, 10),
     status,
