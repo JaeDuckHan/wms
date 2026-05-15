@@ -156,8 +156,8 @@ async function main() {
       throw new Error(`Expected application/pdf export response, got ${contentType}`);
     }
     const disposition = String(res.headers["content-disposition"] || "");
-    if (!disposition.includes("attachment")) {
-      throw new Error(`Expected attachment content-disposition, got ${disposition}`);
+    if (!disposition.includes("inline")) {
+      throw new Error(`Expected inline content-disposition for browser preview, got ${disposition}`);
     }
     if (!disposition.includes(".pdf")) {
       throw new Error(`Expected .pdf content-disposition, got ${disposition}`);

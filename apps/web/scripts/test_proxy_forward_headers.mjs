@@ -11,3 +11,11 @@ if (!source.includes("content-disposition")) {
 if (!source.includes("response.headers.get(\"content-disposition\")")) {
   throw new Error("Proxy should copy content-disposition from the upstream API response.");
 }
+
+if (!source.includes("await response.arrayBuffer()")) {
+  throw new Error("Proxy must preserve binary PDF bodies with arrayBuffer(), not text().");
+}
+
+if (!source.includes("isTextLikeResponse")) {
+  throw new Error("Proxy must explicitly split text-like responses from binary responses.");
+}

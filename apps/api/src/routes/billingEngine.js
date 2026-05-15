@@ -2432,7 +2432,7 @@ router.get("/billing/invoices/:id/export-pdf", async (req, res) => {
 
     const pdf = await buildInvoicePdfBuffer(detail);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
     res.setHeader("Content-Length", String(pdf.length));
     return res.send(pdf);
 

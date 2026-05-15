@@ -75,6 +75,11 @@ function methodNotAllowedResponse(allowedMethods: string[]) {
   );
 }
 
+function isTextLikeResponse(contentType: string) {
+  const normalized = contentType.toLowerCase();
+  return normalized.startsWith("text/") || normalized.includes("application/json") || normalized.includes("+json");
+}
+
 function isSameOriginMutation(request: NextRequest) {
   if (request.method === "GET" || request.method === "HEAD") return true;
 
@@ -109,11 +114,11 @@ async function forward(request: NextRequest, params: { path: string[] }) {
   const target = `${API_BASE_URL}/${joinedPath}${query}`;
 
   const headers = new Headers();
-  const contentType = request.headers.get("content-type");
-  if (contentType) headers.set("content-type", contentType);
+  const requestContentType = request.headers.get("content-type");
+  if (requestContentType) headers.set("content-type", requestContentType);
   if (token) headers.set("authorization", `Bearer ${token}`);
 
-  const body =
+  const requestBody =
     request.method === "GET" || request.method === "HEAD"
       ? undefined
       : await request.text();
@@ -121,23 +126,28 @@ async function forward(request: NextRequest, params: { path: string[] }) {
   const response = await fetch(target, {
     method: request.method,
     headers,
-    body,
+    body: requestBody,
     cache: "no-store",
   });
 
-  const text = await response.text();
+  const upstreamContentType = response.headers.get("content-type") ?? "application/json";
+  const isTextLike = isTextLikeResponse(upstreamContentType);
+  const responseBody: string | ArrayBuffer = isTextLike ? await response.text() : await response.arrayBuffer();
   const resHeaders = new Headers({
-    "content-type": response.headers.get("content-type") ?? "application/json",
+    "content-type": upstreamContentType,
   });
   const contentDisposition = response.headers.get("content-disposition");
   if (contentDisposition) {
     resHeaders.set("content-disposition", contentDisposition);
   }
+  if (typeof responseBody !== "string") {
+    resHeaders.set("content-length", String(responseBody.byteLength));
+  }
 
   // On successful login, also set server cookie so next SSR/RSC requests always see token.
-  if (joinedPath === "auth/login" && response.ok) {
+  if (joinedPath === "auth/login" && response.ok && typeof responseBody === "string") {
     try {
-      const parsed = JSON.parse(text) as { data?: { token?: string } };
+      const parsed = JSON.parse(responseBody) as { data?: { token?: string } };
       const sessionToken = parsed?.data?.token;
       if (sessionToken) {
         resHeaders.append("set-cookie", buildSessionCookie(sessionToken, request.nextUrl.protocol));
@@ -151,7 +161,7 @@ async function forward(request: NextRequest, params: { path: string[] }) {
     resHeaders.append("set-cookie", buildExpiredSessionCookie(request.nextUrl.protocol));
   }
 
-  return new Response(text, {
+  return new Response(responseBody, {
     status: response.status,
     headers: resHeaders,
   });
