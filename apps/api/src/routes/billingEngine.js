@@ -189,6 +189,34 @@ function calculateBillingAmounts(event, fx) {
   return { amountThb, amountKrw, unitPriceThb, unitPriceKrw };
 }
 
+function isVatInvoiceItem(item) {
+  return String(item?.service_code || "").toUpperCase().startsWith("VAT");
+}
+
+function deriveThbTotalsFromInvoiceItems(items) {
+  let subtotalThb = 0;
+  let vatThb = 0;
+
+  for (const item of items) {
+    const amountThb = Number(item.amount_thb || 0);
+    if (!Number.isFinite(amountThb) || amountThb <= 0) continue;
+
+    if (isVatInvoiceItem(item)) {
+      vatThb += amountThb;
+    } else {
+      subtotalThb += amountThb;
+    }
+  }
+
+  subtotalThb = roundMoney(subtotalThb, 2);
+  vatThb = roundMoney(vatThb, 2);
+  return {
+    subtotal_thb: subtotalThb,
+    vat_thb: vatThb,
+    total_thb: roundMoney(subtotalThb + vatThb, 2)
+  };
+}
+
 function safeInvoiceFileBase(value) {
   const safe = String(value || "invoice").replace(/[^A-Za-z0-9._-]/g, "_");
   return safe || "invoice";
@@ -478,6 +506,13 @@ async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
       amount_thb: amountThb
     };
   });
+
+  const derivedThbTotals = deriveThbTotalsFromInvoiceItems(items);
+  if (Number(invoice.total_thb || 0) <= 0 && derivedThbTotals.total_thb > 0) {
+    invoice.subtotal_thb = derivedThbTotals.subtotal_thb;
+    invoice.vat_thb = derivedThbTotals.vat_thb;
+    invoice.total_thb = derivedThbTotals.total_thb;
+  }
 
   return {
     invoice,

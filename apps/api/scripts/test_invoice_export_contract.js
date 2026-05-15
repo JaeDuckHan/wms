@@ -37,9 +37,9 @@ function createMockPool() {
             invoice_date: "2026-05-15",
             currency: "THB",
             fx_rate_thbkrw: 39.125,
-            subtotal_thb: 100,
-            vat_thb: 7,
-            total_thb: 107,
+            subtotal_thb: 0,
+            vat_thb: 0,
+            total_thb: 0,
             subtotal_krw: 3900,
             vat_krw: 200,
             total_krw: 4100,
@@ -65,6 +65,21 @@ function createMockPool() {
             amount_thb: 100,
             unit_price_krw: 3900,
             amount_krw: 3900,
+            created_at: "2026-05-15 00:00:00",
+            updated_at: "2026-05-15 00:00:00",
+            unit_price_trunc100: 1,
+            amount_trunc100: 1,
+          },
+          {
+            id: 102,
+            invoice_id: 1,
+            service_code: "VAT_7",
+            description: "VAT 7%",
+            qty: 1,
+            unit_price_thb: 7,
+            amount_thb: 7,
+            unit_price_krw: 200,
+            amount_krw: 200,
             created_at: "2026-05-15 00:00:00",
             updated_at: "2026-05-15 00:00:00",
             unit_price_trunc100: 1,
@@ -133,6 +148,19 @@ async function main() {
 
   try {
     const { port } = server.address();
+    const detail = await request(port, "/billing/invoices/1");
+    const detailBody = detail.body.toString("utf8");
+    const detailJson = JSON.parse(detailBody);
+    if (detail.res.statusCode !== 200 || !detailJson.ok) {
+      throw new Error(`Expected 200 detail response, got ${detail.res.statusCode}: ${detailBody}`);
+    }
+    const invoice = detailJson.data.invoice;
+    if (Number(invoice.subtotal_thb) !== 100 || Number(invoice.vat_thb) !== 7 || Number(invoice.total_thb) !== 107) {
+      throw new Error(
+        `Expected detail THB totals to be derived from invoice items, got subtotal=${invoice.subtotal_thb}, vat=${invoice.vat_thb}, total=${invoice.total_thb}`
+      );
+    }
+
     const metadata = await request(port, "/billing/invoices/1/export-pdf");
     const metadataBody = metadata.body.toString("utf8");
     const metadataJson = JSON.parse(metadataBody);
