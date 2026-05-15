@@ -255,6 +255,35 @@ async function requestJson<T>(
   return json.data;
 }
 
+async function requestVoid(
+  path: string,
+  init?: RequestInit,
+  options?: AuthRequestOptions
+): Promise<void> {
+  const browser = isBrowserRequest();
+  const token = await resolveToken(options?.token);
+  if (!browser && !token && !options?.allowAnonymous) {
+    throw new ApiError("Missing auth token", 401);
+  }
+
+  const endpoint = browser ? `/api/proxy${path}` : `${API_BASE_URL}${path}`;
+
+  const response = await fetch(endpoint, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(!browser && token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+
+  const json = (await response.json()) as JsonResponse<unknown>;
+  if (!response.ok || !json.ok) {
+    throw new ApiError(json.message ?? "Request failed", response.status);
+  }
+}
+
 async function requestJsonOrDefault<T>(
   path: string,
   fallback: T,
@@ -543,10 +572,16 @@ function mapItems(
           : "ready";
     return {
       id: String(item.id),
+      product_id: item.product_id,
+      lot_id: item.lot_id,
+      location_id: item.location_id,
       barcode_full: productMap.get(item.product_id)?.barcode_full ?? `P-${item.product_id}`,
       product_name: productMap.get(item.product_id)?.name_kr ?? `Product #${item.product_id}`,
       lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
       location: itemLocation,
+      box_type: item.box_type,
+      box_count: Number(item.box_count || 0),
+      remark: item.remark,
       requested_qty: requested,
       picked_qty: picked,
       available_qty: available,
@@ -723,6 +758,201 @@ export async function transitionOutboundStatus(
   return updated;
 }
 
+export type UpdateOutboundOrderInput = {
+  order_date?: string;
+  status?: OutboundStatus;
+  sales_channel?: string | null;
+  order_no?: string | null;
+  tracking_no?: string | null;
+};
+
+function nextPackedAt(status: OutboundStatus, currentPackedAt: string | null) {
+  if (["packed", "shipped", "delivered"].includes(status)) {
+    return toIsoDateTime(currentPackedAt) ?? new Date().toISOString();
+  }
+  return null;
+}
+
+function nextShippedAt(status: OutboundStatus, currentShippedAt: string | null) {
+  if (["shipped", "delivered"].includes(status)) {
+    return toIsoDateTime(currentShippedAt) ?? new Date().toISOString();
+  }
+  return null;
+}
+
+export async function updateOutboundOrder(
+  outboundNo: string,
+  input: UpdateOutboundOrderInput,
+  options?: RequestOptions
+): Promise<OutboundOrder> {
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const idx = mockDb.findIndex((item) => item.outbound_no === outboundNo);
+    if (idx < 0) throw new ApiError("Outbound order not found", 404);
+    const current = mockDb[idx];
+    const nextStatus = input.status ?? current.status;
+    const updated: OutboundOrder = {
+      ...current,
+      eta_date: input.order_date ?? current.eta_date,
+      status: nextStatus,
+      memo: input.sales_channel !== undefined ? input.sales_channel ?? "N/A" : current.memo,
+      timeline: [
+        ...current.timeline,
+        {
+          id: `TL-${Date.now()}`,
+          type: nextStatus === "cancelled" ? "cancelled" : "updated",
+          title: nextStatus === "cancelled" ? "Outbound Cancelled" : "Outbound Updated",
+          at: new Date().toISOString().slice(0, 16).replace("T", " "),
+          actor: "admin.demo",
+          note: current.status !== nextStatus ? `${current.status} -> ${nextStatus}` : "Outbound order updated",
+        },
+      ],
+    };
+    mockDb[idx] = updated;
+    return cloneOrder(updated);
+  }
+
+  const current = await (async () => {
+    const rawOrders = await requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options);
+    const found = rawOrders.find((order) => order.outbound_no === outboundNo);
+    if (!found) throw new ApiError("Outbound order not found", 404);
+    return found;
+  })();
+  const nextStatus = input.status ?? current.status;
+
+  await requestJson<RawOutboundOrder>(
+    `/outbound-orders/${current.id}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        outbound_no: current.outbound_no,
+        client_id: current.client_id,
+        warehouse_id: current.warehouse_id,
+        order_date: input.order_date ?? toDateOnly(current.order_date),
+        sales_channel: input.sales_channel !== undefined ? input.sales_channel : current.sales_channel,
+        order_no: input.order_no !== undefined ? input.order_no : current.order_no,
+        tracking_no: input.tracking_no !== undefined ? input.tracking_no : current.tracking_no,
+        status: nextStatus,
+        packed_at: nextPackedAt(nextStatus, current.packed_at),
+        shipped_at: nextShippedAt(nextStatus, current.shipped_at),
+        created_by: current.created_by,
+      }),
+    },
+    options
+  );
+
+  const updated = await getOutboundOrderByNo(current.outbound_no, options);
+  if (!updated) throw new ApiError("Outbound order not found", 404);
+  return updated;
+}
+
+export async function cancelOutboundOrder(outboundNo: string, options?: RequestOptions): Promise<OutboundOrder> {
+  return updateOutboundOrder(outboundNo, { status: "cancelled" }, options);
+}
+
+export async function updateOutboundOrderDetails(
+  outboundNo: string,
+  input: Pick<UpdateOutboundOrderInput, "order_date" | "sales_channel" | "order_no" | "tracking_no">,
+  options?: RequestOptions
+): Promise<OutboundOrder> {
+  return updateOutboundOrder(outboundNo, input, options);
+}
+
+export type UpdateOutboundItemInput = {
+  product_id: number;
+  lot_id: number;
+  location_id?: number | null;
+  qty: number;
+  box_type?: string | null;
+  box_count?: number;
+  remark?: string | null;
+};
+
+export async function updateOutboundItem(
+  outboundNo: string,
+  itemId: string,
+  input: UpdateOutboundItemInput,
+  options?: RequestOptions
+): Promise<OutboundOrder> {
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const orderIndex = mockDb.findIndex((item) => item.outbound_no === outboundNo);
+    if (orderIndex < 0) throw new ApiError("Outbound order not found", 404);
+    const current = mockDb[orderIndex];
+    const updatedItems = current.items.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            product_id: input.product_id,
+            lot_id: input.lot_id,
+            location_id: input.location_id ?? null,
+            requested_qty: input.qty,
+            box_type: input.box_type ?? null,
+            box_count: input.box_count ?? 0,
+            remark: input.remark ?? null,
+          }
+        : item
+    );
+    mockDb[orderIndex] = {
+      ...current,
+      items: updatedItems,
+      summary: `${updatedItems.length} SKUs / ${updatedItems.reduce((sum, item) => sum + item.requested_qty, 0)} EA`,
+    };
+    return cloneOrder(mockDb[orderIndex]);
+  }
+
+  const rawOrders = await requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options);
+  const current = rawOrders.find((order) => order.outbound_no === outboundNo);
+  if (!current) throw new ApiError("Outbound order not found", 404);
+
+  await requestJson<RawOutboundItem>(
+    `/outbound-items/${itemId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        outbound_order_id: current.id,
+        product_id: input.product_id,
+        lot_id: input.lot_id,
+        location_id: input.location_id ?? null,
+        qty: input.qty,
+        box_type: input.box_type ?? null,
+        box_count: input.box_count ?? 0,
+        remark: input.remark ?? null,
+      }),
+    },
+    options
+  );
+
+  const updated = await getOutboundOrderByNo(outboundNo, options);
+  if (!updated) throw new ApiError("Outbound order not found", 404);
+  return updated;
+}
+
+export async function deleteOutboundItem(
+  outboundNo: string,
+  itemId: string,
+  options?: RequestOptions
+): Promise<OutboundOrder> {
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const orderIndex = mockDb.findIndex((item) => item.outbound_no === outboundNo);
+    if (orderIndex < 0) throw new ApiError("Outbound order not found", 404);
+    const current = mockDb[orderIndex];
+    const updatedItems = current.items.filter((item) => item.id !== itemId);
+    mockDb[orderIndex] = {
+      ...current,
+      items: updatedItems,
+      summary: `${updatedItems.length} SKUs / ${updatedItems.reduce((sum, item) => sum + item.requested_qty, 0)} EA`,
+    };
+    return cloneOrder(mockDb[orderIndex]);
+  }
+
+  await requestVoid(`/outbound-items/${itemId}`, { method: "DELETE" }, options);
+  const updated = await getOutboundOrderByNo(outboundNo, options);
+  if (!updated) throw new ApiError("Outbound order not found", 404);
+  return updated;
+}
+
 export type AddBoxPayload = {
   box_no: string;
   courier: string;
@@ -804,10 +1034,16 @@ export async function createOutboundOrderWithItems(
     };
     const mappedItems: OutboundItem[] = items.map((item, index) => ({
       id: `mock-outbound-item-${Date.now()}-${index}`,
+      product_id: item.product_id,
+      lot_id: item.lot_id,
+      location_id: item.location_id ?? null,
       barcode_full: `P-${item.product_id}`,
       product_name: `Product #${item.product_id}`,
       lot: `LOT-${item.lot_id}`,
       location: item.location_id ? `LOC-${item.location_id}` : "-",
+      box_type: item.box_type ?? null,
+      box_count: item.box_count ?? 0,
+      remark: item.remark ?? null,
       requested_qty: item.qty,
       picked_qty: 0,
       available_qty: 0,

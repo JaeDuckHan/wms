@@ -19,6 +19,7 @@ export function SettingsTabs() {
     { href: "/settings/clients", label: "Clients" },
     { href: "/settings/products", label: "Products" },
     { href: "/settings/warehouses", label: "Warehouses" },
+    { href: "/settings/sales-channels", label: "Sales Channels" },
     canManageBillingSettings ? { href: "/settings/service-rates", label: "Service Rates" } : null,
     canManageBillingSettings ? { href: "/settings/contract-rates", label: "Contract Rates" } : null,
     canManageBillingSettings ? { href: "/settings/storage-rates", label: "Storage Rates" } : null,

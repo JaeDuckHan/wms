@@ -17,6 +17,7 @@ import { createProductLot, listProductLots, type ProductLotOption } from "@/feat
 import { listWarehouseLocations, type WarehouseLocationOption } from "@/features/operations/warehouseLocationsApi";
 import { listProducts } from "@/features/settings/products/api";
 import type { Product } from "@/features/settings/products/types";
+import { listSalesChannels, type SalesChannel } from "@/features/settings/sales-channels/api";
 import { listWarehouses } from "@/features/settings/warehouses/api";
 import type { Warehouse } from "@/features/settings/warehouses/types";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
@@ -38,17 +39,50 @@ type ItemDraft = {
   remark: string;
 };
 
+type ItemField = keyof Pick<
+  ItemDraft,
+  "product_id" | "lot_id" | "lot_no" | "location_id" | "qty" | "invoice_price" | "box_count"
+>;
+
+type ItemFieldErrors = Partial<Record<ItemField, string>>;
+
+type ValidatedItemDraft = {
+  productId: number;
+  lotId: number | null;
+  lotNo: string;
+  qty: number;
+  locationId: number | null;
+  invoicePrice: number | null;
+  boxCount: number;
+};
+
+type StockBalanceOption = {
+  product_id: number;
+  lot_id: number;
+  warehouse_id: number;
+  location_id: number | null;
+  available_qty: number;
+  reserved_qty: number;
+};
+
 type MasterState = {
   clients: Client[];
   warehouses: Warehouse[];
   products: Product[];
   lots: ProductLotOption[];
   locations: WarehouseLocationOption[];
+  stockBalances: StockBalanceOption[];
+  salesChannels: SalesChannel[];
 };
 
 const inputLabelClass = "mb-1 block text-xs font-medium text-slate-600";
 const selectClass =
   "h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300";
+const fieldErrorClass = "mt-1 text-xs text-rose-600";
+
+function withFieldErrorClass(baseClass: string, hasError: boolean) {
+  return hasError ? `${baseClass} border-rose-400 bg-rose-50` : baseClass;
+}
 
 function toDateInputValue(date = new Date()) {
   return formatDateInAppZone(date);
@@ -136,6 +170,25 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
 }
 
+async function listStockBalancesForForm(): Promise<StockBalanceOption[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const response = await fetch("/api/proxy/stock-balances", { cache: "no-store" });
+    const json = (await response.json()) as { ok?: boolean; data?: StockBalanceOption[] };
+    if (!response.ok || !json.ok || !Array.isArray(json.data)) return [];
+    return json.data.map((row) => ({
+      product_id: Number(row.product_id),
+      lot_id: Number(row.lot_id),
+      warehouse_id: Number(row.warehouse_id),
+      location_id: row.location_id == null ? null : Number(row.location_id),
+      available_qty: Number(row.available_qty || 0),
+      reserved_qty: Number(row.reserved_qty || 0),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export function OrderCreateForm({ mode }: { mode: OrderMode }) {
   const { t } = useI18n();
   const router = useRouter();
@@ -146,6 +199,8 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
     products: [],
     lots: [],
     locations: [],
+    stockBalances: [],
+    salesChannels: [],
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -159,16 +214,25 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
   const [platformOrderNo, setPlatformOrderNo] = useState("");
   const [trackingNo, setTrackingNo] = useState("");
   const [items, setItems] = useState<ItemDraft[]>([]);
+  const [itemErrors, setItemErrors] = useState<Record<string, ItemFieldErrors>>({});
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    Promise.all([listClients(), listWarehouses(), listProducts(), listProductLots(), listWarehouseLocations({ status: "active" })])
-      .then(([clients, warehouses, products, lots, locations]) => {
+    Promise.all([
+      listClients(),
+      listWarehouses(),
+      listProducts(),
+      listProductLots(),
+      listWarehouseLocations({ status: "active" }),
+      listStockBalancesForForm(),
+      listSalesChannels(),
+    ])
+      .then(([clients, warehouses, products, lots, locations, stockBalances, salesChannels]) => {
         if (cancelled) return;
-        setMasters({ clients, warehouses, products, lots, locations });
+        setMasters({ clients, warehouses, products, lots, locations, stockBalances, salesChannels });
       })
       .catch((loadError) => {
         if (cancelled) return;
@@ -230,19 +294,60 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
       .filter((location) => location.status === "active")
       .filter((location) => !selectedWarehouseId || Number(location.warehouse_id) === selectedWarehouseId);
   }, [masters.locations, warehouseId]);
+  const activeSalesChannels = useMemo(
+    () => masters.salesChannels.filter((channel) => channel.status === "active"),
+    [masters.salesChannels]
+  );
 
   const title = mode === "inbound" ? "New Inbound" : "New Outbound";
   const listHref = mode === "inbound" ? "/inbounds" : "/outbounds";
 
   function updateItem(id: string, patch: Partial<ItemDraft>) {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    setItemErrors((current) => {
+      const existing = current[id];
+      if (!existing) return current;
+      const nextFields = { ...existing };
+      for (const key of Object.keys(patch) as ItemField[]) {
+        delete nextFields[key];
+      }
+      if (Object.keys(nextFields).length === 0) {
+        const { [id]: _removed, ...rest } = current;
+        return rest;
+      }
+      return { ...current, [id]: nextFields };
+    });
   }
 
   function removeItem(id: string) {
     setItems((current) => current.filter((item) => item.id !== id));
+    setItemErrors((current) => {
+      const { [id]: _removed, ...rest } = current;
+      return rest;
+    });
   }
 
-  function validateItemDraft(item: ItemDraft, index: number) {
+  function getOutboundStock(item: ItemDraft) {
+    const productId = toOptionalPositiveInt(item.product_id);
+    const lotId = toOptionalPositiveInt(item.lot_id);
+    const warehouse = toOptionalPositiveInt(warehouseId);
+    const locationId = toOptionalPositiveInt(item.location_id);
+    if (!productId || !lotId || !warehouse) return null;
+
+    const matches = masters.stockBalances.filter((balance) => {
+      if (Number(balance.product_id) !== productId) return false;
+      if (Number(balance.lot_id) !== lotId) return false;
+      if (Number(balance.warehouse_id) !== warehouse) return false;
+      if (locationId && Number(balance.location_id || 0) !== locationId) return false;
+      return true;
+    });
+    if (matches.length === 0) return { available: 0, reserved: 0, allocatable: 0 };
+    const available = matches.reduce((sum, balance) => sum + Number(balance.available_qty || 0), 0);
+    const reserved = matches.reduce((sum, balance) => sum + Number(balance.reserved_qty || 0), 0);
+    return { available, reserved, allocatable: Math.max(available - reserved, 0) };
+  }
+
+  function validateItemDraft(item: ItemDraft): { value: ValidatedItemDraft; errors: ItemFieldErrors } {
     const productId = toOptionalPositiveInt(item.product_id);
     const lotId = toOptionalPositiveInt(item.lot_id);
     const lotNo = item.lot_no.trim();
@@ -250,23 +355,44 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
     const locationId = toOptionalPositiveInt(item.location_id);
     const invoicePrice = toOptionalPositiveNumber(item.invoice_price);
     const boxCount = toOptionalNonNegativeInt(item.box_count);
+    const errors: ItemFieldErrors = {};
 
-    if (!productId) throw new Error(`Item ${index + 1}: product is required.`);
+    if (!productId) errors.product_id = "Select a product.";
     if (mode === "inbound") {
-      if (!lotNo) throw new Error(`Item ${index + 1}: lot no is required.`);
+      if (!lotNo) errors.lot_no = "Enter a LOT No.";
     } else if (!lotId) {
-      throw new Error(`Item ${index + 1}: lot is required.`);
+      errors.lot_id = "Select a lot.";
     }
-    if (!qty) throw new Error(`Item ${index + 1}: qty must be a positive integer.`);
+    if (!qty) errors.qty = "Enter a positive quantity.";
     if (item.location_id.trim() && !locationId) {
-      throw new Error(`Item ${index + 1}: location_id must be a positive integer.`);
+      errors.location_id = "Select a valid location.";
     }
     if (item.invoice_price.trim() && invoicePrice == null) {
-      throw new Error(`Item ${index + 1}: invoice price must be a positive number.`);
+      errors.invoice_price = "Enter a positive invoice price.";
     }
-    if (boxCount == null) throw new Error(`Item ${index + 1}: box count must be zero or greater.`);
+    if (boxCount == null) errors.box_count = "Enter zero or greater.";
 
-    return { productId, lotId, lotNo, qty, locationId, invoicePrice, boxCount };
+    if (mode === "outbound" && productId && lotId && qty && masters.stockBalances.length > 0) {
+      const stock = getOutboundStock(item);
+      if (stock && stock.allocatable <= 0) {
+        errors.qty = "No stock is available for this product lot.";
+      } else if (stock && qty > stock.allocatable) {
+        errors.qty = `Qty exceeds available stock (${stock.allocatable}).`;
+      }
+    }
+
+    return {
+      value: {
+        productId: productId ?? 0,
+        lotId: lotId ?? null,
+        lotNo,
+        qty: qty ?? 0,
+        locationId,
+        invoicePrice,
+        boxCount: boxCount ?? 0,
+      },
+      errors,
+    };
   }
 
   async function resolveInboundLotId(productId: number, lotNo: string) {
@@ -307,7 +433,19 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
 
     try {
       setSaving(true);
-      const validatedItems = items.map((item, index) => validateItemDraft(item, index));
+      const validations = items.map((item) => ({ id: item.id, ...validateItemDraft(item) }));
+      const nextItemErrors = validations.reduce<Record<string, ItemFieldErrors>>((acc, validation) => {
+        if (Object.keys(validation.errors).length > 0) {
+          acc[validation.id] = validation.errors;
+        }
+        return acc;
+      }, {});
+      setItemErrors(nextItemErrors);
+      if (Object.keys(nextItemErrors).length > 0) {
+        setError("Please fix the highlighted item fields.");
+        return;
+      }
+      const validatedItems = validations.map((validation) => validation.value);
 
       if (mode === "inbound") {
         const itemPayloads: CreateInboundItemInput[] = await Promise.all(
@@ -434,6 +572,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                   onChange={(event) => {
                     setClientId(event.target.value);
                     setItems([]);
+                    setItemErrors({});
                   }}
                 >
                   <option value="">Select client</option>
@@ -456,6 +595,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                   onChange={(event) => {
                     setWarehouseId(event.target.value);
                     setItems((current) => current.map((item) => ({ ...item, location_id: "" })));
+                    setItemErrors({});
                   }}
                 >
                   <option value="">Select warehouse</option>
@@ -481,7 +621,18 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <label>
                   <span className={inputLabelClass}>{t("Sales Channel")}</span>
-                  <Input value={salesChannel} onChange={(event) => setSalesChannel(event.target.value)} />
+                  <select
+                    className={selectClass}
+                    value={salesChannel}
+                    onChange={(event) => setSalesChannel(event.target.value)}
+                  >
+                    <option value="">Select sales channel</option>
+                    {activeSalesChannels.map((channel) => (
+                      <option key={channel.id} value={channel.name}>
+                        {channel.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   <span className={inputLabelClass}>{t("Order No")}</span>
@@ -514,6 +665,8 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                 {items.map((item, index) => {
                   const lots = lotsByProductId.get(item.product_id) ?? [];
                   const product = productsById.get(item.product_id);
+                  const errors = itemErrors[item.id] ?? {};
+                  const outboundStock = mode === "outbound" ? getOutboundStock(item) : null;
                   return (
                     <div key={item.id} className="rounded-md border p-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
@@ -526,9 +679,10 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                         <label>
                           <span className={inputLabelClass}>{t("Product")}</span>
                           <select
-                            className={selectClass}
+                            className={withFieldErrorClass(selectClass, Boolean(errors.product_id))}
                             value={item.product_id}
                             onChange={(event) => updateItem(item.id, { product_id: event.target.value, lot_id: "", lot_no: "" })}
+                            aria-invalid={Boolean(errors.product_id)}
                           >
                             <option value="">Select product</option>
                             {filteredProducts.map((nextProduct) => {
@@ -541,17 +695,21 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                               );
                             })}
                           </select>
+                          {errors.product_id ? <p className={fieldErrorClass}>{errors.product_id}</p> : null}
                         </label>
                         {mode === "inbound" ? (
                           <label>
                             <span className={inputLabelClass}>LOT No / Lot No</span>
                             <Input
+                              className={withFieldErrorClass("", Boolean(errors.lot_no))}
                               list={`lot-options-${item.id}`}
                               placeholder={product ? "Enter lot no" : "Select product first"}
                               value={item.lot_no}
                               onChange={(event) => updateItem(item.id, { lot_no: event.target.value, lot_id: "" })}
                               disabled={!item.product_id}
+                              aria-invalid={Boolean(errors.lot_no)}
                             />
+                            {errors.lot_no ? <p className={fieldErrorClass}>{errors.lot_no}</p> : null}
                             {lots.length > 0 ? (
                               <datalist id={`lot-options-${item.id}`}>
                                 {lots.map((lot) => (
@@ -564,10 +722,11 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           <label>
                             <span className={inputLabelClass}>{t("Lot")}</span>
                             <select
-                              className={selectClass}
+                              className={withFieldErrorClass(selectClass, Boolean(errors.lot_id))}
                               value={item.lot_id}
                               onChange={(event) => updateItem(item.id, { lot_id: event.target.value })}
                               disabled={!item.product_id}
+                              aria-invalid={Boolean(errors.lot_id)}
                             >
                               <option value="">{product ? "Select lot" : "Select product first"}</option>
                               {lots.map((lot) => (
@@ -576,16 +735,29 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                                 </option>
                               ))}
                             </select>
+                            {errors.lot_id ? <p className={fieldErrorClass}>{errors.lot_id}</p> : null}
+                            {item.product_id && lots.length === 0 ? (
+                              <p className="mt-1 text-xs text-amber-700">
+                                No lot exists for this product. Receive stock first or choose another product.
+                              </p>
+                            ) : null}
+                            {outboundStock ? (
+                              <p className="mt-1 text-xs text-slate-500">
+                                Available stock: {outboundStock.allocatable} EA
+                                {outboundStock.reserved > 0 ? ` (${outboundStock.reserved} reserved)` : ""}
+                              </p>
+                            ) : null}
                           </label>
                         )}
                         <label>
-                          <span className={inputLabelClass}>{mode === "inbound" ? "입고 위치 / Stock Location" : t("Location")}</span>
+                          <span className={inputLabelClass}>{mode === "inbound" ? "Stock Location" : t("Location")}</span>
                           {activeLocations.length > 0 ? (
                             <select
-                              className={selectClass}
+                              className={withFieldErrorClass(selectClass, Boolean(errors.location_id))}
                               value={item.location_id}
                               onChange={(event) => updateItem(item.id, { location_id: event.target.value })}
                               disabled={!warehouseId}
+                              aria-invalid={Boolean(errors.location_id)}
                             >
                               <option value="">None</option>
                               {activeLocations.map((location) => (
@@ -596,36 +768,44 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             </select>
                           ) : (
                             <Input
+                              className={withFieldErrorClass("", Boolean(errors.location_id))}
                               placeholder={warehouseId ? "Optional location ID" : "Select warehouse first"}
                               value={item.location_id}
                               onChange={(event) => updateItem(item.id, { location_id: event.target.value })}
                               disabled={!warehouseId}
+                              aria-invalid={Boolean(errors.location_id)}
                             />
                           )}
+                          {errors.location_id ? <p className={fieldErrorClass}>{errors.location_id}</p> : null}
                         </label>
                         <label>
                           <span className={inputLabelClass}>{t("Qty")}</span>
-                          <Input type="number" min={1} value={item.qty} onChange={(event) => updateItem(item.id, { qty: event.target.value })} />
+                          <Input
+                            className={withFieldErrorClass("", Boolean(errors.qty))}
+                            type="number"
+                            min={1}
+                            value={item.qty}
+                            onChange={(event) => updateItem(item.id, { qty: event.target.value })}
+                            aria-invalid={Boolean(errors.qty)}
+                          />
+                          {errors.qty ? <p className={fieldErrorClass}>{errors.qty}</p> : null}
                         </label>
                       </div>
 
                       {mode === "inbound" ? (
-                        <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
                           <label>
-                            <span className={inputLabelClass}>인보이스 단가(USD) / Invoice Price (USD)</span>
+                            <span className={inputLabelClass}>Invoice Price (USD)</span>
                             <Input
+                              className={withFieldErrorClass("", Boolean(errors.invoice_price))}
                               type="number"
                               min={0}
                               step="0.0001"
                               value={item.invoice_price}
                               onChange={(event) => updateItem(item.id, { invoice_price: event.target.value })}
+                              aria-invalid={Boolean(errors.invoice_price)}
                             />
-                          </label>
-                          <label>
-                            <span className={inputLabelClass}>{t("Currency")}</span>
-                            <select className={selectClass} value={item.currency || "USD"} disabled>
-                              <option value="USD">USD</option>
-                            </select>
+                            {errors.invoice_price ? <p className={fieldErrorClass}>{errors.invoice_price}</p> : null}
                           </label>
                           <label>
                             <span className={inputLabelClass}>{t("Remark")}</span>
@@ -640,7 +820,15 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           </label>
                           <label>
                             <span className={inputLabelClass}>{t("Box Count")}</span>
-                            <Input type="number" min={0} value={item.box_count} onChange={(event) => updateItem(item.id, { box_count: event.target.value })} />
+                            <Input
+                              className={withFieldErrorClass("", Boolean(errors.box_count))}
+                              type="number"
+                              min={0}
+                              value={item.box_count}
+                              onChange={(event) => updateItem(item.id, { box_count: event.target.value })}
+                              aria-invalid={Boolean(errors.box_count)}
+                            />
+                            {errors.box_count ? <p className={fieldErrorClass}>{errors.box_count}</p> : null}
                           </label>
                           <label>
                             <span className={inputLabelClass}>{t("Remark")}</span>

@@ -13,10 +13,16 @@ export type OutboundListStatus = OutboundStatus | "all";
 
 export type OutboundItem = {
   id: string;
+  product_id?: number;
+  lot_id?: number;
+  location_id?: number | null;
   barcode_full: string;
   product_name: string;
   lot: string;
   location: string;
+  box_type?: string | null;
+  box_count?: number;
+  remark?: string | null;
   requested_qty: number;
   picked_qty: number;
   available_qty: number;

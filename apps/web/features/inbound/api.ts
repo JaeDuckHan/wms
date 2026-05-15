@@ -160,6 +160,29 @@ async function requestJson<T>(
   return json.data;
 }
 
+async function requestVoid(
+  path: string,
+  init?: RequestInit,
+  options?: AuthRequestOptions
+): Promise<void> {
+  const browser = isBrowserRequest();
+  const token = await resolveToken(options?.token);
+  if (!browser && !token && !options?.allowAnonymous) throw new ApiError("Missing auth token", 401);
+
+  const endpoint = browser ? `/api/proxy${path}` : `${API_BASE_URL}${path}`;
+  const response = await fetch(endpoint, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(!browser && token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+  const json = (await response.json()) as JsonResponse<unknown>;
+  if (!response.ok || !json.ok) throw new ApiError(json.message ?? "Request failed", response.status);
+}
+
 function cloneOrder(order: InboundOrder): InboundOrder {
   return JSON.parse(JSON.stringify(order)) as InboundOrder;
 }
@@ -329,6 +352,9 @@ function mapItems(
   const locationMap = new Map(locations.map((location) => [location.id, formatLocationLabel(location)]));
   return rawItems.map((item) => ({
     id: String(item.id),
+    product_id: item.product_id,
+    lot_id: item.lot_id,
+    location_id: item.location_id,
     barcode_full: productMap.get(item.product_id)?.barcode_full ?? `P-${item.product_id}`,
     product_name: productMap.get(item.product_id)?.name_kr ?? `Product #${item.product_id}`,
     lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
@@ -478,6 +504,187 @@ export async function transitionInboundStatus(
   return updated;
 }
 
+export type UpdateInboundOrderInput = {
+  inbound_date?: string;
+  status?: InboundStatus;
+  memo?: string | null;
+};
+
+export async function updateInboundOrder(
+  inboundNo: string,
+  input: UpdateInboundOrderInput,
+  options?: RequestOptions
+): Promise<InboundOrder> {
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const idx = mockDb.findIndex((item) => item.inbound_no === inboundNo);
+    if (idx < 0) throw new ApiError("Inbound order not found", 404);
+    const current = mockDb[idx];
+    const nextStatus = input.status ?? current.status;
+    const updated: InboundOrder = {
+      ...current,
+      inbound_date: input.inbound_date ?? current.inbound_date,
+      status: nextStatus,
+      memo: input.memo !== undefined ? input.memo ?? "-" : current.memo,
+      timeline: [
+        ...current.timeline,
+        {
+          id: `ITL-${Date.now()}`,
+          type: nextStatus === "cancelled" ? "cancelled" : "updated",
+          title: nextStatus === "cancelled" ? "Inbound Cancelled" : "Inbound Updated",
+          at: new Date().toISOString().slice(0, 16).replace("T", " "),
+          actor: "admin.demo",
+          note: current.status !== nextStatus ? `${current.status} -> ${nextStatus}` : "Inbound order updated",
+        },
+      ],
+    };
+    mockDb[idx] = updated;
+    return cloneOrder(updated);
+  }
+
+  const current = await (async () => {
+    const rawOrders = await requestJson<RawInboundOrder[]>("/inbound-orders", undefined, options);
+    const found = rawOrders.find((order) => order.inbound_no === inboundNo);
+    if (!found) throw new ApiError("Inbound order not found", 404);
+    return found;
+  })();
+
+  const nextStatus = input.status ?? current.status;
+  const nextReceivedAt =
+    nextStatus === "received"
+      ? toIsoDateTime(current.received_at) ?? new Date().toISOString()
+      : null;
+
+  await requestJson<RawInboundOrder>(
+    `/inbound-orders/${current.id}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        inbound_no: current.inbound_no,
+        client_id: current.client_id,
+        warehouse_id: current.warehouse_id,
+        inbound_date: input.inbound_date ?? toDateOnly(current.inbound_date),
+        status: nextStatus,
+        memo: input.memo !== undefined ? input.memo : current.memo,
+        created_by: current.created_by,
+        received_at: nextReceivedAt,
+      }),
+    },
+    options
+  );
+
+  const updated = await getInboundOrderByNo(current.inbound_no, options);
+  if (!updated) throw new ApiError("Inbound order not found", 404);
+  return updated;
+}
+
+export async function cancelInboundOrder(inboundNo: string, options?: RequestOptions): Promise<InboundOrder> {
+  return updateInboundOrder(inboundNo, { status: "cancelled" }, options);
+}
+
+export async function updateInboundOrderDetails(
+  inboundNo: string,
+  input: Pick<UpdateInboundOrderInput, "inbound_date" | "memo">,
+  options?: RequestOptions
+): Promise<InboundOrder> {
+  return updateInboundOrder(inboundNo, input, options);
+}
+
+export type UpdateInboundItemInput = {
+  product_id: number;
+  lot_id: number;
+  location_id?: number | null;
+  qty: number;
+  invoice_price?: number | null;
+  currency?: "KRW" | "THB" | "USD" | null;
+  remark?: string | null;
+};
+
+export async function updateInboundItem(
+  inboundNo: string,
+  itemId: string,
+  input: UpdateInboundItemInput,
+  options?: RequestOptions
+): Promise<InboundOrder> {
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const orderIndex = mockDb.findIndex((item) => item.inbound_no === inboundNo);
+    if (orderIndex < 0) throw new ApiError("Inbound order not found", 404);
+    const current = mockDb[orderIndex];
+    const updatedItems = current.items.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            product_id: input.product_id,
+            lot_id: input.lot_id,
+            location_id: input.location_id ?? null,
+            qty: input.qty,
+            invoice_price: input.invoice_price ?? null,
+            currency: input.currency ?? null,
+            remark: input.remark ?? null,
+          }
+        : item
+    );
+    mockDb[orderIndex] = {
+      ...current,
+      items: updatedItems,
+      summary: `${updatedItems.length} SKUs / ${updatedItems.reduce((sum, item) => sum + item.qty, 0)} EA`,
+    };
+    return cloneOrder(mockDb[orderIndex]);
+  }
+
+  const rawOrders = await requestJson<RawInboundOrder[]>("/inbound-orders", undefined, options);
+  const current = rawOrders.find((order) => order.inbound_no === inboundNo);
+  if (!current) throw new ApiError("Inbound order not found", 404);
+
+  await requestJson<RawInboundItem>(
+    `/inbound-items/${itemId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        inbound_order_id: current.id,
+        product_id: input.product_id,
+        lot_id: input.lot_id,
+        location_id: input.location_id ?? null,
+        qty: input.qty,
+        invoice_price: input.invoice_price ?? null,
+        currency: input.currency ?? null,
+        remark: input.remark ?? null,
+      }),
+    },
+    options
+  );
+
+  const updated = await getInboundOrderByNo(inboundNo, options);
+  if (!updated) throw new ApiError("Inbound order not found", 404);
+  return updated;
+}
+
+export async function deleteInboundItem(
+  inboundNo: string,
+  itemId: string,
+  options?: RequestOptions
+): Promise<InboundOrder> {
+  if (shouldUseMockMode()) {
+    await delay(LATENCY_MS);
+    const orderIndex = mockDb.findIndex((item) => item.inbound_no === inboundNo);
+    if (orderIndex < 0) throw new ApiError("Inbound order not found", 404);
+    const current = mockDb[orderIndex];
+    const updatedItems = current.items.filter((item) => item.id !== itemId);
+    mockDb[orderIndex] = {
+      ...current,
+      items: updatedItems,
+      summary: `${updatedItems.length} SKUs / ${updatedItems.reduce((sum, item) => sum + item.qty, 0)} EA`,
+    };
+    return cloneOrder(mockDb[orderIndex]);
+  }
+
+  await requestVoid(`/inbound-items/${itemId}`, { method: "DELETE" }, options);
+  const updated = await getInboundOrderByNo(inboundNo, options);
+  if (!updated) throw new ApiError("Inbound order not found", 404);
+  return updated;
+}
+
 export async function createInboundOrderWithItems(
   input: CreateInboundOrderInput,
   options?: RequestOptions
@@ -502,6 +709,9 @@ export async function createInboundOrderWithItems(
     };
     const mappedItems: InboundItem[] = items.map((item, index) => ({
       id: `mock-inbound-item-${Date.now()}-${index}`,
+      product_id: item.product_id,
+      lot_id: item.lot_id,
+      location_id: item.location_id ?? null,
       barcode_full: `P-${item.product_id}`,
       product_name: `Product #${item.product_id}`,
       lot: `LOT-${item.lot_id}`,

@@ -147,6 +147,10 @@ function formatNumber(value, fractionDigits = 0) {
     : "0";
 }
 
+function isMysqlMissingTable(error) {
+  return error && error.code === "ER_NO_SUCH_TABLE";
+}
+
 async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
   const hasInvoices = await hasTable("invoices", conn);
   if (!hasInvoices) return null;
@@ -202,6 +206,26 @@ async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
     invoice: attachDisplayDate(invoiceRows[0]),
     items: itemRows
   };
+}
+
+async function recordInvoiceExportLog(conn, invoice, fileName, requestedBy) {
+  const hasExportLogs = await hasTable("invoice_export_logs", conn);
+  if (!hasExportLogs) return false;
+
+  try {
+    await conn.query(
+      `INSERT INTO invoice_export_logs (invoice_id, export_format, requested_by, file_name, meta_json)
+       VALUES (?, 'html', ?, ?, JSON_OBJECT('status', ?, 'invoice_no', ?, 'client_code', ?))`,
+      [invoice.id, requestedBy, fileName, invoice.status, invoice.invoice_no, invoice.client_code]
+    );
+    return true;
+  } catch (error) {
+    if (isMysqlMissingTable(error)) {
+      schemaTableCache.set("invoice_export_logs", false);
+      return false;
+    }
+    throw error;
+  }
 }
 
 function buildInvoiceHtmlDocument(detail) {
@@ -2018,11 +2042,7 @@ router.get("/billing/invoices/:id/export-pdf", async (req, res) => {
     }
 
     const requestedBy = Number(req.user?.sub || 0) > 0 ? Number(req.user?.sub) : null;
-    await getPool().query(
-      `INSERT INTO invoice_export_logs (invoice_id, export_format, requested_by, file_name, meta_json)
-       VALUES (?, 'html', ?, ?, JSON_OBJECT('status', ?, 'invoice_no', ?, 'client_code', ?))`,
-      [invoice.id, requestedBy, fileName, invoice.status, invoice.invoice_no, invoice.client_code]
-    );
+    await recordInvoiceExportLog(getPool(), invoice, fileName, requestedBy);
 
     const html = buildInvoiceHtmlDocument(detail);
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -2040,6 +2060,10 @@ router.get("/billing/invoices/:id/export-logs", async (req, res) => {
     const detail = await loadInvoiceDetail(getPool(), Number(req.params.id), scopedClientId);
     if (!detail) {
       return res.status(404).json({ ok: false, message: "Invoice not found" });
+    }
+    const hasExportLogs = await hasTable("invoice_export_logs");
+    if (!hasExportLogs) {
+      return res.json({ ok: true, data: [] });
     }
     const [rows] = await getPool().query(
       `SELECT id, invoice_id, export_format, requested_by, requested_at, file_name, meta_json

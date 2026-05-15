@@ -129,6 +129,10 @@ async function forward(request: NextRequest, params: { path: string[] }) {
   const resHeaders = new Headers({
     "content-type": response.headers.get("content-type") ?? "application/json",
   });
+  const contentDisposition = response.headers.get("content-disposition");
+  if (contentDisposition) {
+    resHeaders.set("content-disposition", contentDisposition);
+  }
 
   // On successful login, also set server cookie so next SSR/RSC requests always see token.
   if (joinedPath === "auth/login" && response.ok) {

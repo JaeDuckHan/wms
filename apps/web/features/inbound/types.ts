@@ -11,6 +11,9 @@ export type InboundListStatus = InboundStatus | "all";
 
 export type InboundItem = {
   id: string;
+  product_id?: number;
+  lot_id?: number;
+  location_id?: number | null;
   barcode_full: string;
   product_name: string;
   lot: string;

@@ -20,7 +20,7 @@ import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { listClients } from "@/features/settings/clients/api";
-import { buildBarcodeFull, createProduct, deleteProduct, listProducts, toggleProductStatus, updateProduct } from "@/features/settings/products/api";
+import { createProduct, deleteProduct, listProducts, toggleProductStatus, updateProduct } from "@/features/settings/products/api";
 import type { Product, ProductStatus } from "@/features/settings/products/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 type FormState = {
@@ -127,10 +127,6 @@ export function ProductsSettingsPage() {
 
   const accessDenied = ready && !canAccessSettings;
 
-  const barcodePreview = useMemo(
-    () => buildBarcodeFull(form.client_code, form.barcode_raw),
-    [form.client_code, form.barcode_raw]
-  );
   const widthCm = useMemo(() => parseOptionalPositiveDecimal(form.width_cm), [form.width_cm]);
   const lengthCm = useMemo(() => parseOptionalPositiveDecimal(form.length_cm), [form.length_cm]);
   const heightCm = useMemo(() => parseOptionalPositiveDecimal(form.height_cm), [form.height_cm]);
@@ -354,7 +350,6 @@ export function ProductsSettingsPage() {
               render: (row) => <span className="font-medium">{row.client_code} | {row.client_name}</span>
             },
             { key: "barcode_raw", label: "Barcode Raw", render: (row) => row.barcode_raw },
-            { key: "barcode_full", label: "Barcode Full", render: (row) => row.barcode_full },
             { key: "name", label: "Name", render: (row) => row.name },
             { key: "cbm_m3", label: "CBM(m³)", render: (row) => formatCbmDisplay(row.cbm_m3) },
             { key: "min_storage_fee_month", label: "Min Fee/Month", render: (row) => Number(row.min_storage_fee_month || 0).toLocaleString() },
@@ -457,10 +452,6 @@ export function ProductsSettingsPage() {
                 inputMode="decimal"
                 placeholder="0"
               />
-            </div>
-            <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t("Barcode Full (Preview)")}</p>
-              <p className="mt-1 font-mono text-slate-700">{barcodePreview}</p>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">{t("Barcode Raw")}</label>

@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Loader2, PackagePlus } from "lucide-react";
+import { AlertTriangle, Ban, Loader2, PackagePlus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
-import type { OutboundAction, OutboundOrder } from "@/features/outbound/types";
+import type { OutboundAction, OutboundItem, OutboundOrder } from "@/features/outbound/types";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/DataTable";
 import {
@@ -21,9 +21,19 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { addOutboundBox, ApiError, transitionOutboundStatus } from "@/features/outbound/api";
+import {
+  addOutboundBox,
+  ApiError,
+  cancelOutboundOrder,
+  deleteOutboundItem,
+  transitionOutboundStatus,
+  updateOutboundItem,
+  updateOutboundOrderDetails,
+} from "@/features/outbound/api";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { useCurrentUser } from "@/features/auth/useCurrentUser";
+import { listSalesChannels, type SalesChannel } from "@/features/settings/sales-channels/api";
 const tabs = ["overview", "items", "boxes", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
 
@@ -127,24 +137,49 @@ export function OutboundDetailView({
   const searchParams = useSearchParams();
   const { pushToast } = useToast();
   const { t } = useI18n();
+  const { canWrite, ready } = useCurrentUser();
+  const normalizedOrder = useMemo(() => normalizeOutboundOrder(initialOrder), [initialOrder]);
 
   const [tab, setTab] = useState<TabValue>(normalizeTab(initialTab));
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [boxNo, setBoxNo] = useState("");
   const [courier, setCourier] = useState("");
   const [trackingNo, setTrackingNo] = useState("");
   const [itemCount, setItemCount] = useState("1");
+  const [editDate, setEditDate] = useState(normalizedOrder.eta_date);
+  const [editSalesChannel, setEditSalesChannel] = useState(normalizedOrder.memo === "N/A" ? "" : normalizedOrder.memo);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<OutboundAction | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [salesChannels, setSalesChannels] = useState<SalesChannel[]>([]);
+  const [editingItem, setEditingItem] = useState<OutboundItem | null>(null);
+  const [itemQty, setItemQty] = useState("");
+  const [itemBoxCount, setItemBoxCount] = useState("");
+  const [itemRemark, setItemRemark] = useState("");
+  const [itemError, setItemError] = useState<string | null>(null);
 
-  const normalizedOrder = useMemo(() => normalizeOutboundOrder(initialOrder), [initialOrder]);
   const [currentOrder, setCurrentOrder] = useState(normalizedOrder);
   useEffect(() => {
     setCurrentOrder(normalizedOrder);
   }, [normalizedOrder]);
+  useEffect(() => {
+    let cancelled = false;
+    listSalesChannels()
+      .then((rows) => {
+        if (!cancelled) setSalesChannels(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSalesChannels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const currentAction = actionByStatus(currentOrder.status);
+  const canMutate = ready && canWrite && currentOrder.status !== "cancelled";
   const shortageItems = useMemo(
     () => currentOrder.items.filter((item) => item.status === "shortage"),
     [currentOrder.items]
@@ -164,6 +199,10 @@ export function OutboundDetailView({
   const totalNetworkAllocatableQty = useMemo(
     () => currentOrder.items.reduce((sum, item) => sum + item.network_allocatable_qty, 0),
     [currentOrder.items]
+  );
+  const activeSalesChannels = useMemo(
+    () => salesChannels.filter((channel) => channel.status === "active"),
+    [salesChannels]
   );
 
   const setTabWithQuery = (nextTab: string) => {
@@ -199,6 +238,108 @@ export function OutboundDetailView({
     } finally {
       setLoading(false);
       setPendingAction(null);
+    }
+  };
+
+  const openEdit = () => {
+    setEditDate(currentOrder.eta_date);
+    setEditSalesChannel(currentOrder.memo === "N/A" ? "" : currentOrder.memo);
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    setLoading(true);
+    try {
+      const updated = await updateOutboundOrderDetails(currentOrder.outbound_no, {
+        order_date: editDate,
+        sales_channel: editSalesChannel.trim() || null,
+      });
+      setCurrentOrder(normalizeOutboundOrder(updated));
+      setEditOpen(false);
+      pushToast({ title: "Outbound updated", variant: "success" });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Update failed";
+      pushToast({ title: "Update failed", description: message, variant: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runCancel = async () => {
+    setLoading(true);
+    try {
+      const updated = await cancelOutboundOrder(currentOrder.outbound_no);
+      setCurrentOrder(normalizeOutboundOrder(updated));
+      setCancelOpen(false);
+      pushToast({ title: "Outbound cancelled", variant: "success" });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Cancel failed";
+      pushToast({ title: "Cancel failed", description: message, variant: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openItemEdit = (item: OutboundItem) => {
+    setEditingItem(item);
+    setItemQty(String(item.requested_qty));
+    setItemBoxCount(String(item.box_count ?? 0));
+    setItemRemark(item.remark ?? "");
+    setItemError(null);
+  };
+
+  const saveItemEdit = async () => {
+    if (!editingItem) return;
+    const qty = Number(itemQty);
+    const boxCount = Number(itemBoxCount);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      setItemError("Qty must be a positive integer.");
+      return;
+    }
+    if (!Number.isInteger(boxCount) || boxCount < 0) {
+      setItemError("Box count must be zero or greater.");
+      return;
+    }
+    if (!editingItem.product_id || !editingItem.lot_id) {
+      setItemError("This item is missing product or LOT metadata. Reload the page and try again.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const updated = await updateOutboundItem(currentOrder.outbound_no, editingItem.id, {
+        product_id: editingItem.product_id,
+        lot_id: editingItem.lot_id,
+        location_id: editingItem.location_id ?? null,
+        qty,
+        box_type: editingItem.box_type ?? null,
+        box_count: boxCount,
+        remark: itemRemark.trim() || null,
+      });
+      setCurrentOrder(normalizeOutboundOrder(updated));
+      setEditingItem(null);
+      pushToast({ title: "Outbound item updated", variant: "success" });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Item update failed";
+      setItemError(message);
+      pushToast({ title: "Item update failed", description: message, variant: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeOutboundItem = async (item: OutboundItem) => {
+    if (!window.confirm(`Delete item ${item.product_name}?`)) return;
+    setLoading(true);
+    try {
+      const updated = await deleteOutboundItem(currentOrder.outbound_no, item.id);
+      setCurrentOrder(normalizeOutboundOrder(updated));
+      pushToast({ title: "Outbound item deleted", variant: "success" });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Item delete failed";
+      pushToast({ title: "Item delete failed", description: message, variant: "error" });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -253,8 +394,25 @@ export function OutboundDetailView({
             <Badge variant={row.status === "picked" ? "success" : "default"}>{t(row.status)}</Badge>
           ),
       },
+      {
+        key: "actions",
+        label: "Actions",
+        render: (row: OutboundOrder["items"][number]) =>
+          canMutate ? (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" onClick={() => openItemEdit(row)} disabled={loading}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Button>
+              <Button size="sm" variant="ghost" className="text-rose-700" onClick={() => void removeOutboundItem(row)} disabled={loading}>
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </Button>
+            </div>
+          ) : null,
+      },
     ],
-    [t]
+    [canMutate, loading, t]
   );
 
   const submitBox = async () => {
@@ -305,7 +463,19 @@ export function OutboundDetailView({
         rightSlot={
           <div className="flex items-center gap-2">
             <StatusBadge status={currentOrder.status} />
-            {currentAction && (
+            {canMutate && (
+              <Button variant="secondary" onClick={openEdit} disabled={loading}>
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+            )}
+            {canMutate && (
+              <Button variant="ghost" className="text-rose-700 hover:bg-rose-50" onClick={() => setCancelOpen(true)} disabled={loading}>
+                <Ban className="h-4 w-4" />
+                Cancel
+              </Button>
+            )}
+            {canMutate && currentAction && (
               <Button onClick={openActionConfirm} disabled={loading}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t(actionLabel(currentAction))}
               </Button>
@@ -421,7 +591,11 @@ export function OutboundDetailView({
           <div className="mb-4 flex justify-end">
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="secondary" disabled={!currentOrder.boxes_supported} title={!currentOrder.boxes_supported ? t("Box API is unavailable in current backend.") : undefined}>
+                <Button
+                  variant="secondary"
+                  disabled={!canMutate || !currentOrder.boxes_supported}
+                  title={!currentOrder.boxes_supported ? t("Box API is unavailable in current backend.") : undefined}
+                >
                   <PackagePlus className="h-4 w-4" />
                   {t("Add Box")}
                 </Button>
@@ -429,7 +603,7 @@ export function OutboundDetailView({
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>{t("Add Box")}</DialogTitle>
-                  <DialogDescription>{t("Mock form with client-side validation.")}</DialogDescription>
+                  <DialogDescription>Enter the box details to save them on this outbound order.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
                   <Input placeholder={t("Box No")} value={boxNo} onChange={(e) => setBoxNo(e.target.value)} />
@@ -507,7 +681,7 @@ export function OutboundDetailView({
           <DialogHeader>
             <DialogTitle>{t("Confirm")} {pendingAction ? t(actionLabel(pendingAction)) : t("Action")}</DialogTitle>
             <DialogDescription>
-              {t("This changes outbound status and appends a timeline log in mock data.")}
+              This changes outbound status and updates stock and billing effects through the API.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -517,6 +691,89 @@ export function OutboundDetailView({
             <Button onClick={runStatusAction} disabled={loading || !pendingAction}>
               {loading ? t("Processing...") : t("Confirm")}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Outbound Edit</DialogTitle>
+            <DialogDescription>
+              Adjust basic outbound details. Use Allocate, Pack, Ship, or Cancel for process status changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <label className="block text-xs font-medium text-slate-600">
+              Date
+              <Input className="mt-1" type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
+            </label>
+            <label className="block text-xs font-medium text-slate-600">
+              Sales channel
+              <select
+                className="mt-1 h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                value={editSalesChannel}
+                onChange={(event) => setEditSalesChannel(event.target.value)}
+              >
+                <option value="">Select sales channel</option>
+                {activeSalesChannels.map((channel) => (
+                  <option key={channel.id} value={channel.name}>
+                    {channel.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setEditOpen(false)} disabled={loading}>Cancel</Button>
+            <Button onClick={() => void saveEdit()} disabled={loading || !editDate}>{loading ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Outbound</DialogTitle>
+            <DialogDescription>
+              This changes the outbound status to cancelled. If reservation or shipment was already applied, related stock and billing effects are rolled back by the API.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setCancelOpen(false)} disabled={loading}>Keep Order</Button>
+            <Button className="bg-rose-700 hover:bg-rose-800" onClick={() => void runCancel()} disabled={loading}>
+              {loading ? "Cancelling..." : "Confirm Cancel"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(editingItem)} onOpenChange={(open) => !open && setEditingItem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Outbound Item</DialogTitle>
+            <DialogDescription>
+              Adjust requested quantity, box count, or remark. Product, LOT, and location stay fixed for stock traceability.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <label className="block text-xs font-medium text-slate-600">
+              Qty
+              <Input className="mt-1" type="number" min={1} value={itemQty} onChange={(event) => setItemQty(event.target.value)} />
+            </label>
+            <label className="block text-xs font-medium text-slate-600">
+              Box Count
+              <Input className="mt-1" type="number" min={0} value={itemBoxCount} onChange={(event) => setItemBoxCount(event.target.value)} />
+            </label>
+            <label className="block text-xs font-medium text-slate-600">
+              Remark
+              <Input className="mt-1" value={itemRemark} onChange={(event) => setItemRemark(event.target.value)} />
+            </label>
+            {itemError ? <p className="text-sm text-rose-700">{itemError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setEditingItem(null)} disabled={loading}>Cancel</Button>
+            <Button onClick={() => void saveItemEdit()} disabled={loading}>{loading ? "Saving..." : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

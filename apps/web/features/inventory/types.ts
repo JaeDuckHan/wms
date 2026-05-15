@@ -25,6 +25,7 @@ export type StockTransactionRow = {
   location: string;
   qty_in: number;
   qty_out: number;
+  current_stock_qty: number;
   ref: string;
   note: string;
 };

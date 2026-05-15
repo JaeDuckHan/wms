@@ -89,6 +89,7 @@ const mockTransactions: StockTransactionRow[] = Array.from({ length: 20 }, (_, i
     location: `LOC-${String(200 + seq)}`,
     qty_in: qtyIn,
     qty_out: qtyOut,
+    current_stock_qty: 30 + seq,
     ref: txnType === "outbound_ship"
       ? `outbound:${5000 + seq}`
       : txnType.startsWith("return_")
@@ -239,13 +240,14 @@ export async function getStockTransactions(
   const path = `/stock-transactions${params.toString() ? `?${params.toString()}` : ""}`;
 
   try {
-    const [txns, clients, products, lots, warehouses, locations] = await Promise.all([
+    const [txns, clients, products, lots, warehouses, locations, balances] = await Promise.all([
       requestJson<RawTxn[]>(path, undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
       requestJson<RawProduct[]>("/products", undefined, options),
       requestJson<RawLot[]>("/product-lots", undefined, options),
       requestJson<RawWarehouse[]>("/warehouses", undefined, options),
       requestJson<RawWarehouseLocation[]>("/warehouse-locations", undefined, options),
+      requestJson<RawBalance[]>("/stock-balances", undefined, options),
     ]);
 
     const clientMap = new Map(clients.map((item) => [item.id, item.name_kr]));
@@ -253,6 +255,17 @@ export async function getStockTransactions(
     const lotMap = new Map(lots.map((item) => [item.id, item.lot_no]));
     const warehouseMap = new Map(warehouses.map((item) => [item.id, formatWarehouseLabel(item)]));
     const locationMap = new Map(locations.map((item) => [item.id, formatLocationLabel(item)]));
+    const balanceByExactKey = new Map(
+      balances.map((row) => [
+        `${row.client_id}:${row.product_id}:${row.lot_id}:${row.warehouse_id}:${row.location_id ?? 0}`,
+        Number(row.available_qty),
+      ])
+    );
+    const balanceByProductLot = balances.reduce<Map<string, number>>((map, row) => {
+      const key = `${row.client_id}:${row.product_id}:${row.lot_id}`;
+      map.set(key, (map.get(key) ?? 0) + Number(row.available_qty || 0));
+      return map;
+    }, new Map());
 
     const mapped = txns.map((row) => ({
       id: String(row.id),
@@ -265,6 +278,10 @@ export async function getStockTransactions(
       location: row.location_id ? locationMap.get(row.location_id) || `LOC-${row.location_id}` : "-",
       qty_in: Number(row.qty_in),
       qty_out: Number(row.qty_out),
+      current_stock_qty:
+        balanceByExactKey.get(`${row.client_id}:${row.product_id}:${row.lot_id}:${row.warehouse_id}:${row.location_id ?? 0}`) ??
+        balanceByProductLot.get(`${row.client_id}:${row.product_id}:${row.lot_id}`) ??
+        0,
       ref: row.ref_type && row.ref_id ? `${row.ref_type}:${row.ref_id}` : "-",
       note: row.note ?? "-",
     }));

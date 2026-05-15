@@ -100,6 +100,7 @@ export default async function InventoryPage({
           { key: "lot", label: "Lot", render: (row) => row.lot },
           { key: "qty_in", label: "Qty In", className: "tabular-nums", render: (row) => row.qty_in },
           { key: "qty_out", label: "Qty Out", className: "tabular-nums", render: (row) => row.qty_out },
+          { key: "current_stock_qty", label: "Current Stock", className: "tabular-nums", render: (row) => row.current_stock_qty },
           { key: "ref", label: "Ref", render: (row) => row.ref },
         ]}
       />
