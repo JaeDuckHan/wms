@@ -16,6 +16,7 @@ import {
   markBillingEventsPending,
   type BillingEvent,
 } from "@/features/billing/api";
+import { formatThbKrwRate } from "@/features/billing/format";
 import { listClients } from "@/features/settings/clients/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
@@ -202,7 +203,7 @@ export function BillingEventsPage() {
               { key: "service_code", label: "Service", render: (row) => serviceLabels.get(row.service_code) ?? row.service_code },
               { key: "qty", label: "Qty", render: (row) => Number(row.qty).toLocaleString() },
               { key: "amount_thb", label: "Charge THB", render: (row) => (row.amount_thb == null ? "-" : Number(row.amount_thb).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })) },
-              { key: "fx_rate_thbkrw", label: "FX", render: (row) => (row.fx_rate_thbkrw == null ? "-" : Number(row.fx_rate_thbkrw).toFixed(4)) },
+              { key: "fx_rate_thbkrw", label: "FX", render: (row) => (row.fx_rate_thbkrw == null ? "-" : formatThbKrwRate(row.fx_rate_thbkrw)) },
               { key: "amount_krw", label: "KRW Equivalent", render: (row) => (row.amount_krw == null ? "-" : Number(row.amount_krw).toLocaleString()) },
               { key: "reference_type", label: "Ref Type", render: (row) => row.reference_type },
               { key: "reference_id", label: "Ref ID", render: (row) => row.reference_id || "-" },

@@ -17,6 +17,7 @@ import {
   type ExchangeRate,
   updateExchangeRate,
 } from "@/features/billing/api";
+import { formatThbKrwRate } from "@/features/billing/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 const blank: Omit<ExchangeRate, "id" | "base_currency" | "quote_currency"> = {
   rate_date: new Date().toISOString().slice(0, 10),
@@ -135,8 +136,8 @@ export function ExchangeRatesSettingsPage() {
               emptyText={loading ? t("Loading...") : t("No exchange rates")}
               columns={[
                 { key: "rate_date", label: "Rate Date", render: (row) => row.rate_date?.slice(0, 10) },
-                { key: "pair", label: "Pair", render: () => "THB/KRW" },
-                { key: "rate", label: "Rate", render: (row) => Number(row.rate).toFixed(4) },
+                { key: "pair", label: "Pair", render: () => "THB -> KRW" },
+                { key: "rate", label: "Rate", render: (row) => formatThbKrwRate(row.rate, 4) },
                 { key: "source", label: "Source", render: (row) => row.source },
                 { key: "locked", label: "Locked", render: (row) => (Number(row.locked) ? "Y" : "N") },
                 { key: "used", label: "Used By Invoices", render: (row) => Number(row.used_invoice_count || 0) },

@@ -160,6 +160,10 @@ function formatMoney(value, fractionDigits = 2) {
   return formatNumber(roundMoney(value, fractionDigits), fractionDigits);
 }
 
+function formatThbKrwRate(value, fractionDigits = 2) {
+  return `1 THB = ${formatMoney(value, fractionDigits)} KRW`;
+}
+
 function calculateBillingAmounts(event, fx) {
   const qty = Number(event.qty || 0);
   const rate = Number(fx || 0);
@@ -355,7 +359,7 @@ function buildInvoicePdfBuffer(detail) {
       ["Subtotal", `${formatMoney(invoice.subtotal_thb)} THB`],
       ["VAT 7%", `${formatMoney(invoice.vat_thb)} THB`],
       ["Total", `${formatMoney(invoice.total_thb)} THB`],
-      ["FX THB/KRW", formatNumber(invoice.fx_rate_thbkrw, 4)],
+      ["Exchange Rate", formatThbKrwRate(invoice.fx_rate_thbkrw)],
       ["KRW Equivalent", `${formatNumber(invoice.total_krw)} KRW`]
     ];
     summaryRows.forEach(([label, value]) => {
@@ -598,7 +602,7 @@ function buildInvoiceHtmlDocument(detail) {
       <div class="summary-row"><span>Subtotal</span><strong>${formatMoney(invoice.subtotal_thb)} THB</strong></div>
       <div class="summary-row"><span>VAT 7%</span><strong>${formatMoney(invoice.vat_thb)} THB</strong></div>
       <div class="summary-row total"><span>Total</span><strong>${formatMoney(invoice.total_thb)} THB</strong></div>
-      <div class="summary-row"><span>FX THB/KRW</span><strong>${formatNumber(invoice.fx_rate_thbkrw, 4)}</strong></div>
+      <div class="summary-row"><span>Exchange Rate</span><strong>${formatThbKrwRate(invoice.fx_rate_thbkrw)}</strong></div>
       <div class="summary-row"><span>KRW Equivalent</span><strong>${formatNumber(invoice.total_krw)} KRW</strong></div>
     </div>
 

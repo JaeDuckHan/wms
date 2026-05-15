@@ -27,6 +27,7 @@ import {
   seedBillingEvents,
   type BillingInvoice,
 } from "@/features/billing/api";
+import { formatThbKrwRate } from "@/features/billing/format";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { listClients } from "@/features/settings/clients/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -414,7 +415,7 @@ export function BillingInvoicesPage() {
               { key: "client", label: "Client", render: (row) => `${row.client_code} | ${row.name_kr}` },
               { key: "date", label: "Date", render: (row) => row.display_date_kst ?? row.invoice_date },
               { key: "total_thb", label: "Total THB", render: (row) => <span className="font-semibold">{Number(row.total_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> },
-              { key: "fx", label: "FX", render: (row) => Number(row.fx_rate_thbkrw).toFixed(4) },
+              { key: "fx", label: "FX", render: (row) => formatThbKrwRate(row.fx_rate_thbkrw) },
               { key: "total", label: "KRW Equivalent", render: (row) => Number(row.total_krw).toLocaleString() },
               { key: "status", label: "Status", render: (row) => row.status },
               {

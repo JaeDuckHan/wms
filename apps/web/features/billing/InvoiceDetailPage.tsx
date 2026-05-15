@@ -17,6 +17,7 @@ import {
   type BillingInvoice,
   type BillingInvoiceItem,
 } from "@/features/billing/api";
+import { formatThbKrwRate } from "@/features/billing/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   const { pushToast } = useToast();
@@ -127,7 +128,7 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
           <div><p className="text-xs text-slate-500">Subtotal THB</p><p className="font-semibold">{Number(invoice.subtotal_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB</p></div>
           <div><p className="text-xs text-slate-500">VAT 7% THB</p><p className="font-semibold">{Number(invoice.vat_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB</p></div>
           <div><p className="text-xs text-slate-500">Total THB</p><p className="font-semibold">{Number(invoice.total_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB</p></div>
-          <div><p className="text-xs text-slate-500">{t("FX Rate")}</p><p className="font-semibold">{Number(invoice.fx_rate_thbkrw).toFixed(4)}</p></div>
+          <div><p className="text-xs text-slate-500">{t("FX Rate")}</p><p className="font-semibold">{formatThbKrwRate(invoice.fx_rate_thbkrw)}</p></div>
           <div><p className="text-xs text-slate-500">KRW Equivalent</p><p className="font-semibold">{Number(invoice.total_krw).toLocaleString()} KRW</p></div>
         </div>
       )}
