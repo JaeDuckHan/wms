@@ -304,6 +304,15 @@ function buildInvoicePdfBuffer(detail) {
     const pageBottom = doc.page.height - doc.page.margins.bottom;
     let y = margin;
 
+    const fitPdfTextFontSize = (value, width, maxSize, minSize = 7) => {
+      const raw = text(value);
+      for (let size = maxSize; size >= minSize; size -= 0.5) {
+        doc.font(fontName).fontSize(size);
+        if (doc.widthOfString(raw) <= width) return size;
+      }
+      return minSize;
+    };
+
     const ensureSpace = (height) => {
       if (y + height <= pageBottom) return;
       doc.addPage();
@@ -328,16 +337,25 @@ function buildInvoicePdfBuffer(detail) {
     doc.font(fontName).fillColor("#0F172A");
     doc.fontSize(23).text("Kowinsblue 3PL", margin, y);
     doc.fontSize(10).fillColor("#475569").text("Commercial Invoice", margin, y + 28);
+    const invoiceNoBoxWidth = 214;
+    const invoiceNoBoxX = pageWidth - margin - invoiceNoBoxWidth;
+    const invoiceNoTextX = invoiceNoBoxX + 12;
+    const invoiceNoTextWidth = invoiceNoBoxWidth - 24;
     doc
-      .roundedRect(pageWidth - margin - 178, y, 178, 54, 6)
+      .roundedRect(invoiceNoBoxX, y, invoiceNoBoxWidth, 54, 6)
       .lineWidth(0.8)
       .strokeColor("#94A3B8")
       .stroke();
-    doc.fontSize(8).fillColor("#64748B").text("INVOICE NO", pageWidth - margin - 166, y + 9, { width: 154 });
-    doc.fontSize(12).fillColor("#0F172A").text(text(invoice.invoice_no), pageWidth - margin - 166, y + 27, {
-      width: 154,
-      ellipsis: true
-    });
+    doc.fontSize(8).fillColor("#64748B").text("INVOICE NO", invoiceNoTextX, y + 9, { width: invoiceNoTextWidth });
+    doc
+      .font(fontName)
+      .fontSize(fitPdfTextFontSize(invoice.invoice_no, invoiceNoTextWidth, 12, 8))
+      .fillColor("#0F172A")
+      .text(text(invoice.invoice_no), invoiceNoTextX, y + 27, {
+        width: invoiceNoTextWidth,
+        ellipsis: true,
+        lineBreak: false
+      });
     y += 78;
 
     const cardGap = 12;
@@ -351,7 +369,7 @@ function buildInvoicePdfBuffer(detail) {
 
     const columns = [
       { label: "#", width: 28, align: "left" },
-      { label: "Code", width: 76, align: "left" },
+      { label: "Code", width: 76, align: "left", kind: "code" },
       { label: "Description", width: 158, align: "left" },
       { label: "Qty", width: 44, align: "right" },
       { label: "Unit THB", width: 70, align: "right" },
@@ -397,11 +415,26 @@ function buildInvoicePdfBuffer(detail) {
           formatNumber(item.amount_krw)
         ];
         columns.forEach((column, columnIndex) => {
-          doc.font(fontName).fontSize(8.5).fillColor("#0F172A").text(text(values[columnIndex]), x + 6, y + 8, {
-            width: column.width - 12,
-            align: column.align,
-            ellipsis: true
-          });
+          const value = text(values[columnIndex]);
+          const width = column.width - 12;
+          if (column.kind === "code") {
+            doc
+              .font(fontName)
+              .fontSize(fitPdfTextFontSize(value, width, 8.5, 6.5))
+              .fillColor("#0F172A")
+              .text(value, x + 6, y + 8, {
+                width,
+                align: column.align,
+                ellipsis: true,
+                lineBreak: false
+              });
+          } else {
+            doc.font(fontName).fontSize(8.5).fillColor("#0F172A").text(value, x + 6, y + 8, {
+              width,
+              align: column.align,
+              ellipsis: true
+            });
+          }
           x += column.width;
         });
         doc.moveTo(margin, y + rowHeight).lineTo(margin + tableWidth, y + rowHeight).strokeColor("#E2E8F0").stroke();

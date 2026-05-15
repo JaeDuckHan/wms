@@ -39,7 +39,7 @@ function createMockPool() {
             client_id: 10,
             client_code: "CL10",
             name_kr: "안마재테스트 주식회사",
-            invoice_no: "THB-TEST-001",
+            invoice_no: "MENU-HIST-116-202604-0001",
             invoice_month: "2026-05",
             invoice_date: "2026-05-15",
             currency: "THB",

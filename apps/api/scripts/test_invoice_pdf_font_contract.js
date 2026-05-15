@@ -51,4 +51,19 @@ assert(
   "PDF font lookup must not treat Latin-only fallback fonts as CJK-capable invoice fonts."
 );
 
+assert(
+  billingEngineSource.includes("fitPdfTextFontSize"),
+  "Invoice PDF generation must shrink long single-line identifiers to fit their box."
+);
+
+assert(
+  /text\(text\(invoice\.invoice_no\),[\s\S]*lineBreak:\s*false/.test(billingEngineSource),
+  "Invoice number must be rendered as a single line instead of wrapping at hyphens."
+);
+
+assert(
+  /column\.kind === "code"[\s\S]*lineBreak:\s*false/.test(billingEngineSource),
+  "Invoice item service codes must be rendered as single-line identifiers instead of wrapping."
+);
+
 console.log("invoice-pdf-font-contract-ok");
