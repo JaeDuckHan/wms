@@ -8,7 +8,7 @@ const tablePresence = new Map([
   ["invoices", true],
   ["billing_events", true],
   ["invoice_items", true],
-  ["invoice_export_logs", false],
+  ["invoice_export_logs", true],
 ]);
 
 function createMockPool() {
@@ -70,6 +70,9 @@ function createMockPool() {
       }
 
       if (text.startsWith("INSERT INTO invoice_export_logs")) {
+        if (!text.includes("VALUES (?, 'pdf'")) {
+          throw new Error(`Expected invoice export log format pdf, got SQL: ${text}`);
+        }
         const error = new Error("Table 'wms_test.invoice_export_logs' doesn't exist");
         error.code = "ER_NO_SUCH_TABLE";
         throw error;
@@ -90,12 +93,11 @@ async function request(port, pathname) {
         method: "GET",
       },
       (res) => {
-        let body = "";
-        res.setEncoding("utf8");
+        const chunks = [];
         res.on("data", (chunk) => {
-          body += chunk;
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
-        res.on("end", () => resolve({ res, body }));
+        res.on("end", () => resolve({ res, body: Buffer.concat(chunks) }));
       }
     );
     req.on("error", reject);
@@ -127,21 +129,37 @@ async function main() {
 
   try {
     const { port } = server.address();
+    const metadata = await request(port, "/billing/invoices/1/export-pdf");
+    const metadataBody = metadata.body.toString("utf8");
+    const metadataJson = JSON.parse(metadataBody);
+    if (metadata.res.statusCode !== 200 || !metadataJson.ok) {
+      throw new Error(`Expected 200 metadata response, got ${metadata.res.statusCode}: ${metadataBody}`);
+    }
+    if (metadataJson.data.content_type !== "application/pdf") {
+      throw new Error(`Expected application/pdf metadata, got ${metadataJson.data.content_type}`);
+    }
+    if (!String(metadataJson.data.file_name || "").endsWith(".pdf")) {
+      throw new Error(`Expected .pdf metadata file name, got ${metadataJson.data.file_name}`);
+    }
+
     const { res, body } = await request(port, "/billing/invoices/1/export-pdf?download=1");
 
     if (res.statusCode !== 200) {
-      throw new Error(`Expected 200 export response, got ${res.statusCode}: ${body}`);
+      throw new Error(`Expected 200 export response, got ${res.statusCode}: ${body.toString("utf8")}`);
     }
     const contentType = String(res.headers["content-type"] || "");
-    if (!contentType.includes("text/html")) {
-      throw new Error(`Expected text/html export response, got ${contentType}`);
+    if (!contentType.includes("application/pdf")) {
+      throw new Error(`Expected application/pdf export response, got ${contentType}`);
     }
     const disposition = String(res.headers["content-disposition"] || "");
     if (!disposition.includes("attachment")) {
       throw new Error(`Expected attachment content-disposition, got ${disposition}`);
     }
-    if (!body.includes("INV-TEST-001")) {
-      throw new Error("Expected invoice number in export body");
+    if (!disposition.includes(".pdf")) {
+      throw new Error(`Expected .pdf content-disposition, got ${disposition}`);
+    }
+    if (body.slice(0, 5).toString("ascii") !== "%PDF-") {
+      throw new Error(`Expected PDF binary body, got first bytes ${body.slice(0, 16).toString("hex")}`);
     }
   } finally {
     await new Promise((resolve) => server.close(resolve));

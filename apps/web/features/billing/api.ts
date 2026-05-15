@@ -959,9 +959,9 @@ export async function exportBillingInvoicePdf(id: string | number, options?: Req
       }>(`/billing/invoices/${id}/export-pdf`, undefined, options),
     () => ({
       status: "ready",
-      message: `Printable invoice HTML is ready for invoice ${id}`,
-      file_name: `invoice-${id}.html`,
-      content_type: "text/html",
+      message: `Invoice PDF is ready for invoice ${id}`,
+      file_name: `invoice-${id}.pdf`,
+      content_type: "application/pdf",
       download_url: `/billing/invoices/${id}/export-pdf?download=1`,
     })
   );

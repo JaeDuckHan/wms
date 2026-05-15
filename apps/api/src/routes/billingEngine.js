@@ -1,4 +1,6 @@
 const express = require("express");
+const fs = require("fs");
+const PDFDocument = require("pdfkit");
 const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
@@ -147,6 +149,205 @@ function formatNumber(value, fractionDigits = 0) {
     : "0";
 }
 
+function safeInvoiceFileBase(value) {
+  const safe = String(value || "invoice").replace(/[^A-Za-z0-9._-]/g, "_");
+  return safe || "invoice";
+}
+
+function getInvoicePdfFontPath() {
+  const candidates = [
+    process.env.PDF_FONT_PATH,
+    "C:\\Windows\\Fonts\\malgun.ttf",
+    "C:\\Windows\\Fonts\\arial.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch (_error) {
+      return false;
+    }
+  });
+}
+
+function buildInvoicePdfBuffer(detail) {
+  return new Promise((resolve, reject) => {
+    const { invoice, items } = detail;
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 48,
+      info: {
+        Title: `${invoice.invoice_no} Invoice`,
+        Author: "Kowinsblue 3PL",
+        Creator: "WMS Billing Engine"
+      }
+    });
+    const chunks = [];
+    const fontPath = getInvoicePdfFontPath();
+    const fontName = fontPath ? "InvoiceFont" : "Helvetica";
+    const unicodeText = Boolean(fontPath);
+    const text = (value) => {
+      const raw = String(value ?? "");
+      return unicodeText ? raw : raw.replace(/[^\x20-\x7E]/g, "?");
+    };
+
+    if (fontPath) {
+      doc.registerFont(fontName, fontPath);
+    }
+
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("error", reject);
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+
+    const margin = doc.page.margins.left;
+    const pageWidth = doc.page.width;
+    const pageBottom = doc.page.height - doc.page.margins.bottom;
+    let y = margin;
+
+    const ensureSpace = (height) => {
+      if (y + height <= pageBottom) return;
+      doc.addPage();
+      y = doc.page.margins.top;
+    };
+
+    const drawLabelValue = (label, value, x, top, width) => {
+      doc
+        .roundedRect(x, top, width, 54, 6)
+        .lineWidth(0.7)
+        .strokeColor("#CBD5E1")
+        .stroke();
+      doc.font(fontName).fontSize(8).fillColor("#64748B").text(text(label).toUpperCase(), x + 10, top + 9, {
+        width: width - 20
+      });
+      doc.font(fontName).fontSize(10).fillColor("#0F172A").text(text(value || "-"), x + 10, top + 25, {
+        width: width - 20,
+        ellipsis: true
+      });
+    };
+
+    doc.font(fontName).fillColor("#0F172A");
+    doc.fontSize(23).text("Kowinsblue 3PL", margin, y);
+    doc.fontSize(10).fillColor("#475569").text("Commercial Invoice", margin, y + 28);
+    doc
+      .roundedRect(pageWidth - margin - 178, y, 178, 54, 6)
+      .lineWidth(0.8)
+      .strokeColor("#94A3B8")
+      .stroke();
+    doc.fontSize(8).fillColor("#64748B").text("INVOICE NO", pageWidth - margin - 166, y + 9, { width: 154 });
+    doc.fontSize(12).fillColor("#0F172A").text(text(invoice.invoice_no), pageWidth - margin - 166, y + 27, {
+      width: 154,
+      ellipsis: true
+    });
+    y += 78;
+
+    const cardGap = 12;
+    const cardWidth = (pageWidth - margin * 2 - cardGap) / 2;
+    drawLabelValue("Client", `${invoice.client_code} / ${invoice.name_kr}`, margin, y, cardWidth);
+    drawLabelValue("Invoice Month", invoice.invoice_month, margin + cardWidth + cardGap, y, cardWidth);
+    y += 66;
+    drawLabelValue("Invoice Date", formatDisplayDate(invoice.invoice_date), margin, y, cardWidth);
+    drawLabelValue("Status", String(invoice.status || "-").toUpperCase(), margin + cardWidth + cardGap, y, cardWidth);
+    y += 82;
+
+    const columns = [
+      { label: "#", width: 28, align: "left" },
+      { label: "Code", width: 88, align: "left" },
+      { label: "Description", width: 178, align: "left" },
+      { label: "Qty", width: 52, align: "right" },
+      { label: "Unit KRW", width: 82, align: "right" },
+      { label: "Amount KRW", width: 82, align: "right" }
+    ];
+    const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
+    const drawTableHeader = () => {
+      ensureSpace(28);
+      doc.rect(margin, y, tableWidth, 24).fill("#F8FAFC");
+      let x = margin;
+      columns.forEach((column) => {
+        doc.font(fontName).fontSize(8).fillColor("#475569").text(column.label, x + 6, y + 8, {
+          width: column.width - 12,
+          align: column.align
+        });
+        x += column.width;
+      });
+      doc.moveTo(margin, y + 24).lineTo(margin + tableWidth, y + 24).strokeColor("#CBD5E1").stroke();
+      y += 24;
+    };
+
+    drawTableHeader();
+    if (items.length === 0) {
+      ensureSpace(36);
+      doc.font(fontName).fontSize(9).fillColor("#64748B").text("No invoice items.", margin + 6, y + 10, {
+        width: tableWidth - 12
+      });
+      y += 36;
+    } else {
+      items.forEach((item, index) => {
+        const rowHeight = 34;
+        ensureSpace(rowHeight + 6);
+        if (y === doc.page.margins.top) drawTableHeader();
+        let x = margin;
+        const values = [
+          index + 1,
+          item.service_code,
+          item.description,
+          formatNumber(item.qty),
+          formatNumber(item.unit_price_krw),
+          formatNumber(item.amount_krw)
+        ];
+        columns.forEach((column, columnIndex) => {
+          doc.font(fontName).fontSize(8.5).fillColor("#0F172A").text(text(values[columnIndex]), x + 6, y + 8, {
+            width: column.width - 12,
+            align: column.align,
+            ellipsis: true
+          });
+          x += column.width;
+        });
+        doc.moveTo(margin, y + rowHeight).lineTo(margin + tableWidth, y + rowHeight).strokeColor("#E2E8F0").stroke();
+        y += rowHeight;
+      });
+    }
+
+    y += 18;
+    ensureSpace(132);
+    const summaryX = pageWidth - margin - 236;
+    const summaryRows = [
+      ["FX Rate", formatNumber(invoice.fx_rate_thbkrw, 4)],
+      ["Original THB", `${formatNumber(invoice.subtotal_thb, 2)} THB`],
+      ["Subtotal", `${formatNumber(invoice.subtotal_krw)} KRW`],
+      ["VAT 7%", `${formatNumber(invoice.vat_krw)} KRW`],
+      ["Total", `${formatNumber(invoice.total_krw)} KRW`]
+    ];
+    summaryRows.forEach(([label, value], index) => {
+      const isTotal = index === summaryRows.length - 1;
+      if (isTotal) {
+        doc.moveTo(summaryX, y).lineTo(summaryX + 236, y).lineWidth(1.2).strokeColor("#0F172A").stroke();
+        y += 5;
+      }
+      doc.font(fontName).fontSize(isTotal ? 11 : 9).fillColor(isTotal ? "#0F172A" : "#475569").text(label, summaryX, y, {
+        width: 94
+      });
+      doc.font(fontName).fontSize(isTotal ? 11 : 9).fillColor("#0F172A").text(text(value), summaryX + 94, y, {
+        width: 142,
+        align: "right"
+      });
+      y += isTotal ? 22 : 19;
+    });
+
+    ensureSpace(30);
+    doc.font(fontName).fontSize(8).fillColor("#64748B").text(
+      "Generated from WMS invoice ledger.",
+      margin,
+      pageBottom - 20,
+      { width: pageWidth - margin * 2, align: "center" }
+    );
+
+    doc.end();
+  });
+}
+
 function isMysqlMissingTable(error) {
   return error && error.code === "ER_NO_SUCH_TABLE";
 }
@@ -215,7 +416,7 @@ async function recordInvoiceExportLog(conn, invoice, fileName, requestedBy) {
   try {
     await conn.query(
       `INSERT INTO invoice_export_logs (invoice_id, export_format, requested_by, file_name, meta_json)
-       VALUES (?, 'html', ?, ?, JSON_OBJECT('status', ?, 'invoice_no', ?, 'client_code', ?))`,
+       VALUES (?, 'pdf', ?, ?, JSON_OBJECT('status', ?, 'invoice_no', ?, 'client_code', ?))`,
       [invoice.id, requestedBy, fileName, invoice.status, invoice.invoice_no, invoice.client_code]
     );
     return true;
@@ -2023,7 +2224,7 @@ router.get("/billing/invoices/:id/export-pdf", async (req, res) => {
     }
 
     const invoice = detail.invoice;
-    const fileName = `${String(invoice.invoice_no).replace(/[^A-Za-z0-9._-]/g, "_")}.html`;
+    const fileName = `${safeInvoiceFileBase(invoice.invoice_no)}.pdf`;
     const shouldDownload = String(req.query.download || "0") === "1";
 
     if (!shouldDownload) {
@@ -2033,9 +2234,9 @@ router.get("/billing/invoices/:id/export-pdf", async (req, res) => {
           invoice_id: invoice.id,
           invoice_no: invoice.invoice_no,
           status: "ready",
-          message: "Printable invoice HTML is ready for download.",
+          message: "Invoice PDF is ready for download.",
           file_name: fileName,
-          content_type: "text/html",
+          content_type: "application/pdf",
           download_url: `/billing/invoices/${invoice.id}/export-pdf?download=1`
         }
       });
@@ -2044,10 +2245,11 @@ router.get("/billing/invoices/:id/export-pdf", async (req, res) => {
     const requestedBy = Number(req.user?.sub || 0) > 0 ? Number(req.user?.sub) : null;
     await recordInvoiceExportLog(getPool(), invoice, fileName, requestedBy);
 
-    const html = buildInvoiceHtmlDocument(detail);
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    const pdf = await buildInvoicePdfBuffer(detail);
+    res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-    return res.send(html);
+    res.setHeader("Content-Length", String(pdf.length));
+    return res.send(pdf);
 
   } catch (error) {
     return res.status(500).json({ ok: false, message: error.message });
