@@ -25,7 +25,7 @@ const blank: Omit<ClientContractRate, "id"> = {
   client_id: 1,
   service_code: "",
   custom_rate: 0,
-  currency: "KRW",
+  currency: "THB",
   effective_date: new Date().toISOString().slice(0, 10),
 };
 
@@ -121,7 +121,7 @@ export function ClientContractRatesSettingsPage() {
       <PageHeader
         breadcrumbs={[{ label: "Settings" }, { label: "Client Contract Rates" }]}
         title="Client Contract Rates"
-        subtitle="Manage client-specific overrides by service and effective date."
+        subtitle="Manage client-specific rates. Use THB for normal Thailand billing and KRW only for legacy exceptions."
       />
       <SettingsTabs />
       {accessDenied ? (

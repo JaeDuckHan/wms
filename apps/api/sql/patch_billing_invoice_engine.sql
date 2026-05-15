@@ -110,8 +110,32 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @sql := IF(
   (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'subtotal_thb') = 0,
+  'ALTER TABLE invoices ADD COLUMN subtotal_thb DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER fx_rate_thbkrw',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'vat_thb') = 0,
+  'ALTER TABLE invoices ADD COLUMN vat_thb DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER subtotal_thb',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'total_thb') = 0,
+  'ALTER TABLE invoices ADD COLUMN total_thb DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER vat_thb',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
    WHERE table_schema = DATABASE() AND table_name = 'invoices' AND column_name = 'subtotal_krw') = 0,
-  'ALTER TABLE invoices ADD COLUMN subtotal_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER fx_rate_thbkrw',
+  'ALTER TABLE invoices ADD COLUMN subtotal_krw DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER total_thb',
   'SELECT 1'
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
@@ -181,6 +205,8 @@ CREATE TABLE IF NOT EXISTS invoice_items (
   service_code VARCHAR(80) NOT NULL,
   description VARCHAR(255) NOT NULL,
   qty DECIMAL(18,4) NOT NULL DEFAULT 0,
+  unit_price_thb DECIMAL(18,4) NULL,
+  amount_thb DECIMAL(18,4) NULL,
   unit_price_krw DECIMAL(18,4) NOT NULL DEFAULT 0,
   amount_krw DECIMAL(18,4) NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -190,5 +216,21 @@ CREATE TABLE IF NOT EXISTS invoice_items (
   KEY idx_invoice_items_invoice_deleted (invoice_id, deleted_at),
   CONSTRAINT fk_invoice_items_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoice_items' AND column_name = 'unit_price_thb') = 0,
+  'ALTER TABLE invoice_items ADD COLUMN unit_price_thb DECIMAL(18,4) NULL AFTER qty',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'invoice_items' AND column_name = 'amount_thb') = 0,
+  'ALTER TABLE invoice_items ADD COLUMN amount_thb DECIMAL(18,4) NULL AFTER unit_price_thb',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET FOREIGN_KEY_CHECKS = 1;

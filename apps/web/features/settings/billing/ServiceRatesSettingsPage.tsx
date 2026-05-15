@@ -22,8 +22,8 @@ const blank: Omit<ServiceRate, "id"> = {
   service_code: "",
   service_name: "",
   billing_unit: "EVENT",
-  pricing_policy: "KRW_FIXED",
-  default_currency: "KRW",
+  pricing_policy: "THB_BASED",
+  default_currency: "THB",
   default_rate: 0,
   status: "active",
 };
@@ -106,7 +106,7 @@ export function ServiceRatesSettingsPage() {
       <PageHeader
         breadcrumbs={[{ label: "Settings" }, { label: "Service Rates" }]}
         title="Service Rates"
-        subtitle="Define billable services and default KRW/THB pricing policies."
+        subtitle="Define billable services. THB is the default invoice currency; KRW is kept for legacy exceptions."
       />
       <SettingsTabs />
       {accessDenied ? (
@@ -164,7 +164,14 @@ export function ServiceRatesSettingsPage() {
           <select className="h-9 rounded-md border px-3 text-sm" value={form.billing_unit} onChange={(e) => setForm((p) => ({ ...p, billing_unit: e.target.value as ServiceRate["billing_unit"] }))}>
             <option value="ORDER">ORDER</option><option value="SKU">SKU</option><option value="BOX">BOX</option><option value="CBM">CBM</option><option value="PALLET">PALLET</option><option value="EVENT">EVENT</option><option value="MONTH">MONTH</option>
           </select>
-          <select className="h-9 rounded-md border px-3 text-sm" value={form.pricing_policy} onChange={(e) => setForm((p) => ({ ...p, pricing_policy: e.target.value as ServiceRate["pricing_policy"] }))}>
+          <select className="h-9 rounded-md border px-3 text-sm" value={form.pricing_policy} onChange={(e) => {
+            const pricingPolicy = e.target.value as ServiceRate["pricing_policy"];
+            setForm((p) => ({
+              ...p,
+              pricing_policy: pricingPolicy,
+              default_currency: pricingPolicy === "THB_BASED" ? "THB" : "KRW",
+            }));
+          }}>
             <option value="KRW_FIXED">KRW_FIXED</option>
             <option value="THB_BASED">THB_BASED</option>
           </select>

@@ -124,11 +124,11 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
 
       {invoice && (
         <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-5">
+          <div><p className="text-xs text-slate-500">Subtotal THB</p><p className="font-semibold">{Number(invoice.subtotal_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB</p></div>
+          <div><p className="text-xs text-slate-500">VAT 7% THB</p><p className="font-semibold">{Number(invoice.vat_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB</p></div>
+          <div><p className="text-xs text-slate-500">Total THB</p><p className="font-semibold">{Number(invoice.total_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB</p></div>
           <div><p className="text-xs text-slate-500">{t("FX Rate")}</p><p className="font-semibold">{Number(invoice.fx_rate_thbkrw).toFixed(4)}</p></div>
-          <div><p className="text-xs text-slate-500">Original THB</p><p className="font-semibold">{Number(invoice.subtotal_thb ?? 0).toLocaleString()} THB</p></div>
-          <div><p className="text-xs text-slate-500">{t("Subtotal")}</p><p className="font-semibold">{Number(invoice.subtotal_krw).toLocaleString()} KRW (TRUNC100)</p></div>
-          <div><p className="text-xs text-slate-500">{t("VAT 7%")}</p><p className="font-semibold">{Number(invoice.vat_krw).toLocaleString()} KRW (TRUNC100)</p></div>
-          <div><p className="text-xs text-slate-500">{t("Total")}</p><p className="font-semibold">{Number(invoice.total_krw).toLocaleString()} KRW (TRUNC100)</p></div>
+          <div><p className="text-xs text-slate-500">KRW Equivalent</p><p className="font-semibold">{Number(invoice.total_krw).toLocaleString()} KRW</p></div>
         </div>
       )}
 
@@ -140,8 +140,9 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
             { key: "service_code", label: "Code", render: (row) => `${row.service_code} | ${row.description}` },
             { key: "description", label: "Description", render: (row) => row.description },
             { key: "qty", label: "Qty", render: (row) => Number(row.qty).toLocaleString() },
-            { key: "unit_price_krw", label: "Unit KRW", render: (row) => `${Number(row.unit_price_krw).toLocaleString()} (TRUNC100)` },
-            { key: "amount_krw", label: "Amount KRW", render: (row) => <span className="font-semibold">{Number(row.amount_krw).toLocaleString()} (TRUNC100)</span> },
+            { key: "unit_price_thb", label: "Unit THB", render: (row) => `${Number(row.unit_price_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB` },
+            { key: "amount_thb", label: "Amount THB", render: (row) => <span className="font-semibold">{Number(row.amount_thb ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB</span> },
+            { key: "amount_krw", label: "KRW Equivalent", render: (row) => `${Number(row.amount_krw).toLocaleString()} KRW` },
           ]}
         />
       </div>

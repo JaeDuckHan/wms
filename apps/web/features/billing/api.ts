@@ -58,9 +58,11 @@ export type BillingInvoice = {
   invoice_month: string;
   invoice_date: string;
   display_date_kst?: string | null;
-  currency: "KRW";
+  currency: "THB" | "KRW";
   fx_rate_thbkrw: number;
   subtotal_thb?: number | null;
+  vat_thb?: number | null;
+  total_thb?: number | null;
   subtotal_krw: number;
   vat_krw: number;
   total_krw: number;
@@ -73,6 +75,8 @@ export type BillingInvoiceItem = {
   service_code: string;
   description: string;
   qty: number;
+  unit_price_thb?: number | null;
+  amount_thb?: number | null;
   unit_price_krw: number;
   amount_krw: number;
   unit_price_trunc100?: number;
@@ -128,7 +132,7 @@ let nextInvoiceSeq = 21;
 
 const serviceCatalogDb: ServiceRate[] = Array.from({ length: 20 }, (_, index) => {
   const seq = index + 1;
-  const pricingPolicy = seq % 2 === 0 ? "KRW_FIXED" : "THB_BASED";
+  const pricingPolicy = seq % 5 === 0 ? "KRW_FIXED" : "THB_BASED";
   const currency = pricingPolicy === "KRW_FIXED" ? "KRW" : "THB";
   return {
     id: seq,
@@ -137,7 +141,7 @@ const serviceCatalogDb: ServiceRate[] = Array.from({ length: 20 }, (_, index) =>
     billing_unit: (["ORDER", "SKU", "BOX", "CBM", "PALLET", "EVENT", "MONTH"] as const)[seq % 7],
     pricing_policy: pricingPolicy,
     default_currency: currency,
-    default_rate: pricingPolicy === "KRW_FIXED" ? 800 + seq * 15 : Number((1.5 + seq * 0.1).toFixed(2)),
+    default_rate: pricingPolicy === "KRW_FIXED" ? 800 + seq * 15 : Number((20 + seq * 1.1).toFixed(2)),
     status: seq % 6 === 0 ? "inactive" : "active",
   };
 });
@@ -149,8 +153,8 @@ const contractRatesDb: ClientContractRate[] = Array.from({ length: 20 }, (_, ind
     id: seq,
     client_id: (seq % 10) + 1,
     service_code: serviceCode,
-    custom_rate: 900 + seq * 25,
-    currency: seq % 3 === 0 ? "THB" : "KRW",
+    custom_rate: seq % 5 === 0 ? 900 + seq * 25 : Number((25 + seq * 1.7).toFixed(2)),
+    currency: seq % 5 === 0 ? "KRW" : "THB",
     effective_date: `2026-${pad2(((seq - 1) % 12) + 1)}-01`,
   };
 });
@@ -220,22 +224,29 @@ const invoicesDb: BillingInvoice[] = Array.from({ length: 20 }, (_, index) => {
   const seq = index + 1;
   const invoiceMonth = `2026-${pad2(((seq - 1) % 6) + 1)}`;
   const fx = pickFxRate(invoiceMonth);
-  const subtotal = trunc100(150000 + seq * 12345);
-  const vat = trunc100(subtotal * 0.07);
+  const subtotalThb = Number((1200 + seq * 87.5).toFixed(2));
+  const vatThb = Number((subtotalThb * 0.07).toFixed(2));
+  const totalThb = Number((subtotalThb + vatThb).toFixed(2));
+  const subtotalKrw = trunc100(subtotalThb * (fx?.rate ?? 39));
+  const vatKrw = trunc100(vatThb * (fx?.rate ?? 39));
+  const totalKrw = trunc100(totalThb * (fx?.rate ?? 39));
   const status = (["draft", "issued", "paid"] as const)[seq % 3];
   return {
     id: seq,
     client_id: (seq % 10) + 1,
     client_code: `CL${pad2((seq % 20) + 1)}`,
     name_kr: `Sample Client ${pad2((seq % 20) + 1)}`,
-    invoice_no: `INV-2026-${pad4(seq)}`,
+    invoice_no: `THB-2026-${pad4(seq)}`,
     invoice_month: invoiceMonth,
     invoice_date: `${invoiceMonth}-25`,
-    currency: "KRW",
+    currency: "THB",
     fx_rate_thbkrw: fx?.rate ?? 39,
-    subtotal_krw: subtotal,
-    vat_krw: vat,
-    total_krw: subtotal + vat,
+    subtotal_thb: subtotalThb,
+    vat_thb: vatThb,
+    total_thb: totalThb,
+    subtotal_krw: subtotalKrw,
+    vat_krw: vatKrw,
+    total_krw: totalKrw,
     status,
   };
 });
@@ -243,17 +254,23 @@ const invoicesDb: BillingInvoice[] = Array.from({ length: 20 }, (_, index) => {
 const invoiceItemsDb: BillingInvoiceItem[] = invoicesDb.flatMap((invoice, index) =>
   Array.from({ length: 3 }, (_, line) => {
     const qty = line + 1;
-    const unit = trunc100(10000 + index * 700 + line * 300);
+    const fx = Number(invoice.fx_rate_thbkrw || 39);
+    const unitThb = Number((25 + index * 1.2 + line * 3.5).toFixed(2));
+    const amountThb = Number((unitThb * qty).toFixed(2));
+    const unitKrw = trunc100(unitThb * fx);
+    const amountKrw = trunc100(amountThb * fx);
     return {
       id: index * 3 + line + 1,
       invoice_id: invoice.id,
       service_code: serviceCatalogDb[(index + line) % serviceCatalogDb.length].service_code,
       description: `Sample line item ${line + 1} for ${invoice.invoice_no}`,
       qty,
-      unit_price_krw: unit,
-      amount_krw: unit * qty,
-      unit_price_trunc100: unit,
-      amount_trunc100: unit * qty,
+      unit_price_thb: unitThb,
+      amount_thb: amountThb,
+      unit_price_krw: unitKrw,
+      amount_krw: amountKrw,
+      unit_price_trunc100: unitKrw,
+      amount_trunc100: amountKrw,
     };
   })
 );
@@ -268,7 +285,16 @@ function syncInvoiceSubtotalThb() {
     );
   }
   for (const invoice of invoicesDb) {
-    invoice.subtotal_thb = Number((subtotalByInvoice.get(invoice.id) || 0).toFixed(2));
+    if (!subtotalByInvoice.has(invoice.id)) continue;
+    const subtotalThb = Number((subtotalByInvoice.get(invoice.id) || 0).toFixed(2));
+    const vatThb = Number((subtotalThb * 0.07).toFixed(2));
+    const totalThb = Number((subtotalThb + vatThb).toFixed(2));
+    invoice.subtotal_thb = subtotalThb;
+    invoice.vat_thb = vatThb;
+    invoice.total_thb = totalThb;
+    invoice.subtotal_krw = trunc100(subtotalThb * invoice.fx_rate_thbkrw);
+    invoice.vat_krw = trunc100(vatThb * invoice.fx_rate_thbkrw);
+    invoice.total_krw = trunc100(totalThb * invoice.fx_rate_thbkrw);
   }
 }
 
@@ -841,21 +867,28 @@ export async function generateBillingInvoice(
       if (!targets.length) throw new Error("No pending billing events for this client/month.");
 
       const fx = pickFxRate(input.invoice_month);
-      const subtotal = trunc100(targets.reduce((acc, row) => acc + Number(row.amount_krw ?? 0), 0));
-      const vat = trunc100(subtotal * 0.07);
+      const subtotalThb = Number(targets.reduce((acc, row) => acc + Number(row.amount_thb ?? 0), 0).toFixed(2));
+      const vatThb = Number((subtotalThb * 0.07).toFixed(2));
+      const totalThb = Number((subtotalThb + vatThb).toFixed(2));
+      const subtotalKrw = trunc100(subtotalThb * (fx?.rate ?? 39));
+      const vatKrw = trunc100(vatThb * (fx?.rate ?? 39));
+      const totalKrw = trunc100(totalThb * (fx?.rate ?? 39));
       const invoice: BillingInvoice = {
         id: nextInvoiceId++,
         client_id: input.client_id,
         client_code: `CL${pad2(input.client_id)}`,
         name_kr: `Sample Client ${pad2(input.client_id)}`,
-        invoice_no: `INV-2026-${pad4(nextInvoiceSeq++)}`,
+        invoice_no: `THB-2026-${pad4(nextInvoiceSeq++)}`,
         invoice_month: input.invoice_month,
         invoice_date: input.invoice_date,
-        currency: "KRW",
+        currency: "THB",
         fx_rate_thbkrw: fx?.rate ?? 39,
-        subtotal_krw: subtotal,
-        vat_krw: vat,
-        total_krw: subtotal + vat,
+        subtotal_thb: subtotalThb,
+        vat_thb: vatThb,
+        total_thb: totalThb,
+        subtotal_krw: subtotalKrw,
+        vat_krw: vatKrw,
+        total_krw: totalKrw,
         status: "draft",
       };
       invoicesDb.unshift(invoice);
@@ -867,20 +900,38 @@ export async function generateBillingInvoice(
 
       for (const [serviceCode, group] of grouped) {
         const qty = group.reduce((acc, row) => acc + row.qty, 0);
-        const amount = trunc100(group.reduce((acc, row) => acc + Number(row.amount_krw ?? 0), 0));
-        const unit = qty > 0 ? trunc100(amount / qty) : 0;
+        const amountThb = Number(group.reduce((acc, row) => acc + Number(row.amount_thb ?? 0), 0).toFixed(2));
+        const amountKrw = trunc100(amountThb * (fx?.rate ?? 39));
+        const unitThb = qty > 0 ? Number((amountThb / qty).toFixed(2)) : 0;
+        const unitKrw = qty > 0 ? trunc100(amountKrw / qty) : 0;
         invoiceItemsDb.push({
           id: nextInvoiceItemId++,
           invoice_id: invoice.id,
           service_code: serviceCode,
           description: `Auto grouped from ${group.length} events`,
           qty,
-          unit_price_krw: unit,
-          amount_krw: amount,
-          unit_price_trunc100: unit,
-          amount_trunc100: amount,
+          unit_price_thb: unitThb,
+          amount_thb: amountThb,
+          unit_price_krw: unitKrw,
+          amount_krw: amountKrw,
+          unit_price_trunc100: unitKrw,
+          amount_trunc100: amountKrw,
         });
       }
+
+      invoiceItemsDb.push({
+        id: nextInvoiceItemId++,
+        invoice_id: invoice.id,
+        service_code: "VAT_7",
+        description: "VAT 7%",
+        qty: 1,
+        unit_price_thb: vatThb,
+        amount_thb: vatThb,
+        unit_price_krw: vatKrw,
+        amount_krw: vatKrw,
+        unit_price_trunc100: vatKrw,
+        amount_trunc100: vatKrw,
+      });
 
       for (const event of targets) {
         const idx = eventsDb.findIndex((row) => row.id === event.id);
@@ -1007,7 +1058,7 @@ export async function duplicateBillingInvoiceAdmin(id: string | number, options?
       const duplicated: BillingInvoice = {
         ...original,
         id: nextInvoiceId++,
-        invoice_no: `INV-2026-${pad4(nextInvoiceSeq++)}`,
+        invoice_no: `THB-2026-${pad4(nextInvoiceSeq++)}`,
         status: "draft",
       };
       invoicesDb.unshift(duplicated);

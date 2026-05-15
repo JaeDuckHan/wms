@@ -23,6 +23,13 @@ function trunc100(input) {
   return Math.floor(value / 100) * 100;
 }
 
+function roundMoney(input, fractionDigits = 2) {
+  const value = Number(input || 0);
+  if (!Number.isFinite(value)) return 0;
+  const factor = 10 ** fractionDigits;
+  return Math.round(value * factor) / factor;
+}
+
 function monthRange(invoiceMonth) {
   const from = `${invoiceMonth}-01`;
   const [year, month] = invoiceMonth.split("-").map(Number);
@@ -149,6 +156,35 @@ function formatNumber(value, fractionDigits = 0) {
     : "0";
 }
 
+function formatMoney(value, fractionDigits = 2) {
+  return formatNumber(roundMoney(value, fractionDigits), fractionDigits);
+}
+
+function calculateBillingAmounts(event, fx) {
+  const qty = Number(event.qty || 0);
+  const rate = Number(fx || 0);
+
+  if (event.pricing_policy === "KRW_FIXED") {
+    const amountKrw =
+      event.amount_krw !== null && event.amount_krw !== undefined
+        ? trunc100(event.amount_krw)
+        : trunc100(Number(event.unit_price_krw || 0) * qty);
+    const amountThb = rate > 0 ? roundMoney(amountKrw / rate, 2) : 0;
+    const unitPriceKrw = qty > 0 ? trunc100(amountKrw / qty) : amountKrw;
+    const unitPriceThb = qty > 0 ? roundMoney(amountThb / qty, 2) : amountThb;
+    return { amountThb, amountKrw, unitPriceThb, unitPriceKrw };
+  }
+
+  const amountThb =
+    event.amount_thb !== null && event.amount_thb !== undefined
+      ? roundMoney(event.amount_thb, 2)
+      : roundMoney(Number(event.unit_price_thb || 0) * qty, 2);
+  const amountKrw = trunc100(amountThb * rate);
+  const unitPriceThb = qty > 0 ? roundMoney(amountThb / qty, 2) : amountThb;
+  const unitPriceKrw = qty > 0 ? trunc100(amountKrw / qty) : amountKrw;
+  return { amountThb, amountKrw, unitPriceThb, unitPriceKrw };
+}
+
 function safeInvoiceFileBase(value) {
   const safe = String(value || "invoice").replace(/[^A-Za-z0-9._-]/g, "_");
   return safe || "invoice";
@@ -254,11 +290,12 @@ function buildInvoicePdfBuffer(detail) {
 
     const columns = [
       { label: "#", width: 28, align: "left" },
-      { label: "Code", width: 88, align: "left" },
-      { label: "Description", width: 178, align: "left" },
-      { label: "Qty", width: 52, align: "right" },
-      { label: "Unit KRW", width: 82, align: "right" },
-      { label: "Amount KRW", width: 82, align: "right" }
+      { label: "Code", width: 76, align: "left" },
+      { label: "Description", width: 158, align: "left" },
+      { label: "Qty", width: 44, align: "right" },
+      { label: "Unit THB", width: 70, align: "right" },
+      { label: "Amount THB", width: 76, align: "right" },
+      { label: "KRW Equiv.", width: 58, align: "right" }
     ];
     const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
     const drawTableHeader = () => {
@@ -294,7 +331,8 @@ function buildInvoicePdfBuffer(detail) {
           item.service_code,
           item.description,
           formatNumber(item.qty),
-          formatNumber(item.unit_price_krw),
+          formatMoney(item.unit_price_thb),
+          formatMoney(item.amount_thb),
           formatNumber(item.amount_krw)
         ];
         columns.forEach((column, columnIndex) => {
@@ -314,14 +352,14 @@ function buildInvoicePdfBuffer(detail) {
     ensureSpace(132);
     const summaryX = pageWidth - margin - 236;
     const summaryRows = [
-      ["FX Rate", formatNumber(invoice.fx_rate_thbkrw, 4)],
-      ["Original THB", `${formatNumber(invoice.subtotal_thb, 2)} THB`],
-      ["Subtotal", `${formatNumber(invoice.subtotal_krw)} KRW`],
-      ["VAT 7%", `${formatNumber(invoice.vat_krw)} KRW`],
-      ["Total", `${formatNumber(invoice.total_krw)} KRW`]
+      ["Subtotal", `${formatMoney(invoice.subtotal_thb)} THB`],
+      ["VAT 7%", `${formatMoney(invoice.vat_thb)} THB`],
+      ["Total", `${formatMoney(invoice.total_thb)} THB`],
+      ["FX THB/KRW", formatNumber(invoice.fx_rate_thbkrw, 4)],
+      ["KRW Equivalent", `${formatNumber(invoice.total_krw)} KRW`]
     ];
-    summaryRows.forEach(([label, value], index) => {
-      const isTotal = index === summaryRows.length - 1;
+    summaryRows.forEach(([label, value]) => {
+      const isTotal = label === "Total";
       if (isTotal) {
         doc.moveTo(summaryX, y).lineTo(summaryX + 236, y).lineWidth(1.2).strokeColor("#0F172A").stroke();
         y += 5;
@@ -360,16 +398,24 @@ async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
   const hasInvoiceDate = await hasInvoiceDateColumn(conn);
   const hasBillingEvents = await hasTable("billing_events", conn);
   const hasFxRate = await hasColumn("invoices", "fx_rate_thbkrw", conn);
+  const hasSubtotalThb = await hasColumn("invoices", "subtotal_thb", conn);
+  const hasVatThb = await hasColumn("invoices", "vat_thb", conn);
+  const hasTotalThb = await hasColumn("invoices", "total_thb", conn);
   const hasSubtotal = await hasColumn("invoices", "subtotal_krw", conn);
   const hasVat = await hasColumn("invoices", "vat_krw", conn);
   const hasTotalKrw = await hasColumn("invoices", "total_krw", conn);
   const hasInvoiceItems = await hasTable("invoice_items", conn);
+  const hasItemUnitThb = hasInvoiceItems ? await hasColumn("invoice_items", "unit_price_thb", conn) : false;
+  const hasItemAmountThb = hasInvoiceItems ? await hasColumn("invoice_items", "amount_thb", conn) : false;
 
   const monthExpr = invoiceMonthExpr(hasInvoiceMonth, "i");
   const dateExpr = invoiceDateExpr(hasInvoiceDate, "i");
-  const subtotalThbExpr = hasBillingEvents
+  const eventSubtotalThbExpr = hasBillingEvents
     ? "COALESCE((SELECT SUM(be.amount_thb) FROM billing_events be WHERE be.invoice_id = i.id AND be.deleted_at IS NULL), 0)"
     : "0";
+  const subtotalThbExpr = hasSubtotalThb ? "i.subtotal_thb" : eventSubtotalThbExpr;
+  const vatThbExpr = hasVatThb ? "i.vat_thb" : "0";
+  const totalThbExpr = hasTotalThb ? "i.total_thb" : `(${subtotalThbExpr} + ${vatThbExpr})`;
   const fxExpr = hasFxRate ? "i.fx_rate_thbkrw" : "NULL";
   const subtotalExpr = hasSubtotal ? "i.subtotal_krw" : "0";
   const vatExpr = hasVat ? "i.vat_krw" : "0";
@@ -378,7 +424,8 @@ async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
   const [invoiceRows] = await conn.query(
     `SELECT i.id, i.client_id, c.client_code, c.name_kr,
             i.invoice_no, ${monthExpr} AS invoice_month, ${dateExpr} AS invoice_date, i.currency,
-            ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at, i.updated_at,
+            ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${vatThbExpr} AS vat_thb, ${totalThbExpr} AS total_thb,
+            ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at, i.updated_at,
             (MOD(${subtotalExpr}, 100) = 0) AS subtotal_trunc100,
             (MOD(${vatExpr}, 100) = 0) AS vat_trunc100,
             (MOD(${totalExpr}, 100) = 0) AS total_trunc100
@@ -393,7 +440,10 @@ async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
 
   const [itemRows] = hasInvoiceItems
     ? await conn.query(
-        `SELECT id, invoice_id, service_code, description, qty, unit_price_krw, amount_krw, created_at, updated_at,
+        `SELECT id, invoice_id, service_code, description, qty,
+                ${hasItemUnitThb ? "unit_price_thb" : "NULL"} AS unit_price_thb,
+                ${hasItemAmountThb ? "amount_thb" : "NULL"} AS amount_thb,
+                unit_price_krw, amount_krw, created_at, updated_at,
                 (MOD(unit_price_krw, 100) = 0) AS unit_price_trunc100,
                 (MOD(amount_krw, 100) = 0) AS amount_trunc100
          FROM invoice_items
@@ -403,9 +453,31 @@ async function loadInvoiceDetail(conn, invoiceId, scopedClientId = null) {
       )
     : [[]];
 
+  const invoice = attachDisplayDate(invoiceRows[0]);
+  const fx = Number(invoice?.fx_rate_thbkrw || 0);
+  const items = itemRows.map((row) => {
+    const amountThb =
+      row.amount_thb !== null && row.amount_thb !== undefined
+        ? Number(row.amount_thb)
+        : fx > 0
+          ? roundMoney(Number(row.amount_krw || 0) / fx, 2)
+          : null;
+    const unitPriceThb =
+      row.unit_price_thb !== null && row.unit_price_thb !== undefined
+        ? Number(row.unit_price_thb)
+        : fx > 0
+          ? roundMoney(Number(row.unit_price_krw || 0) / fx, 2)
+          : null;
+    return {
+      ...row,
+      unit_price_thb: unitPriceThb,
+      amount_thb: amountThb
+    };
+  });
+
   return {
-    invoice: attachDisplayDate(invoiceRows[0]),
-    items: itemRows
+    invoice,
+    items
   };
 }
 
@@ -439,7 +511,8 @@ function buildInvoiceHtmlDocument(detail) {
           <td>${escapeHtml(item.service_code)}</td>
           <td>${escapeHtml(item.description)}</td>
           <td class="num">${formatNumber(item.qty)}</td>
-          <td class="num">${formatNumber(item.unit_price_krw)}</td>
+          <td class="num">${formatMoney(item.unit_price_thb)}</td>
+          <td class="num">${formatMoney(item.amount_thb)}</td>
           <td class="num">${formatNumber(item.amount_krw)}</td>
         </tr>`
     )
@@ -513,23 +586,24 @@ function buildInvoiceHtmlDocument(detail) {
           <th>Code</th>
           <th>Description</th>
           <th class="num">Qty</th>
-          <th class="num">Unit KRW</th>
-          <th class="num">Amount KRW</th>
+          <th class="num">Unit THB</th>
+          <th class="num">Amount THB</th>
+          <th class="num">KRW Equiv.</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
     </table>
 
     <div class="summary">
-      <div class="summary-row"><span>FX Rate</span><strong>${formatNumber(invoice.fx_rate_thbkrw, 4)}</strong></div>
-      <div class="summary-row"><span>Original THB</span><strong>${formatNumber(invoice.subtotal_thb, 2)} THB</strong></div>
-      <div class="summary-row"><span>Subtotal</span><strong>${formatNumber(invoice.subtotal_krw)} KRW</strong></div>
-      <div class="summary-row"><span>VAT 7%</span><strong>${formatNumber(invoice.vat_krw)} KRW</strong></div>
-      <div class="summary-row total"><span>Total</span><strong>${formatNumber(invoice.total_krw)} KRW</strong></div>
+      <div class="summary-row"><span>Subtotal</span><strong>${formatMoney(invoice.subtotal_thb)} THB</strong></div>
+      <div class="summary-row"><span>VAT 7%</span><strong>${formatMoney(invoice.vat_thb)} THB</strong></div>
+      <div class="summary-row total"><span>Total</span><strong>${formatMoney(invoice.total_thb)} THB</strong></div>
+      <div class="summary-row"><span>FX THB/KRW</span><strong>${formatNumber(invoice.fx_rate_thbkrw, 4)}</strong></div>
+      <div class="summary-row"><span>KRW Equivalent</span><strong>${formatNumber(invoice.total_krw)} KRW</strong></div>
     </div>
 
     <div class="footer">
-      Generated from WMS invoice ledger. This printable HTML is intended for immediate browser print-to-PDF workflow and download audit.
+      Generated from WMS invoice ledger. THB is the invoice currency; KRW is shown as a converted reference amount.
     </div>
   </body>
 </html>`;
@@ -1751,6 +1825,13 @@ async function handleGenerateBillingInvoice(req, res) {
       const payload = req.body;
       const createdBy = parseCreator(req, payload.created_by);
       const hasInvoiceDate = await hasInvoiceDateColumn(conn);
+      const hasInvoiceSubtotalThb = await hasColumn("invoices", "subtotal_thb", conn);
+      const hasInvoiceVatThb = await hasColumn("invoices", "vat_thb", conn);
+      const hasInvoiceTotalThb = await hasColumn("invoices", "total_thb", conn);
+      const hasInvoiceItemUnitThb = await hasColumn("invoice_items", "unit_price_thb", conn);
+      const hasInvoiceItemAmountThb = await hasColumn("invoice_items", "amount_thb", conn);
+      const canStoreInvoiceThbTotals = hasInvoiceSubtotalThb && hasInvoiceVatThb && hasInvoiceTotalThb;
+      const canStoreInvoiceItemThb = hasInvoiceItemUnitThb && hasInvoiceItemAmountThb;
       const { from, to } = monthRange(payload.invoice_month);
 
       const [existingRows] = await conn.query(
@@ -1853,32 +1934,60 @@ async function handleGenerateBillingInvoice(req, res) {
 
       const yyyymm = payload.invoice_month.replace("-", "");
       const nextSeq = await resolveInvoiceSequence(conn, payload.client_id, yyyymm);
-      const invoiceNo = `KRW-${payload.client_id}-${yyyymm}-${String(nextSeq).padStart(4, "0")}`;
+      const invoiceNo = `THB-${payload.client_id}-${yyyymm}-${String(nextSeq).padStart(4, "0")}`;
 
-      const [invoiceCreated] = hasInvoiceDate
-        ? await conn.query(
-            `INSERT INTO invoices
-              (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, invoice_date, due_date, recipient_email,
-               currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
-             VALUES (NULL, ?, ?, ?, 'draft', ?, ?, ?, NULL, 'KRW', ?, 0, 0, 0, 0, ?)`,
-            [
-              payload.client_id,
-              payload.invoice_month,
-              invoiceNo,
-              payload.invoice_date,
-              payload.invoice_date,
-              payload.invoice_date,
-              fx,
-              createdBy
-            ]
-          )
-        : await conn.query(
-            `INSERT INTO invoices
-              (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, due_date, recipient_email,
-               currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
-             VALUES (NULL, ?, ?, ?, 'draft', ?, ?, NULL, 'KRW', ?, 0, 0, 0, 0, ?)`,
-            [payload.client_id, payload.invoice_month, invoiceNo, payload.invoice_date, payload.invoice_date, fx, createdBy]
-          );
+      let invoiceCreated;
+      if (canStoreInvoiceThbTotals && hasInvoiceDate) {
+        [invoiceCreated] = await conn.query(
+          `INSERT INTO invoices
+            (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, invoice_date, due_date, recipient_email,
+             currency, fx_rate_thbkrw, subtotal_thb, vat_thb, total_thb, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+           VALUES (NULL, ?, ?, ?, 'draft', ?, ?, ?, NULL, 'THB', ?, 0, 0, 0, 0, 0, 0, 0, ?)`,
+          [
+            payload.client_id,
+            payload.invoice_month,
+            invoiceNo,
+            payload.invoice_date,
+            payload.invoice_date,
+            payload.invoice_date,
+            fx,
+            createdBy
+          ]
+        );
+      } else if (canStoreInvoiceThbTotals) {
+        [invoiceCreated] = await conn.query(
+          `INSERT INTO invoices
+            (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, due_date, recipient_email,
+             currency, fx_rate_thbkrw, subtotal_thb, vat_thb, total_thb, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+           VALUES (NULL, ?, ?, ?, 'draft', ?, ?, NULL, 'THB', ?, 0, 0, 0, 0, 0, 0, 0, ?)`,
+          [payload.client_id, payload.invoice_month, invoiceNo, payload.invoice_date, payload.invoice_date, fx, createdBy]
+        );
+      } else {
+        [invoiceCreated] = hasInvoiceDate
+          ? await conn.query(
+              `INSERT INTO invoices
+                (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, invoice_date, due_date, recipient_email,
+                 currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+               VALUES (NULL, ?, ?, ?, 'draft', ?, ?, ?, NULL, 'KRW', ?, 0, 0, 0, 0, ?)`,
+              [
+                payload.client_id,
+                payload.invoice_month,
+                invoiceNo,
+                payload.invoice_date,
+                payload.invoice_date,
+                payload.invoice_date,
+                fx,
+                createdBy
+              ]
+            )
+          : await conn.query(
+              `INSERT INTO invoices
+                (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, due_date, recipient_email,
+                 currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+               VALUES (NULL, ?, ?, ?, 'draft', ?, ?, NULL, 'KRW', ?, 0, 0, 0, 0, ?)`,
+              [payload.client_id, payload.invoice_month, invoiceNo, payload.invoice_date, payload.invoice_date, fx, createdBy]
+            );
+      }
       const invoiceId = Number(invoiceCreated.insertId);
 
       const [serviceNameRows] = await conn.query(
@@ -1890,72 +1999,93 @@ async function handleGenerateBillingInvoice(req, res) {
       const grouped = new Map();
 
       for (const event of events) {
-        let normalizedAmount = 0;
-        if (event.pricing_policy === "THB_BASED") {
-          const amountThb =
-            event.amount_thb !== null && event.amount_thb !== undefined
-              ? Number(event.amount_thb)
-              : Number(event.unit_price_thb || 0) * Number(event.qty || 0);
-          normalizedAmount = trunc100(amountThb * fx);
-        } else {
-          const amountKrw =
-            event.amount_krw !== null && event.amount_krw !== undefined
-              ? Number(event.amount_krw)
-              : Number(event.unit_price_krw || 0) * Number(event.qty || 0);
-          normalizedAmount = trunc100(amountKrw);
-        }
+        const amounts = calculateBillingAmounts(event, fx);
 
         await conn.query(
           `UPDATE billing_events
-           SET amount_krw = ?, fx_rate_thbkrw = ?, status = 'INVOICED', invoice_id = ?
+           SET amount_thb = ?, amount_krw = ?, fx_rate_thbkrw = ?, status = 'INVOICED', invoice_id = ?
            WHERE id = ?`,
-          [normalizedAmount, fx, invoiceId, event.id]
+          [amounts.amountThb, amounts.amountKrw, fx, invoiceId, event.id]
         );
 
         if (!grouped.has(event.service_code)) {
-          grouped.set(event.service_code, { qty: 0, amount_krw: 0 });
+          grouped.set(event.service_code, { qty: 0, amount_thb: 0, amount_krw: 0 });
         }
         const current = grouped.get(event.service_code);
         current.qty += Number(event.qty || 0);
-        current.amount_krw += Number(normalizedAmount);
+        current.amount_thb += Number(amounts.amountThb);
+        current.amount_krw += Number(amounts.amountKrw);
       }
 
-      let subtotalKrw = 0;
+      let subtotalThb = 0;
       for (const [serviceCode, agg] of grouped.entries()) {
         const qty = Number(agg.qty);
-        const lineAmount = trunc100(Number(agg.amount_krw));
-        subtotalKrw += lineAmount;
+        const lineAmountThb = roundMoney(Number(agg.amount_thb), 2);
+        const lineAmountKrw = trunc100(Number(agg.amount_krw));
+        subtotalThb = roundMoney(subtotalThb + lineAmountThb, 2);
 
-        const unitDisplay = qty > 0 ? trunc100(lineAmount / qty) : lineAmount;
+        const unitThb = qty > 0 ? roundMoney(lineAmountThb / qty, 2) : lineAmountThb;
+        const unitKrw = qty > 0 ? trunc100(lineAmountKrw / qty) : lineAmountKrw;
+        if (canStoreInvoiceItemThb) {
+          await conn.query(
+            `INSERT INTO invoice_items
+              (invoice_id, service_code, description, qty, unit_price_thb, amount_thb, unit_price_krw, amount_krw)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [invoiceId, serviceCode, serviceNameMap.get(serviceCode) || serviceCode, qty, unitThb, lineAmountThb, unitKrw, lineAmountKrw]
+          );
+        } else {
+          await conn.query(
+            `INSERT INTO invoice_items
+              (invoice_id, service_code, description, qty, unit_price_krw, amount_krw)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [invoiceId, serviceCode, serviceNameMap.get(serviceCode) || serviceCode, qty, unitKrw, lineAmountKrw]
+          );
+        }
+      }
+
+      subtotalThb = roundMoney(subtotalThb, 2);
+      const vatThb = roundMoney(subtotalThb * 0.07, 2);
+      const totalThb = roundMoney(subtotalThb + vatThb, 2);
+      const subtotalKrw = trunc100(subtotalThb * fx);
+      const vatKrw = trunc100(vatThb * fx);
+      const totalKrw = trunc100(totalThb * fx);
+
+      if (canStoreInvoiceItemThb) {
+        await conn.query(
+          `INSERT INTO invoice_items
+            (invoice_id, service_code, description, qty, unit_price_thb, amount_thb, unit_price_krw, amount_krw)
+           VALUES (?, 'VAT_7', 'VAT 7%', 1, ?, ?, ?, ?)`,
+          [invoiceId, vatThb, vatThb, vatKrw, vatKrw]
+        );
+      } else {
         await conn.query(
           `INSERT INTO invoice_items
             (invoice_id, service_code, description, qty, unit_price_krw, amount_krw)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [invoiceId, serviceCode, serviceNameMap.get(serviceCode) || serviceCode, qty, unitDisplay, lineAmount]
+           VALUES (?, 'VAT_7', 'VAT 7%', 1, ?, ?)`,
+          [invoiceId, vatKrw, vatKrw]
         );
       }
 
-      subtotalKrw = trunc100(subtotalKrw);
-      const vatKrw = trunc100(subtotalKrw * 0.07);
-      const totalKrw = trunc100(subtotalKrw + vatKrw);
-
-      await conn.query(
-        `INSERT INTO invoice_items
-          (invoice_id, service_code, description, qty, unit_price_krw, amount_krw)
-         VALUES (?, 'VAT_7', 'VAT 7%', 1, ?, ?)`,
-        [invoiceId, vatKrw, vatKrw]
-      );
-
-      await conn.query(
-        `UPDATE invoices
-         SET subtotal_krw = ?, vat_krw = ?, total_krw = ?, total_amount = ?
-         WHERE id = ?`,
-        [subtotalKrw, vatKrw, totalKrw, totalKrw, invoiceId]
-      );
+      if (canStoreInvoiceThbTotals) {
+        await conn.query(
+          `UPDATE invoices
+           SET subtotal_thb = ?, vat_thb = ?, total_thb = ?, subtotal_krw = ?, vat_krw = ?, total_krw = ?, total_amount = ?
+           WHERE id = ?`,
+          [subtotalThb, vatThb, totalThb, subtotalKrw, vatKrw, totalKrw, totalKrw, invoiceId]
+        );
+      } else {
+        await conn.query(
+          `UPDATE invoices
+           SET subtotal_krw = ?, vat_krw = ?, total_krw = ?, total_amount = ?
+           WHERE id = ?`,
+          [subtotalKrw, vatKrw, totalKrw, totalKrw, invoiceId]
+        );
+      }
 
       const invoiceDateColumn = invoiceDateExpr(hasInvoiceDate, "i");
       const [invoiceRows] = await conn.query(
         `SELECT id, client_id, invoice_no, invoice_month, ${invoiceDateColumn} AS invoice_date, currency, fx_rate_thbkrw,
+                ${canStoreInvoiceThbTotals ? "subtotal_thb, vat_thb, total_thb," : "0 AS subtotal_thb, 0 AS vat_thb, 0 AS total_thb,"}
                 subtotal_krw, vat_krw, total_krw, status, created_at, updated_at
          FROM invoices i
          WHERE id = ?`,
@@ -2044,6 +2174,13 @@ router.post("/billing/invoices/:id/duplicate-admin", async (req, res) => {
     const result = await withTransaction(async (conn) => {
       const sourceInvoiceId = Number(req.params.id);
       const hasInvoiceDate = await hasInvoiceDateColumn(conn);
+      const canStoreInvoiceThbTotals =
+        (await hasColumn("invoices", "subtotal_thb", conn)) &&
+        (await hasColumn("invoices", "vat_thb", conn)) &&
+        (await hasColumn("invoices", "total_thb", conn));
+      const canStoreInvoiceItemThb =
+        (await hasColumn("invoice_items", "unit_price_thb", conn)) &&
+        (await hasColumn("invoice_items", "amount_thb", conn));
       const [invoiceRows] = await conn.query(
         `SELECT id, client_id, invoice_month, status
          FROM invoices
@@ -2064,42 +2201,79 @@ router.post("/billing/invoices/:id/duplicate-admin", async (req, res) => {
 
       const yyyymm = String(source.invoice_month).replace("-", "");
       const nextSeq = await resolveInvoiceSequence(conn, source.client_id, yyyymm);
-      const newInvoiceNo = `KRW-${source.client_id}-${yyyymm}-${String(nextSeq).padStart(4, "0")}`;
+      const newInvoiceNo = `THB-${source.client_id}-${yyyymm}-${String(nextSeq).padStart(4, "0")}`;
 
-      const [created] = hasInvoiceDate
-        ? await conn.query(
-            `INSERT INTO invoices
-              (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, invoice_date, due_date, recipient_email,
-               currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
-             SELECT NULL, client_id, invoice_month, ?, 'draft', issue_date, invoice_date, due_date, recipient_email,
-                    'KRW', fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_krw, created_by
-             FROM invoices
-             WHERE id = ?`,
-            [newInvoiceNo, sourceInvoiceId]
-          )
-        : await conn.query(
-            `INSERT INTO invoices
-              (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, due_date, recipient_email,
-               currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
-             SELECT NULL, client_id, invoice_month, ?, 'draft', issue_date, due_date, recipient_email,
-                    'KRW', fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_krw, created_by
-             FROM invoices
-             WHERE id = ?`,
-            [newInvoiceNo, sourceInvoiceId]
-          );
+      let created;
+      if (canStoreInvoiceThbTotals && hasInvoiceDate) {
+        [created] = await conn.query(
+          `INSERT INTO invoices
+            (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, invoice_date, due_date, recipient_email,
+             currency, fx_rate_thbkrw, subtotal_thb, vat_thb, total_thb, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+           SELECT NULL, client_id, invoice_month, ?, 'draft', issue_date, invoice_date, due_date, recipient_email,
+                  'THB', fx_rate_thbkrw, subtotal_thb, vat_thb, total_thb, subtotal_krw, vat_krw, total_krw, total_krw, created_by
+           FROM invoices
+           WHERE id = ?`,
+          [newInvoiceNo, sourceInvoiceId]
+        );
+      } else if (canStoreInvoiceThbTotals) {
+        [created] = await conn.query(
+          `INSERT INTO invoices
+            (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, due_date, recipient_email,
+             currency, fx_rate_thbkrw, subtotal_thb, vat_thb, total_thb, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+           SELECT NULL, client_id, invoice_month, ?, 'draft', issue_date, due_date, recipient_email,
+                  'THB', fx_rate_thbkrw, subtotal_thb, vat_thb, total_thb, subtotal_krw, vat_krw, total_krw, total_krw, created_by
+           FROM invoices
+           WHERE id = ?`,
+          [newInvoiceNo, sourceInvoiceId]
+        );
+      } else {
+        [created] = hasInvoiceDate
+          ? await conn.query(
+              `INSERT INTO invoices
+                (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, invoice_date, due_date, recipient_email,
+                 currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+               SELECT NULL, client_id, invoice_month, ?, 'draft', issue_date, invoice_date, due_date, recipient_email,
+                      'KRW', fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_krw, created_by
+               FROM invoices
+               WHERE id = ?`,
+              [newInvoiceNo, sourceInvoiceId]
+            )
+          : await conn.query(
+              `INSERT INTO invoices
+                (settlement_batch_id, client_id, invoice_month, invoice_no, status, issue_date, due_date, recipient_email,
+                 currency, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_amount, created_by)
+               SELECT NULL, client_id, invoice_month, ?, 'draft', issue_date, due_date, recipient_email,
+                      'KRW', fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw, total_krw, created_by
+               FROM invoices
+               WHERE id = ?`,
+              [newInvoiceNo, sourceInvoiceId]
+            );
+      }
       const newInvoiceId = Number(created.insertId);
 
-      await conn.query(
-        `INSERT INTO invoice_items (invoice_id, service_code, description, qty, unit_price_krw, amount_krw)
-         SELECT ?, service_code, description, qty, unit_price_krw, amount_krw
-         FROM invoice_items
-         WHERE invoice_id = ? AND deleted_at IS NULL`,
-        [newInvoiceId, sourceInvoiceId]
-      );
+      if (canStoreInvoiceItemThb) {
+        await conn.query(
+          `INSERT INTO invoice_items (invoice_id, service_code, description, qty, unit_price_thb, amount_thb, unit_price_krw, amount_krw)
+           SELECT ?, service_code, description, qty, unit_price_thb, amount_thb, unit_price_krw, amount_krw
+           FROM invoice_items
+           WHERE invoice_id = ? AND deleted_at IS NULL`,
+          [newInvoiceId, sourceInvoiceId]
+        );
+      } else {
+        await conn.query(
+          `INSERT INTO invoice_items (invoice_id, service_code, description, qty, unit_price_krw, amount_krw)
+           SELECT ?, service_code, description, qty, unit_price_krw, amount_krw
+           FROM invoice_items
+           WHERE invoice_id = ? AND deleted_at IS NULL`,
+          [newInvoiceId, sourceInvoiceId]
+        );
+      }
 
       const invoiceDateColumn = invoiceDateExpr(hasInvoiceDate, "i");
       const [newRows] = await conn.query(
-        `SELECT id, invoice_no, status, invoice_month, ${invoiceDateColumn} AS invoice_date, fx_rate_thbkrw, subtotal_krw, vat_krw, total_krw
+        `SELECT id, invoice_no, status, invoice_month, ${invoiceDateColumn} AS invoice_date, currency, fx_rate_thbkrw,
+                ${canStoreInvoiceThbTotals ? "subtotal_thb, vat_thb, total_thb," : "0 AS subtotal_thb, 0 AS vat_thb, 0 AS total_thb,"}
+                subtotal_krw, vat_krw, total_krw
          FROM invoices i
          WHERE id = ?`,
         [newInvoiceId]
@@ -2148,12 +2322,18 @@ router.get("/billing/invoices", async (req, res) => {
     const hasInvoiceDate = await hasInvoiceDateColumn();
     const hasBillingEvents = await hasTable("billing_events");
     const hasFxRate = await hasColumn("invoices", "fx_rate_thbkrw");
+    const hasSubtotalThb = await hasColumn("invoices", "subtotal_thb");
+    const hasVatThb = await hasColumn("invoices", "vat_thb");
+    const hasTotalThb = await hasColumn("invoices", "total_thb");
     const hasSubtotal = await hasColumn("invoices", "subtotal_krw");
     const hasVat = await hasColumn("invoices", "vat_krw");
     const hasTotalKrw = await hasColumn("invoices", "total_krw");
-    const subtotalThbExpr = hasBillingEvents
+    const eventSubtotalThbExpr = hasBillingEvents
       ? "COALESCE((SELECT SUM(be.amount_thb) FROM billing_events be WHERE be.invoice_id = i.id AND be.deleted_at IS NULL), 0)"
       : "0";
+    const subtotalThbExpr = hasSubtotalThb ? "i.subtotal_thb" : eventSubtotalThbExpr;
+    const vatThbExpr = hasVatThb ? "i.vat_thb" : "0";
+    const totalThbExpr = hasTotalThb ? "i.total_thb" : `(${subtotalThbExpr} + ${vatThbExpr})`;
     const fxExpr = hasFxRate ? "i.fx_rate_thbkrw" : "NULL";
     const subtotalExpr = hasSubtotal ? "i.subtotal_krw" : "0";
     const vatExpr = hasVat ? "i.vat_krw" : "0";
@@ -2163,7 +2343,8 @@ router.get("/billing/invoices", async (req, res) => {
 
     let query = `SELECT i.id, i.client_id, c.client_code, c.name_kr,
                         i.invoice_no, ${monthExpr} AS invoice_month, ${dateExpr} AS invoice_date, i.currency,
-                        ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at
+                        ${fxExpr} AS fx_rate_thbkrw, ${subtotalThbExpr} AS subtotal_thb, ${vatThbExpr} AS vat_thb, ${totalThbExpr} AS total_thb,
+                        ${subtotalExpr} AS subtotal_krw, ${vatExpr} AS vat_krw, ${totalExpr} AS total_krw, i.status, i.created_at
                  FROM invoices i
                  JOIN clients c ON c.id = i.client_id
                  WHERE i.deleted_at IS NULL
