@@ -222,21 +222,23 @@ function safeInvoiceFileBase(value) {
   return safe || "invoice";
 }
 
-function getInvoicePdfFontPath() {
+function getInvoicePdfFontConfig() {
   const candidates = [
-    process.env.PDF_FONT_PATH,
-    "C:\\Windows\\Fonts\\malgun.ttf",
-    "C:\\Windows\\Fonts\\NotoSansKR-VF.ttf",
-    "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSansKR-VF.ttf"
-  ].filter(Boolean);
+    { path: process.env.PDF_FONT_PATH, postscriptName: process.env.PDF_FONT_POSTSCRIPT_NAME },
+    { path: "C:\\Windows\\Fonts\\malgun.ttf" },
+    { path: "C:\\Windows\\Fonts\\NotoSansKR-VF.ttf" },
+    { path: "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", postscriptName: "NotoSansCJKkr-Regular" },
+    { path: "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", postscriptName: "NotoSansCJKkr-Regular" },
+    { path: "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", postscriptName: "NotoSansCJKkr-Regular" },
+    { path: "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf" },
+    { path: "/usr/share/fonts/truetype/noto/NotoSansKR-VF.ttf" }
+  ].filter((candidate) => candidate.path);
 
   return candidates.find((candidate) => {
     try {
-      return fs.existsSync(candidate);
+      if (!fs.existsSync(candidate.path)) return false;
+      if (/\.ttc$/i.test(candidate.path) && !candidate.postscriptName) return false;
+      return true;
     } catch (_error) {
       return false;
     }
@@ -266,11 +268,11 @@ function invoicePdfNeedsCjkFont(detail) {
 function buildInvoicePdfBuffer(detail) {
   return new Promise((resolve, reject) => {
     const { invoice, items } = detail;
-    const fontPath = getInvoicePdfFontPath();
-    if (!fontPath && invoicePdfNeedsCjkFont(detail)) {
+    const fontConfig = getInvoicePdfFontConfig();
+    if (!fontConfig && invoicePdfNeedsCjkFont(detail)) {
       reject(
         new Error(
-          "PDF_CJK_FONT_MISSING: Install a CJK-capable font or set PDF_FONT_PATH before exporting invoices with Korean text."
+          "PDF_CJK_FONT_MISSING: Install a CJK-capable font or set PDF_FONT_PATH/PDF_FONT_POSTSCRIPT_NAME before exporting invoices with Korean text."
         )
       );
       return;
@@ -286,11 +288,11 @@ function buildInvoicePdfBuffer(detail) {
       }
     });
     const chunks = [];
-    const fontName = fontPath ? "InvoiceFont" : "Helvetica";
+    const fontName = fontConfig ? "InvoiceFont" : "Helvetica";
     const text = (value) => String(value ?? "");
 
-    if (fontPath) {
-      doc.registerFont(fontName, fontPath);
+    if (fontConfig) {
+      doc.registerFont(fontName, fontConfig.path, fontConfig.postscriptName);
     }
 
     doc.on("data", (chunk) => chunks.push(chunk));

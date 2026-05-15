@@ -1,8 +1,15 @@
 const http = require("http");
+const fs = require("fs");
 const path = require("path");
 const express = require("express");
 
 const dbPath = path.resolve(__dirname, "../src/db.js");
+const localTtcFontPath = "C:\\Windows\\Fonts\\gulim.ttc";
+
+if (fs.existsSync(localTtcFontPath)) {
+  process.env.PDF_FONT_PATH = localTtcFontPath;
+  process.env.PDF_FONT_POSTSCRIPT_NAME = "Gulim";
+}
 
 const tablePresence = new Map([
   ["invoices", true],

@@ -32,6 +32,21 @@ assert(
 );
 
 assert(
+  billingEngineSource.includes("NotoSansCJKkr-Regular"),
+  "PDF font lookup must select the Korean PostScript face when registering Noto Sans CJK TTC fonts."
+);
+
+assert(
+  billingEngineSource.includes("PDF_FONT_POSTSCRIPT_NAME"),
+  "PDF font lookup must allow a PostScript face override when PDF_FONT_PATH points to a TTC collection."
+);
+
+assert(
+  /registerFont\(\s*fontName,\s*fontConfig\.path,\s*fontConfig\.postscriptName\s*\)/.test(billingEngineSource),
+  "PDFKit must register TTC fonts with a PostScript face name; registering only the TTC file causes createSubset errors."
+);
+
+assert(
   !billingEngineSource.includes("DejaVuSans.ttf") && !billingEngineSource.includes("arial.ttf"),
   "PDF font lookup must not treat Latin-only fallback fonts as CJK-capable invoice fonts."
 );
