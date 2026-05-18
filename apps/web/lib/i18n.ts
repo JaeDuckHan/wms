@@ -44,6 +44,7 @@ const koByEn: Record<string, string> = {
   "Packed Box": "포장 박스",
   "Packed Items": "포장 품목",
   "Packed Qty": "포장 수량",
+  "More Items": "추가 항목",
   "Add Item": "항목 추가",
   Apply: "적용",
   "Available Qty": "가용 수량",

@@ -160,6 +160,18 @@ async function requestJson<T>(
   return json.data;
 }
 
+async function requestJsonOrDefault<T>(
+  path: string,
+  fallback: T,
+  options?: AuthRequestOptions
+): Promise<T> {
+  try {
+    return await requestJson<T>(path, undefined, options);
+  } catch {
+    return fallback;
+  }
+}
+
 async function requestVoid(
   path: string,
   init?: RequestInit,
@@ -196,7 +208,12 @@ function applyListFilter(orders: InboundOrder[], query?: InboundListQuery): Inbo
       !q ||
       order.inbound_no.toLowerCase().includes(q) ||
       order.client.toLowerCase().includes(q) ||
-      order.summary.toLowerCase().includes(q);
+      order.summary.toLowerCase().includes(q) ||
+      order.items.some((item) =>
+        [item.barcode_full, item.product_name, item.lot, item.expiry_date ?? "", item.currency ?? ""].some((value) =>
+          value.toLowerCase().includes(q)
+        )
+      );
     return matchStatus && matchText;
   });
 }
@@ -376,16 +393,25 @@ export async function getInboundOrders(query?: InboundListQuery, options?: Reque
   }
   const token = await resolveToken(options?.token);
   try {
-    const [orders, clients, rawItems] = await Promise.all([
+    const [orders, clients, rawItems, products, lots, locations] = await Promise.all([
       requestJson<RawInboundOrder[]>("/inbound-orders", undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
       requestJson<RawInboundItem[]>("/inbound-items", undefined, options),
+      requestJsonOrDefault<RawProduct[]>("/products", [], options),
+      requestJsonOrDefault<RawLot[]>("/product-lots", [], options),
+      requestJsonOrDefault<RawWarehouseLocation[]>("/warehouse-locations", [], options),
     ]);
     const clientMap = new Map(clients.map((client) => [client.id, formatClientLabel(client)]));
     const itemsByOrderId = groupRawItemsByOrderId(rawItems);
     const mapped = orders.map((order) => {
       const orderItems = itemsByOrderId.get(order.id) ?? [];
-      return mapInboundOrder(order, clientMap.get(order.client_id) ?? "", [], undefined, summarizeRawItems(orderItems));
+      return mapInboundOrder(
+        order,
+        clientMap.get(order.client_id) ?? "",
+        mapItems(orderItems, products, lots, locations),
+        undefined,
+        summarizeRawItems(orderItems)
+      );
     });
     if (mapped.length === 0 && shouldUseFallback(token)) {
       return applyListFilter(mockDb, query).map((order) => cloneOrder(order));

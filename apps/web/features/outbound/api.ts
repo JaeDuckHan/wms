@@ -322,7 +322,14 @@ function applyListFilter(orders: OutboundOrder[], query?: OutboundListQuery): Ou
       !q ||
       order.outbound_no.toLowerCase().includes(q) ||
       order.client.toLowerCase().includes(q) ||
-      order.summary.toLowerCase().includes(q);
+      order.summary.toLowerCase().includes(q) ||
+      order.order_no.toLowerCase().includes(q) ||
+      order.tracking_no.toLowerCase().includes(q) ||
+      order.items.some((item) =>
+        [item.barcode_full, item.product_name, item.lot, item.expiry_date ?? "", item.box_type ?? ""].some((value) =>
+          value.toLowerCase().includes(q)
+        )
+      );
     return matchStatus && matchText;
   });
 }
@@ -630,16 +637,27 @@ export async function getOutboundOrders(query?: OutboundListQuery, options?: Req
   }
   const token = await resolveToken(options?.token);
   try {
-    const [orders, clients, rawItems] = await Promise.all([
+    const [orders, clients, rawItems, products, lots, locations] = await Promise.all([
       requestJson<RawOutboundOrder[]>("/outbound-orders", undefined, options),
       requestJson<RawClient[]>("/clients", undefined, options),
       requestJson<RawOutboundItem[]>("/outbound-items", undefined, options),
+      requestJsonOrDefault<RawProduct[]>("/products", [], options),
+      requestJsonOrDefault<RawLot[]>("/product-lots", [], options),
+      requestJsonOrDefault<RawWarehouseLocation[]>("/warehouse-locations", [], options),
     ]);
     const clientMap = new Map(clients.map((client) => [client.id, client.name_kr]));
     const itemsByOrderId = groupRawItemsByOrderId(rawItems);
     const mapped = orders.map((order) => {
       const orderItems = itemsByOrderId.get(order.id) ?? [];
-      return mapOutboundOrder(order, clientMap.get(order.client_id) ?? "", [], [], true, undefined, summarizeRawItems(orderItems));
+      return mapOutboundOrder(
+        order,
+        clientMap.get(order.client_id) ?? "",
+        mapItems(orderItems, products, lots, locations, [], order.status),
+        [],
+        true,
+        undefined,
+        summarizeRawItems(orderItems)
+      );
     });
     if (mapped.length === 0 && shouldUseFallback(token)) {
       return applyListFilter(mockDb, query).map((order) => cloneOrder(order));

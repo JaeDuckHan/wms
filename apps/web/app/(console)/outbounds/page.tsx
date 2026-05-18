@@ -8,7 +8,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TranslatedText } from "@/components/i18n/TranslatedText";
-import type { OutboundListStatus } from "@/features/outbound/types";
+import type { OutboundListStatus, OutboundOrder } from "@/features/outbound/types";
 import { AUTH_COOKIE_KEY, decodeJwtPayload } from "@/lib/auth";
 import { canWrite } from "@/lib/authz";
 
@@ -20,6 +20,51 @@ const filterItems: Array<{ label: string; value: OutboundListStatus }> = [
   { label: "Packed", value: "packed" },
   { label: "Shipped", value: "shipped" },
 ];
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function OutboundItemsPreview({ order }: { order: OutboundOrder }) {
+  const firstItem = order.items[0];
+
+  if (!firstItem) {
+    return <span className="text-slate-600">{order.summary}</span>;
+  }
+
+  const extraCount = Math.max(0, order.items.length - 1);
+
+  return (
+    <div className="min-w-[420px] space-y-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-medium text-slate-900">{firstItem.barcode_full}</span>
+        <span className="text-slate-700">{firstItem.product_name}</span>
+        {extraCount > 0 ? (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+            +{extraCount} <TranslatedText text="More Items" />
+          </span>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+        <span>
+          <TranslatedText text="Lot No" />: {firstItem.lot}
+        </span>
+        <span>
+          <TranslatedText text="Expiry Date" />: {firstItem.expiry_date ?? "-"}
+        </span>
+        <span>
+          <TranslatedText text="Qty" />: {formatNumber(firstItem.requested_qty)}
+        </span>
+        <span>
+          <TranslatedText text="Packed Box" />: {firstItem.box_type ?? "-"}
+        </span>
+        <span>
+          <TranslatedText text="Tracking No" />: {order.tracking_no || "-"}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default async function OutboundsPage({
   searchParams,
@@ -83,7 +128,7 @@ export default async function OutboundsPage({
           },
           { key: "client", label: "Client", render: (row) => row.client },
           { key: "eta_date", label: "ETA", render: (row) => <span className="tabular-nums">{row.eta_date}</span> },
-          { key: "summary", label: "Summary", render: (row) => row.summary },
+          { key: "items", label: "Items", render: (row) => <OutboundItemsPreview order={row} /> },
           { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
         ]}
       />

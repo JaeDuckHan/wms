@@ -31,6 +31,7 @@ export const messagesEn = {
   "Packed Box": "Packed Box",
   "Packed Items": "Packed Items",
   "Packed Qty": "Packed Qty",
+  "More Items": "More Items",
   "Add Item": "Add Item",
   "Remark": "Remark",
   "Box Type": "Box Type",
