@@ -20,6 +20,7 @@ function buildItems(seq: number): InboundItem[] {
       barcode_full: `CL${pad2(((seq + idx) % 10) + 1)}-8800${String(seq * 100 + idx + 1).padStart(9, "0")}`,
       product_name: `Sample Product ${pad2(((seq + idx) % 20) + 1)}`,
       lot: `LOT-26${pad2(((seq + idx) % 12) + 1)}-${String.fromCharCode(65 + (idx % 3))}`,
+      expiry_date: `2026-${pad2(((seq + idx) % 12) + 1)}-28`,
       location: `A-${pad2((seq % 12) + 1)}-${pad2((idx % 8) + 1)}`,
       qty,
       invoice_price: idx % 2 === 0 ? Number((6 + (seq % 7) + idx * 0.5).toFixed(2)) : null,

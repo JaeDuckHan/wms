@@ -15,7 +15,7 @@ const router = express.Router();
 const outboundItemSchema = z.object({
   outbound_order_id: z.coerce.number().int().positive(),
   product_id: z.coerce.number().int().positive(),
-  lot_id: z.coerce.number().int().positive(),
+  lot_id: z.coerce.number().int().positive().nullable().optional(),
   location_id: z.coerce.number().int().positive().nullable().optional(),
   qty: z.coerce.number().int().positive(),
   box_type: z.string().max(80).nullable().optional(),
@@ -59,6 +59,24 @@ async function validateLotBelongsToProduct(conn, productId, lotId) {
     [lotId, productId]
   );
   return rows.length > 0;
+}
+
+async function resolveLotId(conn, productId, lotId) {
+  if (lotId) {
+    const validLot = await validateLotBelongsToProduct(conn, productId, lotId);
+    if (!validLot) {
+      throw new StockError("INVALID_LOT_PRODUCT", "lot_id does not belong to product_id");
+    }
+    return lotId;
+  }
+
+  const [result] = await conn.query(
+    `INSERT INTO product_lots (product_id, lot_no, status, deleted_at)
+     VALUES (?, 'NO-LOT', 'active', NULL)
+     ON DUPLICATE KEY UPDATE deleted_at = NULL, status = 'active', id = LAST_INSERT_ID(id)`,
+    [productId]
+  );
+  return result.insertId;
 }
 
 async function getOutboundItemWithContext(conn, itemId) {
@@ -157,15 +175,11 @@ router.post("/", validate(outboundItemSchema), async (req, res) => {
 
   try {
     const created = await withTransaction(async (conn) => {
-      const validLot = await validateLotBelongsToProduct(conn, product_id, lot_id);
-      if (!validLot) {
-        throw new StockError("INVALID_LOT_PRODUCT", "lot_id does not belong to product_id");
-      }
-
       const order = await getOutboundOrderContext(conn, outbound_order_id);
       if (!order) {
         throw new StockError("INVALID_ORDER", "Invalid outbound_order_id");
       }
+      const resolvedLotId = await resolveLotId(conn, product_id, lot_id);
       const [orderRows] = await conn.query(
         `SELECT status FROM outbound_orders WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
         [outbound_order_id]
@@ -180,20 +194,20 @@ router.post("/", validate(outboundItemSchema), async (req, res) => {
       const [result] = await conn.query(
         `INSERT INTO outbound_items (outbound_order_id, product_id, lot_id, location_id, qty, box_type, box_count, remark)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [outbound_order_id, product_id, lot_id, location_id, qty, box_type, box_count, remark]
+        [outbound_order_id, product_id, resolvedLotId, location_id, qty, box_type, box_count, remark]
       );
       if (isReservationAppliedStatus(orderRows[0].status)) {
         await adjustItemReservation(
           conn,
           order,
-          { product_id, lot_id, location_id, qty },
+          { product_id, lot_id: resolvedLotId, location_id, qty },
           qty
         );
       }
       await appendOutboundOrderLog(conn, {
         outboundOrderId: order.id,
         action: "item_create",
-        note: `Item added (product=${product_id}, lot=${lot_id}, qty=${qty}, box_count=${box_count})`,
+        note: `Item added (product=${product_id}, lot=${resolvedLotId}, qty=${qty}, box_count=${box_count})`,
         actorUserId: resolveActorUserId(req, order.created_by)
       });
 
@@ -241,15 +255,11 @@ router.put("/:id", validate(outboundItemSchema), async (req, res) => {
         throw new StockError("NOT_FOUND", "Outbound item not found");
       }
 
-      const validLot = await validateLotBelongsToProduct(conn, product_id, lot_id);
-      if (!validLot) {
-        throw new StockError("INVALID_LOT_PRODUCT", "lot_id does not belong to product_id");
-      }
-
       const nextOrder = await getOutboundOrderContext(conn, outbound_order_id);
       if (!nextOrder) {
         throw new StockError("INVALID_ORDER", "Invalid outbound_order_id");
       }
+      const resolvedLotId = await resolveLotId(conn, product_id, lot_id);
       if (isShippedLockedStatus(prev.status)) {
         throw new StockError("ORDER_LOCKED", "Cannot modify items after shipment");
       }
@@ -275,7 +285,7 @@ router.put("/:id", validate(outboundItemSchema), async (req, res) => {
         [
           outbound_order_id,
           product_id,
-          lot_id,
+          resolvedLotId,
           location_id || null,
           qty,
           box_type || null,
@@ -288,7 +298,7 @@ router.put("/:id", validate(outboundItemSchema), async (req, res) => {
         await adjustItemReservation(
           conn,
           nextOrder,
-          { product_id, lot_id, location_id, qty },
+          { product_id, lot_id: resolvedLotId, location_id, qty },
           qty
         );
       }

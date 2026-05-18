@@ -50,6 +50,7 @@ function buildItems(seq: number): OutboundItem[] {
       barcode_full: `CL${pad2(((seq + idx) % 10) + 1)}-8800${String(seq * 200 + idx + 1).padStart(9, "0")}`,
       product_name: `Sample Product ${pad2(((seq + idx) % 20) + 1)}`,
       lot: `LOT-26${pad2(((seq + idx) % 12) + 1)}-${String.fromCharCode(65 + (idx % 3))}`,
+      expiry_date: `2026-${pad2(((seq + idx) % 12) + 1)}-28`,
       location: `B-${pad2((seq % 10) + 1)}-${pad2((idx % 8) + 1)}`,
       requested_qty: requested,
       picked_qty: picked,
@@ -87,15 +88,26 @@ function buildItems(seq: number): OutboundItem[] {
   });
 }
 
-function buildBoxes(seq: number, status: OutboundStatus): OutboundBox[] {
+function buildBoxes(seq: number, status: OutboundStatus, items: OutboundItem[]): OutboundBox[] {
   if (!["packed", "shipped", "delivered"].includes(status)) return [];
+  const packedItems = items.slice(0, 2).map((item, index) => ({
+    id: `BOXITEM-${seq}-${index + 1}`,
+    outbound_item_id: item.id,
+    barcode_full: item.barcode_full,
+    product_name: item.product_name,
+    lot: item.lot,
+    location: item.location,
+    requested_qty: item.requested_qty,
+    packed_qty: item.requested_qty,
+  }));
   return [
     {
       id: `BOX-${seq}-1`,
       box_no: `BOX-${pad4(seq)}-1`,
       courier: seq % 2 === 0 ? "CJ Logistics" : "Hanjin",
       tracking_no: `TRK-${String(70000000 + seq).padStart(8, "0")}`,
-      item_count: (seq % 3) + 1,
+      item_count: packedItems.reduce((sum, item) => sum + item.packed_qty, 0),
+      items: packedItems,
     },
   ];
 }
@@ -114,7 +126,7 @@ export const outboundOrdersMock: OutboundOrder[] = Array.from({ length: 20 }, (_
   current.setUTCDate(baseDate.getUTCDate() + index);
   const status = outboundStatuses[index % outboundStatuses.length];
   const items = status === "draft" ? [] : buildItems(seq);
-  const boxes = buildBoxes(seq, status);
+  const boxes = buildBoxes(seq, status, items);
   const totalQty = items.reduce((acc, item) => acc + item.requested_qty, 0);
   const outboundNo = `OB-202602${pad2((seq % 28) + 1)}-${pad4(seq)}`;
   return {

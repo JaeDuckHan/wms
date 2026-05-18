@@ -230,13 +230,14 @@ export async function getStockTransactions(
       query?.txn_type && query.txn_type.length > 0
         ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
         : mockTransactions;
-    return fallbackRows.filter((row) =>
-      includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
-    );
+    return fallbackRows
+      .filter((row) => !query?.product_id || row.product.includes(query.product_id))
+      .filter((row) => includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q));
   }
   const token = await resolveToken(options?.token);
   const params = new URLSearchParams();
   if (query?.txn_type) params.set("txn_type", query.txn_type);
+  if (query?.product_id) params.set("product_id", query.product_id);
   const path = `/stock-transactions${params.toString() ? `?${params.toString()}` : ""}`;
 
   try {
@@ -293,9 +294,9 @@ export async function getStockTransactions(
         query?.txn_type && query.txn_type.length > 0
           ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
           : mockTransactions;
-      return fallbackRows.filter((row) =>
-        includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
-      );
+      return fallbackRows
+        .filter((row) => !query?.product_id || row.product.includes(query.product_id))
+        .filter((row) => includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q));
     }
     return filtered;
   } catch (error) {
@@ -304,9 +305,9 @@ export async function getStockTransactions(
         query?.txn_type && query.txn_type.length > 0
           ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
           : mockTransactions;
-      return fallbackRows.filter((row) =>
-        includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
-      );
+      return fallbackRows
+        .filter((row) => !query?.product_id || row.product.includes(query.product_id))
+        .filter((row) => includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q));
     }
     throw error;
   }

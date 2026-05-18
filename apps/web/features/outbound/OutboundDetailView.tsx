@@ -55,6 +55,7 @@ function normalizeOutboundOrder(order: OutboundOrder): OutboundOrder {
         barcode_full: asText(item.barcode_full),
         product_name: asText(item.product_name),
         lot: asText(item.lot),
+        expiry_date: item.expiry_date ? asText(item.expiry_date) : null,
         location: asText(item.location),
         requested_qty: asNumber(item.requested_qty),
         picked_qty: asNumber(item.picked_qty),
@@ -80,6 +81,19 @@ function normalizeOutboundOrder(order: OutboundOrder): OutboundOrder {
         courier: asText(box.courier),
         tracking_no: asText(box.tracking_no),
         item_count: asNumber(box.item_count),
+        items: Array.isArray(box.items)
+          ? box.items.map((boxItem) => ({
+              ...boxItem,
+              id: asText(boxItem.id),
+              outbound_item_id: asText(boxItem.outbound_item_id),
+              barcode_full: asText(boxItem.barcode_full),
+              product_name: asText(boxItem.product_name),
+              lot: asText(boxItem.lot),
+              location: asText(boxItem.location),
+              requested_qty: asNumber(boxItem.requested_qty),
+              packed_qty: asNumber(boxItem.packed_qty),
+            }))
+          : [],
       }))
     : [];
   const timeline = Array.isArray(order.timeline)
@@ -150,6 +164,7 @@ export function OutboundDetailView({
   const [courier, setCourier] = useState("");
   const [trackingNo, setTrackingNo] = useState("");
   const [itemCount, setItemCount] = useState("1");
+  const [boxItemQtyById, setBoxItemQtyById] = useState<Record<string, string>>({});
   const [editDate, setEditDate] = useState(normalizedOrder.eta_date);
   const [editSalesChannel, setEditSalesChannel] = useState(normalizedOrder.memo === "N/A" ? "" : normalizedOrder.memo);
   const [editOrderNo, setEditOrderNo] = useState(normalizedOrder.order_no);
@@ -169,6 +184,14 @@ export function OutboundDetailView({
   useEffect(() => {
     setCurrentOrder(normalizedOrder);
   }, [normalizedOrder]);
+  useEffect(() => {
+    if (!dialogOpen) return;
+    const initial: Record<string, string> = {};
+    for (const item of currentOrder.items) {
+      initial[item.id] = "0";
+    }
+    setBoxItemQtyById(initial);
+  }, [dialogOpen, currentOrder.items]);
   useEffect(() => {
     let cancelled = false;
     listSalesChannels()
@@ -353,43 +376,44 @@ export function OutboundDetailView({
 
   const itemColumns = useMemo(
     () => [
-      { key: "barcode_full", label: "barcode_full", render: (row: OutboundOrder["items"][number]) => row.barcode_full },
-      { key: "product_name", label: "product_name", render: (row: OutboundOrder["items"][number]) => row.product_name },
-      { key: "lot", label: "lot", render: (row: OutboundOrder["items"][number]) => row.lot },
-      { key: "location", label: "location", render: (row: OutboundOrder["items"][number]) => row.location },
+      { key: "barcode_full", label: "Barcode", render: (row: OutboundOrder["items"][number]) => row.barcode_full },
+      { key: "product_name", label: "Product", render: (row: OutboundOrder["items"][number]) => row.product_name },
+      { key: "lot", label: "Lot", render: (row: OutboundOrder["items"][number]) => row.lot },
+      { key: "expiry_date", label: "Expiry Date", render: (row: OutboundOrder["items"][number]) => row.expiry_date ?? "-" },
+      { key: "location", label: "Location", render: (row: OutboundOrder["items"][number]) => row.location },
       {
         key: "requested_qty",
-        label: "requested_qty",
+        label: "Requested Qty",
         className: "tabular-nums",
         render: (row: OutboundOrder["items"][number]) => row.requested_qty,
       },
       {
         key: "picked_qty",
-        label: "picked_qty",
+        label: "Picked Qty",
         className: "tabular-nums",
         render: (row: OutboundOrder["items"][number]) => row.picked_qty,
       },
       {
         key: "available_qty",
-        label: "available_qty",
+        label: "Available Qty",
         className: "tabular-nums",
         render: (row: OutboundOrder["items"][number]) => row.available_qty,
       },
       {
         key: "reserved_qty",
-        label: "reserved_qty",
+        label: "Reserved Qty",
         className: "tabular-nums",
         render: (row: OutboundOrder["items"][number]) => row.reserved_qty,
       },
       {
         key: "allocatable_qty",
-        label: "allocatable_qty",
+        label: "Allocatable Qty",
         className: "tabular-nums",
         render: (row: OutboundOrder["items"][number]) => row.allocatable_qty,
       },
       {
         key: "status",
-        label: "status",
+        label: "Status",
         render: (row: OutboundOrder["items"][number]) =>
           row.status === "shortage" ? (
             <Badge variant="danger" className="inline-flex items-center gap-1">
@@ -441,7 +465,10 @@ export function OutboundDetailView({
   );
 
   const submitBox = async () => {
-    const parsedItemCount = Number(itemCount);
+    const selectedItems = Object.entries(boxItemQtyById)
+      .map(([outbound_item_id, value]) => ({ outbound_item_id, packed_qty: Number(value) }))
+      .filter((item) => Number.isFinite(item.packed_qty) && item.packed_qty > 0);
+    const parsedItemCount = selectedItems.reduce((sum, item) => sum + item.packed_qty, 0) || Number(itemCount);
     if (!boxNo.trim() || !courier.trim() || !trackingNo.trim()) {
       setFormError(t("All fields are required."));
       return;
@@ -459,6 +486,7 @@ export function OutboundDetailView({
         courier: courier.trim(),
         tracking_no: trackingNo.trim(),
         item_count: parsedItemCount,
+        items: selectedItems,
       });
       setCurrentOrder((prev) => normalizeOutboundOrder({ ...prev, boxes }));
       setDialogOpen(false);
@@ -466,6 +494,7 @@ export function OutboundDetailView({
       setCourier("");
       setTrackingNo("");
       setItemCount("1");
+      setBoxItemQtyById({});
       pushToast({ title: t("Box added"), variant: "success" });
     } catch (error) {
       const message = error instanceof ApiError ? error.message : t("Please check input values or API status.");
@@ -643,6 +672,35 @@ export function OutboundDetailView({
                     value={itemCount}
                     onChange={(e) => setItemCount(e.target.value)}
                   />
+                  <div className="rounded-md border">
+                    <div className="border-b bg-slate-50 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      {t("Packed Items")}
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {currentOrder.items.length === 0 ? (
+                        <p className="px-3 py-3 text-sm text-slate-500">{t("No items available.")}</p>
+                      ) : (
+                        currentOrder.items.map((item) => (
+                          <label key={item.id} className="grid grid-cols-[1fr_96px] gap-3 border-b px-3 py-2 last:border-b-0">
+                            <span className="min-w-0 text-sm">
+                              <span className="block truncate font-medium">{item.product_name}</span>
+                              <span className="block truncate text-xs text-slate-500">
+                                {item.barcode_full} | {item.lot} | {item.location} | {t("Requested Qty")}: {item.requested_qty}
+                              </span>
+                            </span>
+                            <Input
+                              aria-label={`${item.product_name} ${t("Packed Qty")}`}
+                              type="number"
+                              min={0}
+                              max={item.requested_qty}
+                              value={boxItemQtyById[item.id] ?? "0"}
+                              onChange={(e) => setBoxItemQtyById((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                            />
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
                   {formError && <p className="text-sm text-red-600">{formError}</p>}
                 </div>
                 <DialogFooter>
@@ -662,6 +720,24 @@ export function OutboundDetailView({
               { key: "box_no", label: "Box No", render: (row) => row.box_no },
               { key: "courier", label: "Courier", render: (row) => row.courier },
               { key: "tracking_no", label: "Tracking No", render: (row) => row.tracking_no },
+              {
+                key: "items",
+                label: "Packed Items",
+                render: (row) =>
+                  row.items.length === 0 ? (
+                    "-"
+                  ) : (
+                    <div className="space-y-1">
+                      {row.items.map((item) => (
+                        <div key={item.id} className="text-xs">
+                          <span className="font-medium">{item.product_name}</span>
+                          <span className="text-slate-500"> / {item.lot} / {item.location}</span>
+                          <span className="tabular-nums"> x {item.packed_qty}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ),
+              },
               {
                 key: "item_count",
                 label: "Item Count",

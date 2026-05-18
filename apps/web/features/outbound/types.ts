@@ -14,11 +14,12 @@ export type OutboundListStatus = OutboundStatus | "all";
 export type OutboundItem = {
   id: string;
   product_id?: number;
-  lot_id?: number;
+  lot_id?: number | null;
   location_id?: number | null;
   barcode_full: string;
   product_name: string;
   lot: string;
+  expiry_date: string | null;
   location: string;
   box_type?: string | null;
   box_count?: number;
@@ -45,6 +46,18 @@ export type OutboundBox = {
   courier: string;
   tracking_no: string;
   item_count: number;
+  items: OutboundBoxItem[];
+};
+
+export type OutboundBoxItem = {
+  id: string;
+  outbound_item_id: string;
+  barcode_full: string;
+  product_name: string;
+  lot: string;
+  location: string;
+  requested_qty: number;
+  packed_qty: number;
 };
 
 export type OutboundTimeline = {

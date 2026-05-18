@@ -70,6 +70,7 @@ type RawProduct = {
 type RawLot = {
   id: number;
   lot_no: string;
+  expiry_date: string | null;
 };
 
 type RawWarehouseLocation = {
@@ -96,6 +97,18 @@ type RawOutboundBox = {
   status: "open" | "packed" | "shipped";
   created_at: string;
   updated_at: string;
+  items?: RawOutboundBoxItem[];
+};
+
+type RawOutboundBoxItem = {
+  id: number;
+  outbound_item_id: number;
+  barcode_full: string | null;
+  product_name: string | null;
+  lot_no: string | null;
+  location_code: string | null;
+  requested_qty: number;
+  packed_qty: number;
 };
 
 type RawOutboundLog = {
@@ -138,7 +151,7 @@ type JsonResponse<T> = {
 
 export type CreateOutboundItemInput = {
   product_id: number;
-  lot_id: number;
+  lot_id?: number | null;
   location_id?: number | null;
   qty: number;
   box_type?: string | null;
@@ -461,6 +474,16 @@ function mapBoxes(rawBoxes: RawOutboundBox[], trackingNo: string | null): Outbou
     courier: box.courier ?? "N/A",
     tracking_no: box.tracking_no ?? trackingNo ?? "-",
     item_count: Number(box.item_count),
+    items: (box.items ?? []).map((item) => ({
+      id: String(item.id),
+      outbound_item_id: String(item.outbound_item_id),
+      barcode_full: item.barcode_full ?? "-",
+      product_name: item.product_name ?? "-",
+      lot: item.lot_no ?? "-",
+      location: item.location_code ?? "-",
+      requested_qty: Number(item.requested_qty),
+      packed_qty: Number(item.packed_qty),
+    })),
   }));
 }
 
@@ -580,6 +603,7 @@ function mapItems(
       barcode_full: productMap.get(item.product_id)?.barcode_full ?? `P-${item.product_id}`,
       product_name: productMap.get(item.product_id)?.name_kr ?? `Product #${item.product_id}`,
       lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
+      expiry_date: lotMap.get(item.lot_id)?.expiry_date ?? null,
       location: itemLocation,
       box_type: item.box_type,
       box_count: Number(item.box_count || 0),
@@ -962,6 +986,7 @@ export type AddBoxPayload = {
   courier: string;
   tracking_no: string;
   item_count: number;
+  items?: Array<{ outbound_item_id: string; packed_qty: number }>;
 };
 
 export async function addOutboundBox(
@@ -986,6 +1011,10 @@ export async function addOutboundBox(
             courier: payload.courier,
             tracking_no: payload.tracking_no,
             item_count: payload.item_count,
+            items: payload.items?.map((item) => ({
+              outbound_item_id: Number(item.outbound_item_id),
+              packed_qty: item.packed_qty,
+            })),
           }),
         },
         options
@@ -1005,7 +1034,24 @@ export async function addOutboundBox(
   const idx = mockDb.findIndex((item) => item.outbound_no === outboundNo);
   if (idx < 0) throw new ApiError("Outbound order not found", 404);
 
-  const nextBox: OutboundBox = { id: `BOX-${Date.now()}`, ...payload };
+  const itemsById = new Map(mockDb[idx].items.map((item) => [item.id, item]));
+  const packedItems = (payload.items ?? [])
+    .map((item, index) => {
+      const source = itemsById.get(item.outbound_item_id);
+      if (!source) return null;
+      return {
+        id: `BOXITEM-${Date.now()}-${index}`,
+        outbound_item_id: source.id,
+        barcode_full: source.barcode_full,
+        product_name: source.product_name,
+        lot: source.lot,
+        location: source.location,
+        requested_qty: source.requested_qty,
+        packed_qty: item.packed_qty,
+      };
+    })
+    .filter((item): item is OutboundBox["items"][number] => item !== null);
+  const nextBox: OutboundBox = { id: `BOX-${Date.now()}`, ...payload, items: packedItems };
   const updated = { ...mockDb[idx], boxes: [nextBox, ...mockDb[idx].boxes] };
   mockDb[idx] = updated;
   return updated.boxes.map((box) => ({ ...box }));
@@ -1043,7 +1089,8 @@ export async function createOutboundOrderWithItems(
       location_id: item.location_id ?? null,
       barcode_full: `P-${item.product_id}`,
       product_name: `Product #${item.product_id}`,
-      lot: `LOT-${item.lot_id}`,
+      lot: item.lot_id ? `LOT-${item.lot_id}` : "NO-LOT",
+      expiry_date: null,
       location: item.location_id ? `LOC-${item.location_id}` : "-",
       box_type: item.box_type ?? null,
       box_count: item.box_count ?? 0,

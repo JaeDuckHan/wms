@@ -142,6 +142,35 @@
               }
             }
           },
+          "500": {
+            "description": "DB connection failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "message",
+                    "error"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Database connection failed"
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Access denied for user"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "503": {
             "description": "DB connected but billing schema is not ready",
             "content": {
@@ -204,35 +233,6 @@
                     "message": {
                       "type": "string",
                       "example": "Billing schema is not ready. Apply billing patches and restart."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "DB connection failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "ok",
-                    "message",
-                    "error"
-                  ],
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Database connection failed"
-                    },
-                    "error": {
-                      "type": "string",
-                      "example": "Access denied for user"
                     }
                   }
                 }
@@ -1018,7 +1018,6 @@
                 "required": [
                   "inbound_order_id",
                   "product_id",
-                  "lot_id",
                   "qty"
                 ],
                 "properties": {
@@ -1029,7 +1028,8 @@
                     "type": "integer"
                   },
                   "lot_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "nullable": true
                   },
                   "location_id": {
                     "type": "integer"
@@ -1043,7 +1043,12 @@
                   },
                   "currency": {
                     "type": "string",
-                    "example": "THB"
+                    "example": "USD",
+                    "enum": [
+                      "KRW",
+                      "THB",
+                      "USD"
+                    ]
                   },
                   "remark": {
                     "type": "string"
@@ -1106,7 +1111,6 @@
                 "required": [
                   "inbound_order_id",
                   "product_id",
-                  "lot_id",
                   "qty"
                 ],
                 "properties": {
@@ -1117,7 +1121,8 @@
                     "type": "integer"
                   },
                   "lot_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "nullable": true
                   },
                   "location_id": {
                     "type": "integer"
@@ -1130,7 +1135,13 @@
                     "type": "number"
                   },
                   "currency": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "KRW",
+                      "THB",
+                      "USD"
+                    ],
+                    "example": "USD"
                   },
                   "remark": {
                     "type": "string"
@@ -1372,6 +1383,304 @@
         }
       }
     },
+    "/outbound-orders/{id}/boxes": {
+      "get": {
+        "summary": "List outbound boxes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Outbound order not found"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create outbound box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "box_no"
+                ],
+                "properties": {
+                  "box_no": {
+                    "type": "string"
+                  },
+                  "courier": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "tracking_no": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "item_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "outbound_item_id",
+                        "packed_qty"
+                      ],
+                      "properties": {
+                        "outbound_item_id": {
+                          "type": "integer"
+                        },
+                        "packed_qty": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Validation/box item error"
+          },
+          "404": {
+            "description": "Outbound order not found"
+          },
+          "409": {
+            "description": "Duplicate box_no in outbound order"
+          }
+        }
+      }
+    },
+    "/outbound-orders/{id}/boxes/{boxId}/items": {
+      "get": {
+        "summary": "List outbound box items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "boxId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Outbound box not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Replace outbound box items",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "boxId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "outbound_item_id",
+                        "packed_qty"
+                      ],
+                      "properties": {
+                        "outbound_item_id": {
+                          "type": "integer"
+                        },
+                        "packed_qty": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Validation/box item error"
+          },
+          "404": {
+            "description": "Outbound box not found"
+          }
+        }
+      }
+    },
+    "/outbound-orders/{id}/boxes/{boxId}": {
+      "put": {
+        "summary": "Update outbound box",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "boxId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "box_no",
+                  "item_count"
+                ],
+                "properties": {
+                  "box_no": {
+                    "type": "string"
+                  },
+                  "courier": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "tracking_no": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "item_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "packed",
+                      "shipped"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "404": {
+            "description": "Outbound box not found"
+          },
+          "409": {
+            "description": "Duplicate box_no in outbound order"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete outbound box (soft)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "boxId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Outbound box not found"
+          }
+        }
+      }
+    },
     "/outbound-items": {
       "get": {
         "summary": "List outbound items",
@@ -1402,7 +1711,6 @@
                 "required": [
                   "outbound_order_id",
                   "product_id",
-                  "lot_id",
                   "qty"
                 ],
                 "properties": {
@@ -1413,7 +1721,8 @@
                     "type": "integer"
                   },
                   "lot_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "nullable": true
                   },
                   "location_id": {
                     "type": "integer"
@@ -1490,7 +1799,6 @@
                 "required": [
                   "outbound_order_id",
                   "product_id",
-                  "lot_id",
                   "qty"
                 ],
                 "properties": {
@@ -1501,7 +1809,8 @@
                     "type": "integer"
                   },
                   "lot_id": {
-                    "type": "integer"
+                    "type": "integer",
+                    "nullable": true
                   },
                   "location_id": {
                     "type": "integer"

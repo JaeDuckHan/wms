@@ -10,6 +10,7 @@ import { AUTH_COOKIE_KEY } from "@/lib/auth";
 import { getStockBalances, getStockTransactions } from "@/features/inventory/api";
 import type { InventoryTab } from "@/features/inventory/types";
 import { ApiError } from "@/features/outbound/api";
+import { listProducts } from "@/features/settings/products/api";
 
 const tabs: Array<{ label: string; value: InventoryTab }> = [
   { label: "Balances", value: "balances" },
@@ -27,22 +28,26 @@ const txnTypeFilter = [
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; tab?: InventoryTab; txn_type?: string }>;
+  searchParams: Promise<{ q?: string; tab?: InventoryTab; txn_type?: string; product_id?: string }>;
 }) {
-  const { q, tab, txn_type } = await searchParams;
+  const { q, tab, txn_type, product_id } = await searchParams;
   const currentTab = tabs.some((item) => item.value === tab) ? tab : "balances";
   const token = (await cookies()).get(AUTH_COOKIE_KEY)?.value;
   if (!token) redirect("/login?next=/inventory");
 
   let balances = [] as Awaited<ReturnType<typeof getStockBalances>>;
   let transactions = [] as Awaited<ReturnType<typeof getStockTransactions>>;
+  let products = [] as Awaited<ReturnType<typeof listProducts>>;
   let loadError: string | null = null;
 
   try {
     if (currentTab === "balances") {
       balances = await getStockBalances({ q }, { token });
     } else {
-      transactions = await getStockTransactions({ q, txn_type }, { token });
+      [transactions, products] = await Promise.all([
+        getStockTransactions({ q, txn_type, product_id }, { token }),
+        listProducts({ token }),
+      ]);
     }
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
@@ -124,6 +129,7 @@ export default async function InventoryPage({
             params.set("tab", item.value);
             if (q) params.set("q", q);
             if (txn_type) params.set("txn_type", txn_type);
+            if (product_id) params.set("product_id", product_id);
             const active = currentTab === item.value;
             return (
               <Link key={item.value} href={`/inventory?${params.toString()}`}>
@@ -151,6 +157,7 @@ export default async function InventoryPage({
                 const params = new URLSearchParams();
                 params.set("tab", "transactions");
                 if (q) params.set("q", q);
+                if (product_id) params.set("product_id", product_id);
                 if (item.value) params.set("txn_type", item.value);
                 const active = (txn_type ?? "") === item.value;
                 return (
@@ -162,6 +169,27 @@ export default async function InventoryPage({
                 );
               })}
             </div>
+            <form className="mt-4 flex flex-wrap items-end gap-2" action="/inventory">
+              <input type="hidden" name="tab" value="transactions" />
+              {q ? <input type="hidden" name="q" value={q} /> : null}
+              {txn_type ? <input type="hidden" name="txn_type" value={txn_type} /> : null}
+              <label className="min-w-72">
+                <span className="mb-1 block text-xs font-medium text-slate-500">
+                  <TranslatedText text="Product" />
+                </span>
+                <select name="product_id" defaultValue={product_id ?? ""} className="h-9 w-full rounded-md border bg-white px-3 text-sm">
+                  <option value="">All Products</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.barcode_full} | {product.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="submit" className="h-9 rounded-md border bg-slate-900 px-3 text-sm font-medium text-white">
+                <TranslatedText text="Apply" />
+              </button>
+            </form>
           </>
         )}
       </div>

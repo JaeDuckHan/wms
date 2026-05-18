@@ -60,13 +60,13 @@ type RawInboundLog = {
 
 type RawClient = { id: number; client_code?: string; name_kr?: string; name_en?: string };
 type RawProduct = { id: number; barcode_full: string; name_kr: string };
-type RawLot = { id: number; lot_no: string };
+type RawLot = { id: number; lot_no: string; expiry_date: string | null };
 type RawWarehouseLocation = { id: number; location_code: string; zone: string | null };
 type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
 
 export type CreateInboundItemInput = {
   product_id: number;
-  lot_id: number;
+  lot_id?: number | null;
   location_id?: number | null;
   qty: number;
   invoice_price?: number | null;
@@ -358,6 +358,7 @@ function mapItems(
     barcode_full: productMap.get(item.product_id)?.barcode_full ?? `P-${item.product_id}`,
     product_name: productMap.get(item.product_id)?.name_kr ?? `Product #${item.product_id}`,
     lot: lotMap.get(item.lot_id)?.lot_no ?? `LOT-${item.lot_id}`,
+    expiry_date: lotMap.get(item.lot_id)?.expiry_date ?? null,
     location: item.location_id ? locationMap.get(item.location_id) ?? `LOC-${item.location_id}` : "-",
     qty: Number(item.qty),
     invoice_price: item.invoice_price === null ? null : Number(item.invoice_price),
@@ -714,7 +715,8 @@ export async function createInboundOrderWithItems(
       location_id: item.location_id ?? null,
       barcode_full: `P-${item.product_id}`,
       product_name: `Product #${item.product_id}`,
-      lot: `LOT-${item.lot_id}`,
+      lot: item.lot_id ? `LOT-${item.lot_id}` : "NO-LOT",
+      expiry_date: null,
       location: item.location_id ? `LOC-${item.location_id}` : "-",
       qty: item.qty,
       invoice_price: item.invoice_price ?? null,

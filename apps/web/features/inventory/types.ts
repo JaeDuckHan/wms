@@ -33,4 +33,5 @@ export type StockTransactionRow = {
 export type InventoryQuery = {
   q?: string;
   txn_type?: string;
+  product_id?: string;
 };

@@ -21,6 +21,7 @@
     "test:e2e:outbound-detail": "powershell -ExecutionPolicy Bypass -File ./scripts/run_outbound_detail_flow.ps1",
     "test:e2e:inventory-flow": "node scripts/e2e_inventory_flow.js",
     "test:e2e:inbound-detail": "powershell -ExecutionPolicy Bypass -File ./scripts/run_inbound_detail_flow.ps1",
+    "test:contracts:operational": "node scripts/check_operational_contracts.js",
     "test:e2e:billing-production": "powershell -ExecutionPolicy Bypass -File ./scripts/run_billing_production_flow.ps1",
     "test:e2e:health-smoke": "node ./scripts/e2e_health_smoke.js",
     "test:invoice-export": "node scripts/test_invoice_export_contract.js",

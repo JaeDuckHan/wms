@@ -180,7 +180,7 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
         location_id: editingItem.location_id ?? null,
         qty,
         invoice_price: invoicePrice,
-        currency: invoicePrice === null ? null : "USD",
+        currency: invoicePrice === null ? null : editingItem.currency ?? "USD",
         remark: itemRemark.trim() || null,
       });
       setOrder(updated);
@@ -212,18 +212,26 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
 
   const itemColumns = useMemo(
     () => [
-      { key: "barcode_full", label: "barcode_full", render: (row: InboundOrder["items"][number]) => row.barcode_full },
-      { key: "product_name", label: "product_name", render: (row: InboundOrder["items"][number]) => row.product_name },
-      { key: "lot", label: "lot", render: (row: InboundOrder["items"][number]) => row.lot },
-      { key: "location", label: "location", render: (row: InboundOrder["items"][number]) => row.location },
-      { key: "qty", label: "qty", className: "tabular-nums", render: (row: InboundOrder["items"][number]) => row.qty },
+      { key: "barcode_full", label: "Barcode", render: (row: InboundOrder["items"][number]) => row.barcode_full },
+      { key: "product_name", label: "Product", render: (row: InboundOrder["items"][number]) => row.product_name },
+      { key: "lot", label: "Lot", render: (row: InboundOrder["items"][number]) => row.lot },
+      { key: "expiry_date", label: "Expiry Date", render: (row: InboundOrder["items"][number]) => row.expiry_date ?? "-" },
+      { key: "location", label: "Location", render: (row: InboundOrder["items"][number]) => row.location },
+      { key: "qty", label: "Qty", className: "tabular-nums", render: (row: InboundOrder["items"][number]) => row.qty },
       {
         key: "invoice_price",
-        label: "invoice_price",
+        label: "Invoice Price",
         className: "tabular-nums",
         render: (row: InboundOrder["items"][number]) => (row.invoice_price === null ? "-" : row.invoice_price),
       },
-      { key: "currency", label: "currency", render: (row: InboundOrder["items"][number]) => row.currency ?? "-" },
+      { key: "currency", label: "Currency", render: (row: InboundOrder["items"][number]) => row.currency ?? "-" },
+      {
+        key: "total_amount",
+        label: "Total Amount",
+        className: "tabular-nums",
+        render: (row: InboundOrder["items"][number]) =>
+          row.invoice_price === null ? "-" : `${row.currency ?? ""} ${Number(row.invoice_price * row.qty).toLocaleString()}`.trim(),
+      },
       {
         key: "actions",
         label: "Actions",

@@ -79,6 +79,7 @@ const inputLabelClass = "mb-1 block text-xs font-medium text-slate-600";
 const selectClass =
   "h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300";
 const fieldErrorClass = "mt-1 text-xs text-rose-600";
+const currencies: Array<NonNullable<ItemDraft["currency"]>> = ["USD", "THB", "KRW"];
 
 function withFieldErrorClass(baseClass: string, hasError: boolean) {
   return hasError ? `${baseClass} border-rose-400 bg-rose-50` : baseClass;
@@ -164,6 +165,15 @@ function toOptionalPositiveNumber(value: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return parsed;
+}
+
+function formatOptionalDate(value?: string | null) {
+  return value ? value.slice(0, 10) : "-";
+}
+
+function formatOptionalAmount(value: number | null, currency?: string) {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return `${currency || ""} ${value.toLocaleString(undefined, { maximumFractionDigits: 4 })}`.trim();
 }
 
 function getErrorMessage(error: unknown) {
@@ -301,6 +311,21 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
 
   const title = mode === "inbound" ? "New Inbound" : "New Outbound";
   const listHref = mode === "inbound" ? "/inbounds" : "/outbounds";
+
+  function getSelectedLot(item: ItemDraft) {
+    const lots = lotsByProductId.get(item.product_id) ?? [];
+    if (item.lot_id) return lots.find((lot) => String(lot.id) === item.lot_id) ?? null;
+    const lotNo = item.lot_no.trim().toLowerCase();
+    if (!lotNo) return null;
+    return lots.find((lot) => lot.lot_no.trim().toLowerCase() === lotNo) ?? null;
+  }
+
+  function getLineTotal(item: ItemDraft) {
+    const qty = toOptionalPositiveInt(item.qty);
+    const price = toOptionalPositiveNumber(item.invoice_price);
+    if (!qty || price === null) return null;
+    return qty * price;
+  }
 
   function updateItem(id: string, patch: Partial<ItemDraft>) {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -455,7 +480,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
             location_id: item.locationId,
             qty: item.qty,
             invoice_price: item.invoicePrice,
-            currency: item.invoicePrice === null ? null : "USD",
+            currency: item.invoicePrice === null ? null : items[index].currency || "USD",
             remark: items[index].remark.trim() || null,
           }))
         );
@@ -665,6 +690,8 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                 {items.map((item, index) => {
                   const lots = lotsByProductId.get(item.product_id) ?? [];
                   const product = productsById.get(item.product_id);
+                  const selectedLot = getSelectedLot(item);
+                  const lineTotal = getLineTotal(item);
                   const errors = itemErrors[item.id] ?? {};
                   const outboundStock = mode === "outbound" ? getOutboundStock(item) : null;
                   return (
@@ -696,6 +723,9 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             })}
                           </select>
                           {errors.product_id ? <p className={fieldErrorClass}>{errors.product_id}</p> : null}
+                          <p className="mt-1 text-xs text-slate-500">
+                            {t("Barcode")}: {product?.barcode_full ?? "-"}
+                          </p>
                         </label>
                         {mode === "inbound" ? (
                           <label>
@@ -717,6 +747,9 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                                 ))}
                               </datalist>
                             ) : null}
+                            <p className="mt-1 text-xs text-slate-500">
+                              {t("Expiry Date")}: {formatOptionalDate(selectedLot?.expiry_date)}
+                            </p>
                           </label>
                         ) : (
                           <label>
@@ -747,6 +780,9 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                                 {outboundStock.reserved > 0 ? ` (${outboundStock.reserved} reserved)` : ""}
                               </p>
                             ) : null}
+                            <p className="mt-1 text-xs text-slate-500">
+                              {t("Expiry Date")}: {formatOptionalDate(selectedLot?.expiry_date)}
+                            </p>
                           </label>
                         )}
                         <label>
@@ -793,9 +829,24 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                       </div>
 
                       {mode === "inbound" ? (
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="mt-3 grid gap-3 md:grid-cols-4">
                           <label>
-                            <span className={inputLabelClass}>Invoice Price (USD)</span>
+                            <span className={inputLabelClass}>{t("Currency")}</span>
+                            <select
+                              className={selectClass}
+                              value={item.currency}
+                              onChange={(event) => updateItem(item.id, { currency: event.target.value as ItemDraft["currency"] })}
+                            >
+                              <option value="">None</option>
+                              {currencies.map((currency) => (
+                                <option key={currency} value={currency}>
+                                  {currency}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span className={inputLabelClass}>{t("Invoice Price")}</span>
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.invoice_price))}
                               type="number"
@@ -808,6 +859,12 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             {errors.invoice_price ? <p className={fieldErrorClass}>{errors.invoice_price}</p> : null}
                           </label>
                           <label>
+                            <span className={inputLabelClass}>{t("Total Amount")}</span>
+                            <div className="h-9 rounded-md bg-slate-50 px-3 py-2 text-sm tabular-nums text-slate-700">
+                              {formatOptionalAmount(lineTotal, item.currency)}
+                            </div>
+                          </label>
+                          <label>
                             <span className={inputLabelClass}>{t("Remark")}</span>
                             <Input value={item.remark} onChange={(event) => updateItem(item.id, { remark: event.target.value })} />
                           </label>
@@ -815,7 +872,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                       ) : (
                         <div className="mt-3 grid gap-3 md:grid-cols-3">
                           <label>
-                            <span className={inputLabelClass}>{t("Box Type")}</span>
+                            <span className={inputLabelClass}>{t("Packed Box")} / {t("Box Type")}</span>
                             <Input value={item.box_type} onChange={(event) => updateItem(item.id, { box_type: event.target.value })} />
                           </label>
                           <label>

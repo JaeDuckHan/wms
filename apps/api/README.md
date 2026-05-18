@@ -167,8 +167,8 @@ On API startup, `ADMIN_EMAIL` and `ADMIN_PASSWORD` are synced into the `users` t
 - `GET /inbound-items`
 - `GET /inbound-items/:id`
 - `GET /inbound-items?inbound_order_id=:id`
-- `POST /inbound-items`
-- `PUT /inbound-items/:id`
+- `POST /inbound-items` (`lot_id` optional; missing lots are stored as `NO-LOT`; currency supports `KRW`, `THB`, `USD`)
+- `PUT /inbound-items/:id` (`lot_id` optional; missing lots are stored as `NO-LOT`; currency supports `KRW`, `THB`, `USD`)
 - `DELETE /inbound-items/:id` (soft delete)
 
 `outbound-orders`
@@ -182,19 +182,21 @@ On API startup, `ADMIN_EMAIL` and `ADMIN_PASSWORD` are synced into the `users` t
 - `GET /outbound-items`
 - `GET /outbound-items/:id`
 - `GET /outbound-items?outbound_order_id=:id`
-- `POST /outbound-items`
-- `PUT /outbound-items/:id`
+- `POST /outbound-items` (`lot_id` optional; missing lots are stored as `NO-LOT`)
+- `PUT /outbound-items/:id` (`lot_id` optional; missing lots are stored as `NO-LOT`)
 - `DELETE /outbound-items/:id` (soft delete)
 
 `outbound-boxes`
 - `GET /outbound-orders/:id/boxes`
-- `POST /outbound-orders/:id/boxes`
+- `POST /outbound-orders/:id/boxes` (optional `items[]` links packed quantities to outbound items)
+- `GET /outbound-orders/:id/boxes/:boxId/items`
+- `PUT /outbound-orders/:id/boxes/:boxId/items`
 - `PUT /outbound-orders/:id/boxes/:boxId`
 - `DELETE /outbound-orders/:id/boxes/:boxId` (soft delete)
 
 `stocks`
 - `GET /stock-balances`
-- `GET /stock-transactions`
+- `GET /stock-transactions` (supports `product_id` filtering)
 
 Stock balances and transactions are read-only ledger resources. Create stock movement through inbound/return/outbound flows, not direct POSTs to these endpoints.
 
