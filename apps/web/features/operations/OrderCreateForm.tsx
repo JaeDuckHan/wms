@@ -223,7 +223,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
   const [salesChannel, setSalesChannel] = useState(mode === "outbound" ? "manual" : "");
   const [platformOrderNo, setPlatformOrderNo] = useState("");
   const [trackingNo, setTrackingNo] = useState("");
-  const [items, setItems] = useState<ItemDraft[]>([]);
+  const [items, setItems] = useState<ItemDraft[]>(() => (mode === "inbound" ? [makeItemDraft()] : []));
   const [itemErrors, setItemErrors] = useState<Record<string, ItemFieldErrors>>({});
 
   useEffect(() => {
@@ -596,7 +596,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                   value={clientId}
                   onChange={(event) => {
                     setClientId(event.target.value);
-                    setItems([]);
+                    setItems(mode === "inbound" ? [makeItemDraft()] : []);
                     setItemErrors({});
                   }}
                 >

@@ -69,6 +69,12 @@ assertIncludes(
   "Order form shows computed inbound totals"
 );
 
+assertMatches(
+  "apps/web/features/operations/OrderCreateForm.tsx",
+  /useState<ItemDraft\[\]>\(\(\) => \(mode === "inbound" \? \[makeItemDraft\(\)\] : \[\]\)\)/,
+  "New inbound form defaults to a visible item"
+);
+
 assertIncludes(
   "apps/web/features/outbound/types.ts",
   "items: OutboundBoxItem[]",
