@@ -773,6 +773,11 @@ export function OutboundDetailView({
               </DialogContent>
             </Dialog>
           </div>
+          {currentOrder.boxes_supported && currentOrder.boxes.length === 0 ? (
+            <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              No box records are saved for this outbound order yet. Use Add Box to enter box no, courier, tracking no, and packed item qty.
+            </div>
+          ) : null}
           <DataTable
             rows={currentOrder.boxes}
             columns={[

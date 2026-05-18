@@ -39,14 +39,14 @@ const initialForm: FormState = {
   status: "active",
 };
 
-export function ClientsSettingsPage() {
+export function ClientsSettingsPage({ initialSearch = "" }: { initialSearch?: string }) {
   const { pushToast } = useToast();
   const { t } = useI18n();
   const { canAccessSettings, canWrite, ready } = useCurrentUser();
   const [rows, setRows] = useState<Client[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("created_desc");
   const [open, setOpen] = useState(false);

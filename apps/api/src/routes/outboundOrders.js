@@ -20,7 +20,17 @@ const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
-const outboundOrderSchema = z.object({
+const outboundOrderItemSchema = z.object({
+  product_id: z.coerce.number().int().positive(),
+  lot_id: z.coerce.number().int().positive().nullable().optional(),
+  location_id: z.coerce.number().int().positive().nullable().optional(),
+  qty: z.coerce.number().int().positive(),
+  box_type: z.string().max(80).nullable().optional(),
+  box_count: z.coerce.number().int().min(0).default(0),
+  remark: z.string().max(500).nullable().optional()
+});
+
+const outboundOrderBaseSchema = z.object({
   outbound_no: z.string().min(1).max(80),
   client_id: z.coerce.number().int().positive(),
   warehouse_id: z.coerce.number().int().positive(),
@@ -50,6 +60,12 @@ const outboundOrderSchema = z.object({
   }).nullable().optional(),
   created_by: z.coerce.number().int().positive()
 });
+
+const outboundOrderSchema = outboundOrderBaseSchema.extend({
+  items: z.array(outboundOrderItemSchema).default([])
+});
+
+const outboundOrderUpdateSchema = outboundOrderBaseSchema;
 
 function isMysqlDuplicate(error) {
   return error && error.code === "ER_DUP_ENTRY";
@@ -98,6 +114,58 @@ function toAppError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+async function validateLotBelongsToProduct(conn, productId, lotId) {
+  const [rows] = await conn.query(
+    "SELECT id FROM product_lots WHERE id = ? AND product_id = ? AND deleted_at IS NULL",
+    [lotId, productId]
+  );
+  return rows.length > 0;
+}
+
+async function resolveOutboundLotId(conn, productId, lotId) {
+  if (lotId) {
+    const validLot = await validateLotBelongsToProduct(conn, productId, lotId);
+    if (!validLot) {
+      throw new StockError("INVALID_LOT_PRODUCT", "lot_id does not belong to product_id");
+    }
+    return lotId;
+  }
+
+  const [result] = await conn.query(
+    `INSERT INTO product_lots (product_id, lot_no, status, deleted_at)
+     VALUES (?, 'NO-LOT', 'active', NULL)
+     ON DUPLICATE KEY UPDATE deleted_at = NULL, status = 'active', id = LAST_INSERT_ID(id)`,
+    [productId]
+  );
+  return result.insertId;
+}
+
+async function insertOutboundOrderItem(conn, outboundOrderId, item) {
+  const resolvedLotId = await resolveOutboundLotId(conn, item.product_id, item.lot_id);
+  const [result] = await conn.query(
+    `INSERT INTO outbound_items (outbound_order_id, product_id, lot_id, location_id, qty, box_type, box_count, remark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      outboundOrderId,
+      item.product_id,
+      resolvedLotId,
+      item.location_id ?? null,
+      item.qty,
+      item.box_type ?? null,
+      item.box_count ?? 0,
+      item.remark ?? null
+    ]
+  );
+
+  const [rows] = await conn.query(
+    `SELECT id, outbound_order_id, product_id, lot_id, location_id, qty, box_type, box_count, remark, created_at, updated_at
+     FROM outbound_items
+     WHERE id = ?`,
+    [result.insertId]
+  );
+  return rows[0];
 }
 
 function isShipmentAppliedStatus(status) {
@@ -331,6 +399,7 @@ async function rollbackShipmentEffects(conn, order, items) {
 }
 
 async function appendOutboundOrderLog({
+  db = getPool(),
   outboundOrderId,
   action,
   fromStatus = null,
@@ -339,7 +408,7 @@ async function appendOutboundOrderLog({
   actorUserId = null
 }) {
   try {
-    await getPool().query(
+    await db.query(
       `INSERT INTO outbound_order_logs (outbound_order_id, action, from_status, to_status, note, actor_user_id)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [outboundOrderId, action, fromStatus, toStatus, note, actorUserId]
@@ -439,7 +508,8 @@ router.post("/", validate(outboundOrderSchema), async (req, res) => {
     status = "draft",
     packed_at = null,
     shipped_at = null,
-    created_by
+    created_by,
+    items = []
   } = req.body;
 
   if (isShipmentAppliedStatus(status)) {
@@ -451,38 +521,64 @@ router.post("/", validate(outboundOrderSchema), async (req, res) => {
   }
 
   try {
-    const [result] = await getPool().query(
-      `INSERT INTO outbound_orders (outbound_no, client_id, warehouse_id, order_date, sales_channel, order_no, tracking_no, status, packed_at, shipped_at, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        outbound_no,
-        client_id,
-        warehouse_id,
-        order_date,
-        sales_channel,
-        order_no,
-        tracking_no,
-        status,
-        toMysqlDateTime(packed_at),
-        toMysqlDateTime(shipped_at),
-        created_by
-      ]
-    );
+    const created = await withTransaction(async (conn) => {
+      const [result] = await conn.query(
+        `INSERT INTO outbound_orders (outbound_no, client_id, warehouse_id, order_date, sales_channel, order_no, tracking_no, status, packed_at, shipped_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          outbound_no,
+          client_id,
+          warehouse_id,
+          order_date,
+          sales_channel,
+          order_no,
+          tracking_no,
+          status,
+          toMysqlDateTime(packed_at),
+          toMysqlDateTime(shipped_at),
+          created_by
+        ]
+      );
 
-    const [rows] = await getPool().query(
-      `SELECT id, outbound_no, client_id, warehouse_id, order_date, sales_channel, order_no, tracking_no, status, packed_at, shipped_at, created_by, created_at, updated_at
-       FROM outbound_orders
-       WHERE id = ?`,
-      [result.insertId]
-    );
-    await appendOutboundOrderLog({
-      outboundOrderId: result.insertId,
-      action: "create",
-      toStatus: status,
-      note: `Created outbound order ${outbound_no}`,
-      actorUserId: resolveActorUserId(req, created_by)
+      const createdItems = [];
+      for (const item of items) {
+        createdItems.push(await insertOutboundOrderItem(conn, result.insertId, item));
+      }
+
+      const [rows] = await conn.query(
+        `SELECT id, outbound_no, client_id, warehouse_id, order_date, sales_channel, order_no, tracking_no, status, packed_at, shipped_at, created_by, created_at, updated_at
+         FROM outbound_orders
+         WHERE id = ?`,
+        [result.insertId]
+      );
+      const order = rows[0];
+
+      if (isReservationAppliedStatus(order.status) && createdItems.length > 0) {
+        await applyReservationEffects(conn, order, createdItems);
+      }
+
+      await appendOutboundOrderLog({
+        db: conn,
+        outboundOrderId: result.insertId,
+        action: "create",
+        toStatus: status,
+        note: `Created outbound order ${outbound_no}`,
+        actorUserId: resolveActorUserId(req, created_by)
+      });
+
+      for (const item of createdItems) {
+        await appendOutboundOrderLog({
+          db: conn,
+          outboundOrderId: result.insertId,
+          action: "item_create",
+          note: `Item added (product=${item.product_id}, lot=${item.lot_id}, qty=${item.qty}, box_count=${item.box_count})`,
+          actorUserId: resolveActorUserId(req, created_by)
+        });
+      }
+
+      return order;
     });
-    res.status(201).json({ ok: true, data: rows[0] });
+    res.status(201).json({ ok: true, data: created });
   } catch (error) {
     if (isMysqlDuplicate(error)) {
       return res.status(409).json({ ok: false, message: "Duplicate outbound_no" });
@@ -490,11 +586,14 @@ router.post("/", validate(outboundOrderSchema), async (req, res) => {
     if (isMysqlForeignKey(error)) {
       return res.status(400).json({ ok: false, message: "Invalid client_id, warehouse_id or created_by" });
     }
+    if (error instanceof StockError) {
+      return res.status(400).json({ ok: false, code: error.code, message: error.message });
+    }
     res.status(500).json({ ok: false, message: error.message });
   }
 });
 
-router.put("/:id", validate(outboundOrderSchema), async (req, res) => {
+router.put("/:id", validate(outboundOrderUpdateSchema), async (req, res) => {
   const {
     outbound_no,
     client_id,

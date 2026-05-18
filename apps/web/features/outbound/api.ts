@@ -8,6 +8,7 @@ import type {
   OutboundStatus,
   OutboundTimeline,
 } from "@/features/outbound/types";
+import { formatApiErrorMessage } from "@/lib/api-error-message";
 import { shouldUseImplicitFallback, shouldUseMockMode } from "@/lib/runtime-mode";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
@@ -147,6 +148,7 @@ type JsonResponse<T> = {
   ok: boolean;
   data?: T;
   message?: string;
+  details?: unknown;
 };
 
 export type CreateOutboundItemInput = {
@@ -172,12 +174,24 @@ export type CreateOutboundOrderInput = {
   items?: CreateOutboundItemInput[];
 };
 
+type ApiErrorPayload = {
+  code?: string;
+  message?: string;
+  details?: unknown;
+};
+
 export class ApiError extends Error {
   status: number;
+  code?: string;
+  details?: unknown;
+  payload?: ApiErrorPayload;
 
-  constructor(message: string, status = 500) {
+  constructor(message: string, status = 500, payload?: ApiErrorPayload) {
     super(message);
     this.status = status;
+    this.code = payload?.code;
+    this.details = payload?.details;
+    this.payload = payload;
   }
 }
 
@@ -258,7 +272,7 @@ async function requestJson<T>(
 
   const json = (await response.json()) as JsonResponse<T>;
   if (!response.ok || !json.ok) {
-    throw new ApiError(json.message ?? "Request failed", response.status);
+    throw new ApiError(formatApiErrorMessage(json), response.status, json);
   }
 
   if (json.data === undefined) {
@@ -293,7 +307,7 @@ async function requestVoid(
 
   const json = (await response.json()) as JsonResponse<unknown>;
   if (!response.ok || !json.ok) {
-    throw new ApiError(json.message ?? "Request failed", response.status);
+    throw new ApiError(formatApiErrorMessage(json), response.status, json);
   }
 }
 
@@ -1237,18 +1251,7 @@ export async function createOutboundOrderWithItems(
         packed_at: null,
         shipped_at: null,
         created_by: input.created_by,
-      }),
-    },
-    options
-  );
-
-  for (const item of items) {
-    await requestJson<RawOutboundItem>(
-      "/outbound-items",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          outbound_order_id: created.id,
+        items: items.map((item) => ({
           product_id: item.product_id,
           lot_id: item.lot_id,
           location_id: item.location_id ?? null,
@@ -1256,11 +1259,11 @@ export async function createOutboundOrderWithItems(
           box_type: item.box_type ?? null,
           box_count: item.box_count ?? 0,
           remark: item.remark ?? null,
-        }),
-      },
-      options
-    );
-  }
+        })),
+      }),
+    },
+    options
+  );
 
   const reloaded = await getOutboundOrderByNo(created.outbound_no, options);
   return reloaded ?? mapOutboundOrder(created, "", [], []);

@@ -13,8 +13,14 @@ function isBrowserRequest() {
 
 type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
 
-type RawClient = { id: number; name_kr: string };
-type RawProduct = { id: number; name_kr: string };
+type RawClient = { id: number; client_code?: string | null; code?: string | null; name?: string | null; name_kr: string };
+type RawProduct = {
+  id: number;
+  name?: string | null;
+  name_kr: string;
+  barcode_full?: string | null;
+  barcode_raw?: string | null;
+};
 type RawLot = { id: number; lot_no: string };
 type RawWarehouse = { id: number; code?: string | null; warehouse_code?: string | null; name?: string | null };
 type RawWarehouseLocation = { id: number; location_code?: string | null; zone?: string | null };
@@ -58,6 +64,10 @@ const mockBalances: StockBalanceRow[] = Array.from({ length: 20 }, (_, index) =>
   const reservationRatePct = availableQty > 0 ? Math.round((reservedQty / availableQty) * 100) : 0;
   return {
     id: `mb-${seq}`,
+    client_id: String(((seq - 1) % 20) + 1),
+    product_id: String(((seq - 1) % 20) + 1),
+    client_code: `CL${pad2(((seq - 1) % 20) + 1)}`,
+    product_barcode: `BC-${pad2(((seq - 1) % 20) + 1)}`,
     client: `Sample Client ${pad2(((seq - 1) % 20) + 1)}`,
     product: `Sample Product ${pad2(((seq - 1) % 20) + 1)}`,
     lot: `LOT-26${pad2(((seq - 1) % 12) + 1)}-${String.fromCharCode(65 + (seq % 3))}`,
@@ -80,6 +90,10 @@ const mockTransactions: StockTransactionRow[] = Array.from({ length: 20 }, (_, i
   const qtyOut = txnType === "outbound_ship" || txnType === "return_dispose" ? 6 + seq : 0;
   return {
     id: `mt-${seq}`,
+    client_id: String(((seq - 1) % 20) + 1),
+    product_id: String(((seq - 1) % 20) + 1),
+    client_code: `CL${pad2(((seq - 1) % 20) + 1)}`,
+    product_barcode: `BC-${pad2(((seq - 1) % 20) + 1)}`,
     txn_date: `2026-02-${pad2((seq % 28) + 1)} ${pad2(8 + (seq % 10))}:20`,
     txn_type: txnType,
     client: `Sample Client ${pad2(((seq - 1) % 20) + 1)}`,
@@ -149,6 +163,30 @@ function formatWarehouseLabel(warehouse?: RawWarehouse): string {
   return code || name;
 }
 
+function formatClientCode(client?: RawClient): string {
+  return (client?.client_code ?? client?.code ?? "").trim();
+}
+
+function formatClientLabel(client?: RawClient): string {
+  if (!client) return "";
+  const code = formatClientCode(client);
+  const name = (client.name_kr ?? client.name ?? "").trim();
+  if (code && name) return `${code} | ${name}`;
+  return code || name;
+}
+
+function formatProductBarcode(product?: RawProduct): string {
+  return (product?.barcode_full ?? product?.barcode_raw ?? "").trim();
+}
+
+function formatProductLabel(product?: RawProduct): string {
+  if (!product) return "";
+  const barcode = formatProductBarcode(product);
+  const name = (product.name_kr ?? product.name ?? "").trim();
+  if (barcode && name) return `${barcode} | ${name}`;
+  return barcode || name;
+}
+
 function formatLocationLabel(location?: RawWarehouseLocation): string {
   if (!location) return "";
   const code = (location.location_code ?? "").trim();
@@ -178,8 +216,10 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
       requestJson<RawWarehouseLocation[]>("/warehouse-locations", undefined, options),
     ]);
 
-    const clientMap = new Map(clients.map((item) => [item.id, item.name_kr]));
-    const productMap = new Map(products.map((item) => [item.id, item.name_kr]));
+    const clientMap = new Map(clients.map((item) => [item.id, formatClientLabel(item)]));
+    const clientCodeMap = new Map(clients.map((item) => [item.id, formatClientCode(item)]));
+    const productMap = new Map(products.map((item) => [item.id, formatProductLabel(item)]));
+    const productBarcodeMap = new Map(products.map((item) => [item.id, formatProductBarcode(item)]));
     const lotMap = new Map(lots.map((item) => [item.id, item.lot_no]));
     const warehouseMap = new Map(warehouses.map((item) => [item.id, formatWarehouseLabel(item)]));
     const locationMap = new Map(locations.map((item) => [item.id, formatLocationLabel(item)]));
@@ -190,6 +230,10 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
       const reservationRatePct = availableQty > 0 ? Math.round((reservedQty / availableQty) * 100) : 0;
       return {
         id: String(row.id),
+        client_id: String(row.client_id),
+        product_id: String(row.product_id),
+        client_code: clientCodeMap.get(row.client_id) ?? "",
+        product_barcode: productBarcodeMap.get(row.product_id) ?? "",
         client: clientMap.get(row.client_id) ?? `Client #${row.client_id}`,
         product: productMap.get(row.product_id) ?? `Product #${row.product_id}`,
         lot: lotMap.get(row.lot_id) ?? `LOT-${row.lot_id}`,
@@ -203,18 +247,18 @@ export async function getStockBalances(query?: InventoryQuery, options?: Request
       };
     });
     const filtered = mapped.filter((row) =>
-      includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
+      includesQ(row.client, row.client_code, row.product, row.product_barcode, row.lot, row.warehouse, row.location)(query?.q)
     );
     if (filtered.length === 0 && shouldUseFallback(token)) {
       return mockBalances.filter((row) =>
-        includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
+        includesQ(row.client, row.client_code, row.product, row.product_barcode, row.lot, row.warehouse, row.location)(query?.q)
       );
     }
     return filtered;
   } catch (error) {
     if (shouldUseFallback(token)) {
       return mockBalances.filter((row) =>
-        includesQ(row.client, row.product, row.lot, row.warehouse, row.location)(query?.q)
+        includesQ(row.client, row.client_code, row.product, row.product_barcode, row.lot, row.warehouse, row.location)(query?.q)
       );
     }
     throw error;
@@ -231,8 +275,8 @@ export async function getStockTransactions(
         ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
         : mockTransactions;
     return fallbackRows
-      .filter((row) => !query?.product_id || row.product.includes(query.product_id))
-      .filter((row) => includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q));
+        .filter((row) => !query?.product_id || row.product_id === String(query.product_id))
+      .filter((row) => includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q));
   }
   const token = await resolveToken(options?.token);
   const params = new URLSearchParams();
@@ -251,8 +295,10 @@ export async function getStockTransactions(
       requestJson<RawBalance[]>("/stock-balances", undefined, options),
     ]);
 
-    const clientMap = new Map(clients.map((item) => [item.id, item.name_kr]));
-    const productMap = new Map(products.map((item) => [item.id, item.name_kr]));
+    const clientMap = new Map(clients.map((item) => [item.id, formatClientLabel(item)]));
+    const clientCodeMap = new Map(clients.map((item) => [item.id, formatClientCode(item)]));
+    const productMap = new Map(products.map((item) => [item.id, formatProductLabel(item)]));
+    const productBarcodeMap = new Map(products.map((item) => [item.id, formatProductBarcode(item)]));
     const lotMap = new Map(lots.map((item) => [item.id, item.lot_no]));
     const warehouseMap = new Map(warehouses.map((item) => [item.id, formatWarehouseLabel(item)]));
     const locationMap = new Map(locations.map((item) => [item.id, formatLocationLabel(item)]));
@@ -270,6 +316,10 @@ export async function getStockTransactions(
 
     const mapped = txns.map((row) => ({
       id: String(row.id),
+      client_id: String(row.client_id),
+      product_id: String(row.product_id),
+      client_code: clientCodeMap.get(row.client_id) ?? "",
+      product_barcode: productBarcodeMap.get(row.product_id) ?? "",
       txn_date: row.txn_date?.slice(0, 16).replace("T", " ") ?? "-",
       txn_type: row.txn_type,
       client: clientMap.get(row.client_id) ?? `Client #${row.client_id}`,
@@ -287,16 +337,16 @@ export async function getStockTransactions(
       note: row.note ?? "-",
     }));
     const filtered = mapped.filter((row) =>
-      includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q)
+      includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q)
     );
     if (filtered.length === 0 && shouldUseFallback(token)) {
       const fallbackRows =
         query?.txn_type && query.txn_type.length > 0
           ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
-          : mockTransactions;
+        : mockTransactions;
       return fallbackRows
-        .filter((row) => !query?.product_id || row.product.includes(query.product_id))
-        .filter((row) => includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q));
+        .filter((row) => !query?.product_id || row.product_id === String(query.product_id))
+        .filter((row) => includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q));
     }
     return filtered;
   } catch (error) {
@@ -306,8 +356,8 @@ export async function getStockTransactions(
           ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
           : mockTransactions;
       return fallbackRows
-        .filter((row) => !query?.product_id || row.product.includes(query.product_id))
-        .filter((row) => includesQ(row.txn_type, row.client, row.product, row.lot, row.ref, row.note)(query?.q));
+        .filter((row) => !query?.product_id || row.product_id === String(query.product_id))
+        .filter((row) => includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q));
     }
     throw error;
   }

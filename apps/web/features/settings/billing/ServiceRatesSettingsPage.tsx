@@ -135,6 +135,7 @@ export function ServiceRatesSettingsPage() {
               columns={[
                 { key: "service_code", label: "Service Code", render: (row) => <span className="font-medium">{row.service_code}</span> },
                 { key: "service_name", label: "Service Name", render: (row) => row.service_name },
+                { key: "billing_unit", label: "Billing Unit", render: (row) => row.billing_unit },
                 { key: "pricing_policy", label: "Policy", render: (row) => row.pricing_policy },
                 { key: "default_rate", label: "Default Rate", render: (row) => `${row.default_currency} ${Number(row.default_rate).toLocaleString()}` },
                 {
@@ -161,6 +162,7 @@ export function ServiceRatesSettingsPage() {
           </div>
           <Input placeholder={t("Service code")} value={form.service_code} onChange={(e) => setForm((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))} />
           <Input placeholder={t("Service name")} value={form.service_name} onChange={(e) => setForm((p) => ({ ...p, service_name: e.target.value }))} />
+          <p className="text-xs text-slate-500">Billing Unit: ORDER=주문건 1건, SKU=판매수량, BOX=박스 수.</p>
           <select className="h-9 rounded-md border px-3 text-sm" value={form.billing_unit} onChange={(e) => setForm((p) => ({ ...p, billing_unit: e.target.value as ServiceRate["billing_unit"] }))}>
             <option value="ORDER">ORDER</option><option value="SKU">SKU</option><option value="BOX">BOX</option><option value="CBM">CBM</option><option value="PALLET">PALLET</option><option value="EVENT">EVENT</option><option value="MONTH">MONTH</option>
           </select>

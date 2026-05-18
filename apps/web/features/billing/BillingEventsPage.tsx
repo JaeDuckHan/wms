@@ -24,6 +24,21 @@ function currentYear() {
   return String(new Date().getFullYear());
 }
 
+function formatMoney(value: number | null | undefined, currency: "THB" | "KRW") {
+  if (value == null) return "-";
+  const fractionDigits = currency === "THB" ? 2 : 0;
+  return `${Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })} ${currency}`;
+}
+
+function formatUnitPrice(row: BillingEvent) {
+  if (row.unit_price_thb != null) return formatMoney(row.unit_price_thb, "THB");
+  if (row.unit_price_krw != null) return formatMoney(row.unit_price_krw, "KRW");
+  return "-";
+}
+
 export function BillingEventsPage() {
   const { pushToast } = useToast();
   const { t } = useI18n();
@@ -169,6 +184,7 @@ export function BillingEventsPage() {
         <div className="mt-2 text-xs text-slate-500">
           기본 조회는 올해 전체입니다. 특정 월만 보려면 월을 함께 선택합니다.
           {selectedClient ? ` 현재 고객: ${selectedClient.client_code} | ${selectedClient.name}` : ""}
+          {" "}OUTBOUND_FEE 기준: ORDER=출고주문 1건, SKU=판매수량 합계, BOX=박스 수.
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <a href={csvHref} className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-slate-50">{t("Export CSV")}</a>
@@ -201,7 +217,9 @@ export function BillingEventsPage() {
               { key: "event_date", label: "Event Date", render: (row) => row.display_date_kst ?? row.event_date.slice(0, 10) },
               { key: "client", label: "Client", render: (row) => `${row.client_code} | ${row.name_kr}` },
               { key: "service_code", label: "Service", render: (row) => serviceLabels.get(row.service_code) ?? row.service_code },
-              { key: "qty", label: "Qty", render: (row) => Number(row.qty).toLocaleString() },
+              { key: "billing_unit", label: "Billing Unit", render: (row) => row.billing_unit ?? "-" },
+              { key: "unit_price", label: "Unit Price", render: (row) => formatUnitPrice(row) },
+              { key: "qty", label: "Bill Qty", render: (row) => Number(row.qty).toLocaleString() },
               { key: "amount_thb", label: "Charge THB", render: (row) => (row.amount_thb == null ? "-" : Number(row.amount_thb).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })) },
               { key: "fx_rate_thbkrw", label: "FX", render: (row) => (row.fx_rate_thbkrw == null ? "-" : formatThbKrwRate(row.fx_rate_thbkrw)) },
               { key: "amount_krw", label: "KRW Equivalent", render: (row) => (row.amount_krw == null ? "-" : Number(row.amount_krw).toLocaleString()) },

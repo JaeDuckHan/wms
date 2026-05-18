@@ -15,7 +15,17 @@ const { getScopedClientId } = require("../middleware/clientScope");
 
 const router = express.Router();
 
-const inboundOrderCreateSchema = z.object({
+const inboundOrderItemSchema = z.object({
+  product_id: z.coerce.number().int().positive(),
+  lot_id: z.coerce.number().int().positive().nullable().optional(),
+  location_id: z.coerce.number().int().positive().nullable().optional(),
+  qty: z.coerce.number().int().positive(),
+  invoice_price: z.coerce.number().positive().nullable().optional(),
+  currency: z.enum(["KRW", "THB", "USD"]).nullable().optional(),
+  remark: z.string().max(500).nullable().optional()
+});
+
+const inboundOrderBaseSchema = z.object({
   inbound_no: z.string().min(1).max(80),
   client_id: z.coerce.number().int().positive(),
   warehouse_id: z.coerce.number().int().positive(),
@@ -29,7 +39,11 @@ const inboundOrderCreateSchema = z.object({
   }).nullable().optional()
 });
 
-const inboundOrderUpdateSchema = inboundOrderCreateSchema.extend({
+const inboundOrderCreateSchema = inboundOrderBaseSchema.extend({
+  items: z.array(inboundOrderItemSchema).default([])
+});
+
+const inboundOrderUpdateSchema = inboundOrderBaseSchema.extend({
   status: z.enum(["draft", "submitted", "arrived", "qc_hold", "received", "cancelled"])
 });
 
@@ -80,6 +94,58 @@ function toAppError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+async function validateLotBelongsToProduct(conn, productId, lotId) {
+  const [rows] = await conn.query(
+    "SELECT id FROM product_lots WHERE id = ? AND product_id = ? AND deleted_at IS NULL",
+    [lotId, productId]
+  );
+  return rows.length > 0;
+}
+
+async function resolveInboundLotId(conn, productId, lotId) {
+  if (lotId) {
+    const validLot = await validateLotBelongsToProduct(conn, productId, lotId);
+    if (!validLot) {
+      throw new StockError("INVALID_LOT_PRODUCT", "lot_id does not belong to product_id");
+    }
+    return lotId;
+  }
+
+  const [result] = await conn.query(
+    `INSERT INTO product_lots (product_id, lot_no, status, deleted_at)
+     VALUES (?, 'NO-LOT', 'active', NULL)
+     ON DUPLICATE KEY UPDATE deleted_at = NULL, status = 'active', id = LAST_INSERT_ID(id)`,
+    [productId]
+  );
+  return result.insertId;
+}
+
+async function insertInboundOrderItem(conn, inboundOrderId, item) {
+  const resolvedLotId = await resolveInboundLotId(conn, item.product_id, item.lot_id);
+  const [result] = await conn.query(
+    `INSERT INTO inbound_items (inbound_order_id, product_id, lot_id, location_id, qty, invoice_price, currency, remark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      inboundOrderId,
+      item.product_id,
+      resolvedLotId,
+      item.location_id ?? null,
+      item.qty,
+      item.invoice_price ?? null,
+      item.currency ?? null,
+      item.remark ?? null
+    ]
+  );
+
+  const [rows] = await conn.query(
+    `SELECT id, inbound_order_id, product_id, lot_id, location_id, qty, invoice_price, currency, remark, created_at, updated_at
+     FROM inbound_items
+     WHERE id = ?`,
+    [result.insertId]
+  );
+  return rows[0];
 }
 
 function isReceiptAppliedStatus(status) {
@@ -154,6 +220,7 @@ async function rollbackReceiptEffects(conn, order, items) {
 }
 
 async function appendInboundOrderLog({
+  db = getPool(),
   inboundOrderId,
   action,
   fromStatus = null,
@@ -162,7 +229,7 @@ async function appendInboundOrderLog({
   actorUserId = null
 }) {
   try {
-    await getPool().query(
+    await db.query(
       `INSERT INTO inbound_order_logs (inbound_order_id, action, from_status, to_status, note, actor_user_id)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [inboundOrderId, action, fromStatus, toStatus, note, actorUserId]
@@ -242,7 +309,8 @@ router.post("/", validate(inboundOrderCreateSchema), async (req, res) => {
     status = "draft",
     memo = null,
     created_by,
-    received_at = null
+    received_at = null,
+    items = []
   } = req.body;
 
   if (!inbound_no || !client_id || !warehouse_id || !inbound_date || !created_by) {
@@ -253,32 +321,63 @@ router.post("/", validate(inboundOrderCreateSchema), async (req, res) => {
   }
 
   try {
-    const [result] = await getPool().query(
-      `INSERT INTO inbound_orders (inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, toMysqlDateTime(received_at)]
-    );
+    const created = await withTransaction(async (conn) => {
+      const [result] = await conn.query(
+        `INSERT INTO inbound_orders (inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, toMysqlDateTime(received_at)]
+      );
 
-    const [rows] = await getPool().query(
-      `SELECT id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at
-       FROM inbound_orders
-       WHERE id = ?`,
-      [result.insertId]
-    );
-    await appendInboundOrderLog({
-      inboundOrderId: result.insertId,
-      action: "create",
-      toStatus: status,
-      note: `Created inbound order ${inbound_no}`,
-      actorUserId: resolveActorUserId(req, created_by)
+      const createdItems = [];
+      for (const item of items) {
+        createdItems.push(await insertInboundOrderItem(conn, result.insertId, item));
+      }
+
+      const [rows] = await conn.query(
+        `SELECT id, inbound_no, client_id, warehouse_id, inbound_date, status, memo, created_by, received_at, created_at, updated_at
+         FROM inbound_orders
+         WHERE id = ?`,
+        [result.insertId]
+      );
+      const order = rows[0];
+
+      if (isReceiptAppliedStatus(order.status)) {
+        await applyReceiptEffects(conn, order, createdItems);
+      } else if (createdItems.length > 0) {
+        await syncInboundOrderBillingEvent(conn, order.id);
+      }
+
+      await appendInboundOrderLog({
+        db: conn,
+        inboundOrderId: result.insertId,
+        action: "create",
+        toStatus: status,
+        note: `Created inbound order ${inbound_no}`,
+        actorUserId: resolveActorUserId(req, created_by)
+      });
+
+      for (const item of createdItems) {
+        await appendInboundOrderLog({
+          db: conn,
+          inboundOrderId: result.insertId,
+          action: "item_create",
+          note: `Item added (product=${item.product_id}, lot=${item.lot_id}, qty=${item.qty})`,
+          actorUserId: resolveActorUserId(req, created_by)
+        });
+      }
+
+      return order;
     });
-    res.status(201).json({ ok: true, data: rows[0] });
+    res.status(201).json({ ok: true, data: created });
   } catch (error) {
     if (isMysqlDuplicate(error)) {
       return res.status(409).json({ ok: false, message: "Duplicate inbound_no" });
     }
     if (isMysqlForeignKey(error)) {
       return res.status(400).json({ ok: false, message: "Invalid client_id, warehouse_id or created_by" });
+    }
+    if (error instanceof StockError) {
+      return res.status(400).json({ ok: false, code: error.code, message: error.message });
     }
     res.status(500).json({ ok: false, message: error.message });
   }

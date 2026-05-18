@@ -49,14 +49,67 @@ async function hasTable(conn, tableName) {
   return Number(firstValue(rows[0], "cnt") || 0) > 0;
 }
 
+async function hasColumn(conn, tableName, columnName) {
+  const [rows] = await conn.query(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = ?
+       AND column_name = ?`,
+    [tableName, columnName]
+  );
+  return Number(firstValue(rows[0], "cnt") || 0) > 0;
+}
+
 function normalizeDate(value) {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value).slice(0, 10);
 }
 
+function normalizeBillingUnit(value, fallback = "SKU") {
+  const unit = String(value || "").toUpperCase();
+  if (unit === "QTY") return "SKU";
+  if (["ORDER", "SKU", "BOX", "CBM", "PALLET", "EVENT", "MONTH"].includes(unit)) return unit;
+  return fallback;
+}
+
 async function resolveBillingRate(conn, clientId, serviceCode, eventDate) {
   const effectiveDate = normalizeDate(eventDate);
+  const rateInfo = { rate: 0, currency: "THB", billingUnit: "SKU" };
+
+  if (await hasTable(conn, "service_catalog")) {
+    const hasBillingUnit = await hasColumn(conn, "service_catalog", "billing_unit");
+    const hasBillingBasis = await hasColumn(conn, "service_catalog", "billing_basis");
+    const hasDefaultRate = await hasColumn(conn, "service_catalog", "default_rate");
+    const billingUnitExpr = hasBillingUnit
+      ? "billing_unit"
+      : hasBillingBasis
+        ? `CASE billing_basis WHEN 'ORDER' THEN 'ORDER' WHEN 'BOX' THEN 'BOX' WHEN 'QTY' THEN 'SKU' ELSE 'EVENT' END`
+        : "'SKU'";
+    const defaultRateExpr = hasDefaultRate ? "default_rate" : "0";
+
+    const [serviceRows] = await conn.query(
+      `SELECT ${defaultRateExpr} AS default_rate, default_currency, ${billingUnitExpr} AS billing_unit
+       FROM service_catalog
+       WHERE service_code = ?
+         AND deleted_at IS NULL
+         AND status = 'active'
+       ORDER BY id DESC
+       LIMIT 1`,
+      [serviceCode]
+    );
+
+    if (serviceRows[0]) {
+      rateInfo.billingUnit = normalizeBillingUnit(serviceRows[0].billing_unit, rateInfo.billingUnit);
+      const defaultRate = Number(serviceRows[0].default_rate || 0);
+      const defaultCurrency = String(serviceRows[0].default_currency || "THB").toUpperCase();
+      if (defaultRate > 0 && ["THB", "KRW"].includes(defaultCurrency)) {
+        rateInfo.rate = defaultRate;
+        rateInfo.currency = defaultCurrency;
+      }
+    }
+  }
 
   if (await hasTable(conn, "client_contract_rates")) {
     const params = [clientId, serviceCode];
@@ -80,29 +133,11 @@ async function resolveBillingRate(conn, clientId, serviceCode, eventDate) {
     const contractRate = Number(rateRows[0]?.custom_rate || 0);
     const currency = String(rateRows[0]?.currency || "THB").toUpperCase();
     if (contractRate > 0 && ["THB", "KRW"].includes(currency)) {
-      return { rate: contractRate, currency };
+      return { ...rateInfo, rate: contractRate, currency };
     }
   }
 
-  if (await hasTable(conn, "service_catalog")) {
-    const [serviceRows] = await conn.query(
-      `SELECT default_rate, default_currency
-       FROM service_catalog
-       WHERE service_code = ?
-         AND deleted_at IS NULL
-         AND status = 'active'
-       ORDER BY id DESC
-       LIMIT 1`,
-      [serviceCode]
-    );
-    const defaultRate = Number(serviceRows[0]?.default_rate || 0);
-    const defaultCurrency = String(serviceRows[0]?.default_currency || "THB").toUpperCase();
-    if (defaultRate > 0 && ["THB", "KRW"].includes(defaultCurrency)) {
-      return { rate: defaultRate, currency: defaultCurrency };
-    }
-  }
-
-  return { rate: 0, currency: "THB" };
+  return rateInfo;
 }
 
 function buildBillingEventAmounts(rateInfo, qty) {
@@ -128,6 +163,28 @@ function buildBillingEventAmounts(rateInfo, qty) {
     unitPriceKrw: null,
     amountKrw: null
   };
+}
+
+async function countOutboundBoxesForBilling(conn, outboundOrderId) {
+  if (!(await hasTable(conn, "outbound_boxes"))) return 0;
+  const [boxRows] = await conn.query(
+    `SELECT COUNT(*) AS box_count
+     FROM outbound_boxes
+     WHERE outbound_order_id = ? AND deleted_at IS NULL`,
+    [outboundOrderId]
+  );
+  return Number(boxRows[0]?.box_count || 0);
+}
+
+async function resolveOutboundBillingQty(conn, outboundOrderId, billingUnit, totalItemQty) {
+  const normalizedUnit = normalizeBillingUnit(billingUnit);
+  if (normalizedUnit === "ORDER" || normalizedUnit === "EVENT" || normalizedUnit === "MONTH") {
+    return 1;
+  }
+  if (normalizedUnit === "BOX") {
+    return countOutboundBoxesForBilling(conn, outboundOrderId);
+  }
+  return totalItemQty;
 }
 
 async function syncOutboundOrderBillingEvent(conn, outboundOrderId) {
@@ -182,7 +239,22 @@ async function syncOutboundOrderBillingEvent(conn, outboundOrderId) {
 
   const eventDate = order.shipped_at || order.order_date;
   const rateInfo = await resolveBillingRate(conn, order.client_id, "OUTBOUND_FEE", eventDate);
-  const amounts = buildBillingEventAmounts(rateInfo, totalQty);
+  const billingQty = await resolveOutboundBillingQty(conn, outboundOrderId, rateInfo.billingUnit, totalQty);
+
+  if (billingQty <= 0) {
+    await conn.query(
+      `UPDATE billing_events
+       SET deleted_at = NOW()
+       WHERE reference_type = 'OUTBOUND'
+         AND reference_id = ?
+         AND service_code = 'OUTBOUND_FEE'
+         AND deleted_at IS NULL`,
+      [String(outboundOrderId)]
+    );
+    return null;
+  }
+
+  const amounts = buildBillingEventAmounts(rateInfo, billingQty);
 
   if (existing.length === 0) {
     const [inserted] = await conn.query(
@@ -194,7 +266,7 @@ async function syncOutboundOrderBillingEvent(conn, outboundOrderId) {
         order.warehouse_id,
         String(outboundOrderId),
         eventDate,
-        totalQty,
+        billingQty,
         amounts.pricingPolicy,
         amounts.unitPriceThb,
         amounts.amountThb,
@@ -214,7 +286,7 @@ async function syncOutboundOrderBillingEvent(conn, outboundOrderId) {
       order.client_id,
       order.warehouse_id,
       eventDate,
-      totalQty,
+      billingQty,
       amounts.pricingPolicy,
       amounts.unitPriceThb,
       amounts.amountThb,

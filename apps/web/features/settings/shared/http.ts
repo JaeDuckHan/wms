@@ -1,9 +1,10 @@
 import { ApiError } from "@/features/outbound/api";
+import { formatApiErrorMessage } from "@/lib/api-error-message";
 import { shouldUseImplicitFallback, shouldUseMockMode } from "@/lib/runtime-mode";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
 
-type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
+type JsonResponse<T> = { ok: boolean; data?: T; message?: string; details?: unknown };
 
 export type RequestOptions = { token?: string };
 type AuthRequestOptions = RequestOptions & { allowAnonymous?: boolean };
@@ -54,7 +55,7 @@ export async function requestJson<T>(path: string, init?: RequestInit, options?:
   });
 
   const json = await parseJsonResponse<T>(response);
-  if (!response.ok || !json.ok) throw new ApiError(json.message ?? "Request failed", response.status);
+  if (!response.ok || !json.ok) throw new ApiError(formatApiErrorMessage(json), response.status, json);
   if (json.data === undefined) throw new ApiError("Missing response data", response.status);
   return json.data;
 }
@@ -77,7 +78,7 @@ export async function requestVoid(path: string, init?: RequestInit, options?: Au
 
   const json = await parseJsonResponse<unknown>(response);
   if (!response.ok || !json.ok) {
-    throw new ApiError(json.message ?? "Request failed", response.status);
+    throw new ApiError(formatApiErrorMessage(json), response.status, json);
   }
 }
 

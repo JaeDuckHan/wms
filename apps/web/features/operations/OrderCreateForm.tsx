@@ -41,10 +41,15 @@ type ItemDraft = {
 
 type ItemField = keyof Pick<
   ItemDraft,
-  "product_id" | "lot_id" | "lot_no" | "location_id" | "qty" | "invoice_price" | "box_count"
+  "product_id" | "lot_id" | "lot_no" | "location_id" | "qty" | "invoice_price" | "box_type" | "box_count" | "remark"
 >;
 
 type ItemFieldErrors = Partial<Record<ItemField, string>>;
+
+type ApiValidationDetail = {
+  path?: string | Array<string | number>;
+  message?: string;
+};
 
 type ValidatedItemDraft = {
   productId: number;
@@ -79,7 +84,32 @@ const inputLabelClass = "mb-1 block text-xs font-medium text-slate-600";
 const selectClass =
   "h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300";
 const fieldErrorClass = "mt-1 text-xs text-rose-600";
+const inboundItemGridTemplate =
+  "minmax(220px,1.5fr) minmax(150px,1fr) minmax(160px,1fr) minmax(80px,.55fr) minmax(90px,.6fr) minmax(125px,.85fr) minmax(125px,.85fr) minmax(150px,1fr) 2rem";
+const outboundItemGridTemplate =
+  "minmax(220px,1.5fr) minmax(150px,1fr) minmax(160px,1fr) minmax(80px,.55fr) minmax(130px,.9fr) minmax(95px,.65fr) minmax(170px,1fr) 2rem";
 const currencies: Array<NonNullable<ItemDraft["currency"]>> = ["USD", "THB", "KRW"];
+const apiItemFieldMap: Record<string, ItemField> = {
+  product_id: "product_id",
+  lot_id: "lot_id",
+  location_id: "location_id",
+  qty: "qty",
+  invoice_price: "invoice_price",
+  box_type: "box_type",
+  box_count: "box_count",
+  remark: "remark",
+};
+const apiItemFieldLabels: Record<ItemField, string> = {
+  product_id: "Product",
+  lot_id: "Lot No",
+  lot_no: "Lot No",
+  location_id: "Stock Location",
+  qty: "Qty",
+  invoice_price: "Invoice Price",
+  box_type: "Box Type",
+  box_count: "Box Count",
+  remark: "Remark",
+};
 
 function withFieldErrorClass(baseClass: string, hasError: boolean) {
   return hasError ? `${baseClass} border-rose-400 bg-rose-50` : baseClass;
@@ -178,6 +208,27 @@ function formatOptionalAmount(value: number | null, currency?: string) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
+}
+
+function normalizeApiDetailPath(path: ApiValidationDetail["path"]) {
+  if (Array.isArray(path)) return path.map((part) => String(part)).filter(Boolean).join(".");
+  return String(path ?? "").trim();
+}
+
+function getApiValidationDetails(error: unknown) {
+  const details = (error as { details?: unknown } | null)?.details;
+  if (!Array.isArray(details)) return [];
+  return details
+    .map((detail) => {
+      if (typeof detail === "string") return { path: "", message: detail };
+      if (!detail || typeof detail !== "object") return null;
+      const candidate = detail as ApiValidationDetail;
+      return {
+        path: normalizeApiDetailPath(candidate.path),
+        message: String(candidate.message ?? "").trim(),
+      };
+    })
+    .filter((detail): detail is { path: string; message: string } => Boolean(detail?.message || detail?.path));
 }
 
 async function listStockBalancesForForm(): Promise<StockBalanceOption[]> {
@@ -420,6 +471,45 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
     };
   }
 
+  function applyApiValidationErrors(saveError: unknown) {
+    const details = getApiValidationDetails(saveError);
+    if (details.length === 0) return false;
+
+    const nextItemErrors: Record<string, ItemFieldErrors> = {};
+    const friendlyMessages: string[] = [];
+
+    for (const detail of details) {
+      const path = detail.path;
+      const itemMatch = path.match(/^items\.(\d+)\.([a-z_]+)$/);
+      if (!itemMatch) {
+        const label = path || "Request";
+        friendlyMessages.push(`${label}: ${detail.message}`);
+        continue;
+      }
+
+      const itemIndex = Number(itemMatch[1]);
+      const apiField = itemMatch[2];
+      const field: ItemField | undefined = apiField === "lot_id" && mode === "inbound" ? "lot_no" : apiItemFieldMap[apiField];
+      const draft = items[itemIndex];
+      const label = field ? apiItemFieldLabels[field] : apiField;
+      const friendlyMessage = `Item ${itemIndex + 1} / ${label}: ${detail.message}`;
+      friendlyMessages.push(friendlyMessage);
+
+      if (draft && field) {
+        nextItemErrors[draft.id] = {
+          ...(nextItemErrors[draft.id] ?? {}),
+          [field]: detail.message,
+        };
+      }
+    }
+
+    if (Object.keys(nextItemErrors).length > 0) {
+      setItemErrors(nextItemErrors);
+    }
+    setError(friendlyMessages.join("; ") || getErrorMessage(saveError));
+    return true;
+  }
+
   async function resolveInboundLotId(productId: number, lotNo: string) {
     const normalizedLotNo = lotNo.trim().toLowerCase();
     const existing = masters.lots.find(
@@ -524,7 +614,9 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
       }
       router.refresh();
     } catch (saveError) {
-      setError(getErrorMessage(saveError));
+      if (!applyApiValidationErrors(saveError)) {
+        setError(getErrorMessage(saveError));
+      }
     } finally {
       setSaving(false);
     }
@@ -694,17 +786,19 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                   const lineTotal = getLineTotal(item);
                   const errors = itemErrors[item.id] ?? {};
                   const outboundStock = mode === "outbound" ? getOutboundStock(item) : null;
+                  const showItemLabels = index === 0;
                   return (
                     <div key={item.id} className="rounded-md border p-3">
-                      <div className="mb-3 flex items-center justify-between gap-3">
+                      {showItemLabels ? <div className="mb-3 flex items-center justify-between gap-3">
                         <div className="text-sm font-semibold text-slate-900">Item {index + 1}</div>
-                        <Button variant="ghost" size="sm" onClick={() => removeItem(item.id)} aria-label="Remove item">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                      </div> : null}
+                      <div className="overflow-x-auto">
+                      <div
+                        className={`grid ${mode === "inbound" ? "min-w-[1180px]" : "min-w-[1080px]"} items-start gap-3`}
+                        style={{ gridTemplateColumns: mode === "inbound" ? inboundItemGridTemplate : outboundItemGridTemplate }}
+                      >
                         <label>
-                          <span className={inputLabelClass}>{t("Product")}</span>
+                          {showItemLabels ? <span className={inputLabelClass}>{t("Product")}</span> : null}
                           <select
                             className={withFieldErrorClass(selectClass, Boolean(errors.product_id))}
                             value={item.product_id}
@@ -723,13 +817,13 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             })}
                           </select>
                           {errors.product_id ? <p className={fieldErrorClass}>{errors.product_id}</p> : null}
-                          <p className="mt-1 text-xs text-slate-500">
+                          {showItemLabels ? <p className="mt-1 text-xs text-slate-500">
                             {t("Barcode")}: {product?.barcode_full ?? "-"}
-                          </p>
+                          </p> : null}
                         </label>
                         {mode === "inbound" ? (
                           <label>
-                            <span className={inputLabelClass}>LOT No / Lot No</span>
+                            {showItemLabels ? <span className={inputLabelClass}>LOT No / Lot No</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.lot_no))}
                               list={`lot-options-${item.id}`}
@@ -747,13 +841,13 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                                 ))}
                               </datalist>
                             ) : null}
-                            <p className="mt-1 text-xs text-slate-500">
+                            {showItemLabels ? <p className="mt-1 text-xs text-slate-500">
                               {t("Expiry Date")}: {formatOptionalDate(selectedLot?.expiry_date)}
-                            </p>
+                            </p> : null}
                           </label>
                         ) : (
                           <label>
-                            <span className={inputLabelClass}>{t("Lot")}</span>
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Lot")}</span> : null}
                             <select
                               className={withFieldErrorClass(selectClass, Boolean(errors.lot_id))}
                               value={item.lot_id}
@@ -769,24 +863,24 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                               ))}
                             </select>
                             {errors.lot_id ? <p className={fieldErrorClass}>{errors.lot_id}</p> : null}
-                            {item.product_id && lots.length === 0 ? (
+                            {showItemLabels && item.product_id && lots.length === 0 ? (
                               <p className="mt-1 text-xs text-amber-700">
                                 No lot exists for this product. Receive stock first or choose another product.
                               </p>
                             ) : null}
-                            {outboundStock ? (
+                            {showItemLabels && outboundStock ? (
                               <p className="mt-1 text-xs text-slate-500">
                                 Available stock: {outboundStock.allocatable} EA
                                 {outboundStock.reserved > 0 ? ` (${outboundStock.reserved} reserved)` : ""}
                               </p>
                             ) : null}
-                            <p className="mt-1 text-xs text-slate-500">
+                            {showItemLabels ? <p className="mt-1 text-xs text-slate-500">
                               {t("Expiry Date")}: {formatOptionalDate(selectedLot?.expiry_date)}
-                            </p>
+                            </p> : null}
                           </label>
                         )}
                         <label>
-                          <span className={inputLabelClass}>{mode === "inbound" ? "Stock Location" : t("Location")}</span>
+                          {showItemLabels ? <span className={inputLabelClass}>{mode === "inbound" ? "Stock Location" : t("Location")}</span> : null}
                           {activeLocations.length > 0 ? (
                             <select
                               className={withFieldErrorClass(selectClass, Boolean(errors.location_id))}
@@ -815,7 +909,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           {errors.location_id ? <p className={fieldErrorClass}>{errors.location_id}</p> : null}
                         </label>
                         <label>
-                          <span className={inputLabelClass}>{t("Qty")}</span>
+                          {showItemLabels ? <span className={inputLabelClass}>{t("Qty")}</span> : null}
                           <Input
                             className={withFieldErrorClass("", Boolean(errors.qty))}
                             type="number"
@@ -826,12 +920,11 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           />
                           {errors.qty ? <p className={fieldErrorClass}>{errors.qty}</p> : null}
                         </label>
-                      </div>
 
-                      {mode === "inbound" ? (
-                        <div className="mt-3 grid gap-3 md:grid-cols-4">
+                        {mode === "inbound" ? (
+                          <>
                           <label>
-                            <span className={inputLabelClass}>{t("Currency")}</span>
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Currency")}</span> : null}
                             <select
                               className={selectClass}
                               value={item.currency}
@@ -846,7 +939,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             </select>
                           </label>
                           <label>
-                            <span className={inputLabelClass}>{t("Invoice Price")}</span>
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Invoice Price")}</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.invoice_price))}
                               type="number"
@@ -859,24 +952,36 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             {errors.invoice_price ? <p className={fieldErrorClass}>{errors.invoice_price}</p> : null}
                           </label>
                           <label>
-                            <span className={inputLabelClass}>{t("Total Amount")}</span>
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Total Amount")}</span> : null}
                             <div className="h-9 rounded-md bg-slate-50 px-3 py-2 text-sm tabular-nums text-slate-700">
                               {formatOptionalAmount(lineTotal, item.currency)}
                             </div>
                           </label>
                           <label>
-                            <span className={inputLabelClass}>{t("Remark")}</span>
-                            <Input value={item.remark} onChange={(event) => updateItem(item.id, { remark: event.target.value })} />
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Remark")}</span> : null}
+                            <Input
+                              className={withFieldErrorClass("", Boolean(errors.remark))}
+                              value={item.remark}
+                              onChange={(event) => updateItem(item.id, { remark: event.target.value })}
+                              aria-invalid={Boolean(errors.remark)}
+                            />
+                            {errors.remark ? <p className={fieldErrorClass}>{errors.remark}</p> : null}
                           </label>
-                        </div>
-                      ) : (
-                        <div className="mt-3 grid gap-3 md:grid-cols-3">
+                          </>
+                        ) : (
+                          <>
                           <label>
-                            <span className={inputLabelClass}>{t("Packed Box")} / {t("Box Type")}</span>
-                            <Input value={item.box_type} onChange={(event) => updateItem(item.id, { box_type: event.target.value })} />
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Packed Box")} / {t("Box Type")}</span> : null}
+                            <Input
+                              className={withFieldErrorClass("", Boolean(errors.box_type))}
+                              value={item.box_type}
+                              onChange={(event) => updateItem(item.id, { box_type: event.target.value })}
+                              aria-invalid={Boolean(errors.box_type)}
+                            />
+                            {errors.box_type ? <p className={fieldErrorClass}>{errors.box_type}</p> : null}
                           </label>
                           <label>
-                            <span className={inputLabelClass}>{t("Box Count")}</span>
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Box Count")}</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.box_count))}
                               type="number"
@@ -888,11 +993,24 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             {errors.box_count ? <p className={fieldErrorClass}>{errors.box_count}</p> : null}
                           </label>
                           <label>
-                            <span className={inputLabelClass}>{t("Remark")}</span>
-                            <Input value={item.remark} onChange={(event) => updateItem(item.id, { remark: event.target.value })} />
+                            {showItemLabels ? <span className={inputLabelClass}>{t("Remark")}</span> : null}
+                            <Input
+                              className={withFieldErrorClass("", Boolean(errors.remark))}
+                              value={item.remark}
+                              onChange={(event) => updateItem(item.id, { remark: event.target.value })}
+                              aria-invalid={Boolean(errors.remark)}
+                            />
+                            {errors.remark ? <p className={fieldErrorClass}>{errors.remark}</p> : null}
                           </label>
+                          </>
+                        )}
+                        <div className={showItemLabels ? "pt-6" : ""}>
+                          <Button variant="ghost" size="sm" onClick={() => removeItem(item.id)} aria-label="Remove item">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                      )}
+                      </div>
+                      </div>
                     </div>
                   );
                 })}

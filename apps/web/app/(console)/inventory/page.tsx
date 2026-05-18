@@ -8,6 +8,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { TranslatedText } from "@/components/i18n/TranslatedText";
 import { AUTH_COOKIE_KEY } from "@/lib/auth";
 import { getStockBalances, getStockTransactions } from "@/features/inventory/api";
+import { InventoryTransactionsTable } from "@/features/inventory/InventoryTransactionsTable";
 import type { InventoryTab } from "@/features/inventory/types";
 import { ApiError } from "@/features/outbound/api";
 import { listProducts } from "@/features/settings/products/api";
@@ -56,6 +57,13 @@ export default async function InventoryPage({
     loadError = error instanceof Error ? error.message : "Unexpected inventory error";
   }
 
+  const productHistoryParams = (selectedProductId: string) => {
+    const params = new URLSearchParams();
+    params.set("tab", "transactions");
+    params.set("product_id", selectedProductId);
+    return params;
+  };
+
   const table = loadError ? (
     <ErrorState title="Failed to load inventory data." message={loadError} />
   ) :
@@ -64,8 +72,16 @@ export default async function InventoryPage({
         rows={balances}
         emptyText="No stock balances found."
         columns={[
-          { key: "client", label: "Client", render: (row) => row.client },
-          { key: "product", label: "Product", render: (row) => row.product },
+          { key: "client", label: "Client", render: (row) => (
+            <Link href={`/settings/clients?q=${encodeURIComponent(row.client_code || row.client)}`} className="font-medium text-slate-900 hover:underline">
+              {row.client}
+            </Link>
+          ) },
+          { key: "product", label: "Product", render: (row) => (
+            <Link href={`/inventory?${productHistoryParams(row.product_id).toString()}`} className="font-medium text-slate-900 hover:underline">
+              {row.product}
+            </Link>
+          ) },
           { key: "lot", label: "Lot", render: (row) => row.lot },
           { key: "warehouse", label: "Warehouse", render: (row) => row.warehouse },
           { key: "location", label: "Location", render: (row) => row.location },
@@ -94,21 +110,7 @@ export default async function InventoryPage({
         ]}
       />
     ) : (
-      <DataTable
-        rows={transactions}
-        emptyText="No stock transactions found."
-        columns={[
-          { key: "txn_date", label: "Txn Date", className: "tabular-nums", render: (row) => row.txn_date },
-          { key: "txn_type", label: "Type", render: (row) => row.txn_type },
-          { key: "client", label: "Client", render: (row) => row.client },
-          { key: "product", label: "Product", render: (row) => row.product },
-          { key: "lot", label: "Lot", render: (row) => row.lot },
-          { key: "qty_in", label: "Qty In", className: "tabular-nums", render: (row) => row.qty_in },
-          { key: "qty_out", label: "Qty Out", className: "tabular-nums", render: (row) => row.qty_out },
-          { key: "current_stock_qty", label: "Current Stock", className: "tabular-nums", render: (row) => row.current_stock_qty },
-          { key: "ref", label: "Ref", render: (row) => row.ref },
-        ]}
-      />
+      <InventoryTransactionsTable rows={transactions} />
     );
 
   return (
@@ -171,8 +173,18 @@ export default async function InventoryPage({
             </div>
             <form className="mt-4 flex flex-wrap items-end gap-2" action="/inventory">
               <input type="hidden" name="tab" value="transactions" />
-              {q ? <input type="hidden" name="q" value={q} /> : null}
               {txn_type ? <input type="hidden" name="txn_type" value={txn_type} /> : null}
+              <label className="min-w-72 flex-1">
+                <span className="mb-1 block text-xs font-medium text-slate-500">
+                  Search client or product
+                </span>
+                <input
+                  name="q"
+                  defaultValue={q ?? ""}
+                  placeholder="Client, product, barcode, lot, ref"
+                  className="h-9 w-full rounded-md border bg-white px-3 text-sm"
+                />
+              </label>
               <label className="min-w-72">
                 <span className="mb-1 block text-xs font-medium text-slate-500">
                   <TranslatedText text="Product" />

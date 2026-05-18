@@ -2,6 +2,10 @@ export type InventoryTab = "balances" | "transactions";
 
 export type StockBalanceRow = {
   id: string;
+  client_id: string;
+  product_id: string;
+  client_code: string;
+  product_barcode: string;
   client: string;
   product: string;
   lot: string;
@@ -16,6 +20,10 @@ export type StockBalanceRow = {
 
 export type StockTransactionRow = {
   id: string;
+  client_id: string;
+  product_id: string;
+  client_code: string;
+  product_barcode: string;
   txn_date: string;
   txn_type: string;
   client: string;

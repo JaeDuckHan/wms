@@ -973,6 +973,26 @@ function buildBillingEventsWhere(query, options = {}) {
   return { where, params };
 }
 
+async function buildBillingEventsServiceJoin() {
+  const exists = await hasTable("service_catalog");
+  if (!exists) {
+    return { serviceJoin: "", billingUnitExpr: "'SKU'" };
+  }
+
+  const hasBillingUnit = await hasColumn("service_catalog", "billing_unit");
+  const hasBillingBasis = await hasColumn("service_catalog", "billing_basis");
+  const rawBillingUnitExpr = hasBillingUnit
+    ? "sc.billing_unit"
+    : hasBillingBasis
+      ? `CASE sc.billing_basis WHEN 'ORDER' THEN 'ORDER' WHEN 'BOX' THEN 'BOX' WHEN 'QTY' THEN 'SKU' ELSE 'EVENT' END`
+      : "'SKU'";
+
+  return {
+    serviceJoin: "LEFT JOIN service_catalog sc ON sc.service_code = be.service_code AND sc.deleted_at IS NULL",
+    billingUnitExpr: `COALESCE(${rawBillingUnitExpr}, 'SKU')`
+  };
+}
+
 router.get("/billing/settings/service-catalog", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
@@ -1534,13 +1554,16 @@ router.get("/billing/events", async (req, res) => {
 
     const hasWarehouseId = await hasColumn("billing_events", "warehouse_id");
     const warehouseExpr = hasWarehouseId ? "be.warehouse_id" : "NULL";
+    const { serviceJoin, billingUnitExpr } = await buildBillingEventsServiceJoin();
     const { where, params } = buildBillingEventsWhere(req.query, { hasWarehouseId, scopedClientId });
     const [rows] = await getPool().query(
       `SELECT be.id, be.event_date, be.client_id, c.client_code, c.name_kr,
-              be.service_code, be.qty, be.amount_thb, be.fx_rate_thbkrw, be.amount_krw,
+              be.service_code, ${billingUnitExpr} AS billing_unit, be.qty, be.pricing_policy,
+              be.unit_price_thb, be.amount_thb, be.fx_rate_thbkrw, be.unit_price_krw, be.amount_krw,
               be.reference_type, be.reference_id, ${warehouseExpr} AS warehouse_id, be.status, be.invoice_id
        FROM billing_events be
        JOIN clients c ON c.id = be.client_id
+       ${serviceJoin}
        ${where}
        ORDER BY be.event_date DESC, be.id DESC`,
       params
@@ -1575,32 +1598,38 @@ router.get("/billing/events/export.csv", async (req, res) => {
     if (!exists) {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", "attachment; filename=billing_events.csv");
-      const header = "event_date,client,service_code,qty,amount_thb,fx_rate_thbkrw,amount_krw,reference_type,reference_id,warehouse_id,status";
+      const header = "event_date,client,service_code,billing_unit,qty,unit_price_thb,amount_thb,fx_rate_thbkrw,unit_price_krw,amount_krw,reference_type,reference_id,warehouse_id,status";
       return res.send(header);
     }
 
     const hasWarehouseId = await hasColumn("billing_events", "warehouse_id");
     const warehouseExpr = hasWarehouseId ? "be.warehouse_id" : "NULL";
+    const { serviceJoin, billingUnitExpr } = await buildBillingEventsServiceJoin();
     const { where, params } = buildBillingEventsWhere(req.query, { hasWarehouseId, scopedClientId });
     const [rows] = await getPool().query(
-      `SELECT be.event_date, c.client_code, be.service_code, be.qty, be.amount_thb,
-              be.fx_rate_thbkrw, be.amount_krw, be.reference_type, be.reference_id, ${warehouseExpr} AS warehouse_id, be.status
+      `SELECT be.event_date, c.client_code, be.service_code, ${billingUnitExpr} AS billing_unit,
+              be.qty, be.unit_price_thb, be.amount_thb, be.fx_rate_thbkrw, be.unit_price_krw,
+              be.amount_krw, be.reference_type, be.reference_id, ${warehouseExpr} AS warehouse_id, be.status
        FROM billing_events be
        JOIN clients c ON c.id = be.client_id
+       ${serviceJoin}
        ${where}
        ORDER BY be.event_date DESC, be.id DESC`,
       params
     );
 
-    const header = "event_date,client,service_code,qty,amount_thb,fx_rate_thbkrw,amount_krw,reference_type,reference_id,warehouse_id,status";
+    const header = "event_date,client,service_code,billing_unit,qty,unit_price_thb,amount_thb,fx_rate_thbkrw,unit_price_krw,amount_krw,reference_type,reference_id,warehouse_id,status";
     const lines = rows.map((r) => {
       const values = [
         formatDisplayDate(r.event_date),
         r.client_code,
         r.service_code,
+        r.billing_unit,
         r.qty,
+        r.unit_price_thb,
         r.amount_thb,
         r.fx_rate_thbkrw,
+        r.unit_price_krw,
         r.amount_krw,
         r.reference_type,
         r.reference_id,

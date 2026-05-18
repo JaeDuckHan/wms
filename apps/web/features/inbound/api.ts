@@ -8,6 +8,7 @@ import type {
   InboundTimeline,
 } from "@/features/inbound/types";
 import { ApiError } from "@/features/outbound/api";
+import { formatApiErrorMessage } from "@/lib/api-error-message";
 import { shouldUseImplicitFallback, shouldUseMockMode } from "@/lib/runtime-mode";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3100";
@@ -62,7 +63,7 @@ type RawClient = { id: number; client_code?: string; name_kr?: string; name_en?:
 type RawProduct = { id: number; barcode_full: string; name_kr: string };
 type RawLot = { id: number; lot_no: string; expiry_date: string | null };
 type RawWarehouseLocation = { id: number; location_code: string; zone: string | null };
-type JsonResponse<T> = { ok: boolean; data?: T; message?: string };
+type JsonResponse<T> = { ok: boolean; data?: T; message?: string; details?: unknown };
 
 export type CreateInboundItemInput = {
   product_id: number;
@@ -155,7 +156,7 @@ async function requestJson<T>(
     cache: "no-store",
   });
   const json = (await response.json()) as JsonResponse<T>;
-  if (!response.ok || !json.ok) throw new ApiError(json.message ?? "Request failed", response.status);
+  if (!response.ok || !json.ok) throw new ApiError(formatApiErrorMessage(json), response.status, json);
   if (json.data === undefined) throw new ApiError("Missing response data", response.status);
   return json.data;
 }
@@ -192,7 +193,7 @@ async function requestVoid(
     cache: "no-store",
   });
   const json = (await response.json()) as JsonResponse<unknown>;
-  if (!response.ok || !json.ok) throw new ApiError(json.message ?? "Request failed", response.status);
+  if (!response.ok || !json.ok) throw new ApiError(formatApiErrorMessage(json), response.status, json);
 }
 
 function cloneOrder(order: InboundOrder): InboundOrder {
@@ -767,18 +768,7 @@ export async function createInboundOrderWithItems(
         memo: input.memo ?? null,
         created_by: input.created_by,
         received_at: null,
-      }),
-    },
-    options
-  );
-
-  for (const item of items) {
-    await requestJson<RawInboundItem>(
-      "/inbound-items",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          inbound_order_id: created.id,
+        items: items.map((item) => ({
           product_id: item.product_id,
           lot_id: item.lot_id,
           location_id: item.location_id ?? null,
@@ -786,11 +776,11 @@ export async function createInboundOrderWithItems(
           invoice_price: item.invoice_price ?? null,
           currency: item.currency ?? null,
           remark: item.remark ?? null,
-        }),
-      },
-      options
-    );
-  }
+        })),
+      }),
+    },
+    options
+  );
 
   const reloaded = await getInboundOrderByNo(created.inbound_no, options);
   return reloaded ?? mapInboundOrder(created, "", []);

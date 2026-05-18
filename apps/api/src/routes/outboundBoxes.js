@@ -3,6 +3,7 @@ const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
 const { BoxPackingError, validateBoxItemTotals } = require("../services/outboundBoxPacking");
+const { syncOutboundOrderBillingEvent } = require("../services/billingEvents");
 
 const router = express.Router();
 
@@ -230,6 +231,7 @@ router.post("/:id/boxes", validate(createBoxSchema), async (req, res) => {
       [result.insertId]
     );
     const itemMap = await getBoxItems(conn, [result.insertId]);
+    await syncOutboundOrderBillingEvent(conn, outboundOrderId);
     await conn.commit();
 
     return res.status(201).json({ ok: true, data: attachItemsToBoxes(rows, itemMap)[0] });
@@ -278,6 +280,7 @@ router.put("/:id/boxes/:boxId/items", validate(replaceBoxItemsSchema), async (re
     const itemMap = await getBoxItems(conn, [boxId]);
     const itemCount = sumPackedQty(validatedItems);
     await conn.query("UPDATE outbound_boxes SET item_count = ? WHERE id = ?", [itemCount, boxId]);
+    await syncOutboundOrderBillingEvent(conn, outboundOrderId);
     await conn.commit();
     return res.json({ ok: true, data: itemMap.get(boxId) ?? [] });
   } catch (error) {
@@ -347,6 +350,7 @@ router.put("/:id/boxes/:boxId", validate(updateBoxSchema), async (req, res) => {
       [boxId]
     );
     const updatedItemMap = await getBoxItems(conn, [boxId]);
+    await syncOutboundOrderBillingEvent(conn, outboundOrderId);
     await conn.commit();
 
     return res.json({ ok: true, data: attachItemsToBoxes(rows, updatedItemMap)[0] });
@@ -384,6 +388,7 @@ router.delete("/:id/boxes/:boxId", async (req, res) => {
       "UPDATE outbound_box_items SET deleted_at = NOW() WHERE outbound_box_id = ? AND deleted_at IS NULL",
       [req.params.boxId]
     );
+    await syncOutboundOrderBillingEvent(conn, outboundOrderId);
     await conn.commit();
     return res.json({ ok: true });
   } catch (error) {

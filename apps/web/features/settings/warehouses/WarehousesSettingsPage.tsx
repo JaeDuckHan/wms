@@ -19,8 +19,23 @@ import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
-import { createWarehouse, deleteWarehouse, listWarehouses, toggleWarehouseStatus, updateWarehouse } from "@/features/settings/warehouses/api";
-import type { Warehouse, WarehouseStatus } from "@/features/settings/warehouses/types";
+import {
+  createWarehouse,
+  createWarehouseLocation,
+  deleteWarehouse,
+  deleteWarehouseLocation,
+  listWarehouseLocations,
+  listWarehouses,
+  toggleWarehouseStatus,
+  updateWarehouse,
+  updateWarehouseLocation,
+} from "@/features/settings/warehouses/api";
+import type {
+  Warehouse,
+  WarehouseLocation,
+  WarehouseLocationStatus,
+  WarehouseStatus,
+} from "@/features/settings/warehouses/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 type FormState = {
   warehouse_code: string;
@@ -32,7 +47,14 @@ type FormState = {
   status: WarehouseStatus;
 };
 
+type LocationFormState = {
+  location_code: string;
+  zone: string;
+  status: WarehouseLocationStatus;
+};
+
 type StatusFilter = "all" | WarehouseStatus;
+type LocationStatusFilter = "all" | WarehouseLocationStatus;
 type SortKey = "created_desc" | "created_asc" | "code_asc" | "name_asc";
 
 const initialForm: FormState = {
@@ -42,6 +64,12 @@ const initialForm: FormState = {
   timezone: "Asia/Seoul",
   default_cbm_size: "0.1",
   default_cbm_rate: "5000",
+  status: "active",
+};
+
+const initialLocationForm: LocationFormState = {
+  location_code: "",
+  zone: "",
   status: "active",
 };
 
@@ -62,6 +90,19 @@ export function WarehousesSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null);
+  const [locationRows, setLocationRows] = useState<WarehouseLocation[]>([]);
+  const [locationLoadError, setLocationLoadError] = useState<string | null>(null);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [locationSearch, setLocationSearch] = useState("");
+  const [locationStatusFilter, setLocationStatusFilter] = useState<LocationStatusFilter>("all");
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
+  const [locationForm, setLocationForm] = useState<LocationFormState>(initialLocationForm);
+  const [locationFieldError, setLocationFieldError] = useState<string | null>(null);
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [togglingLocationId, setTogglingLocationId] = useState<string | null>(null);
+  const [removingLocationId, setRemovingLocationId] = useState<string | null>(null);
 
   const loadRows = async () => {
     setLoadingRows(true);
@@ -69,6 +110,7 @@ export function WarehousesSettingsPage() {
     try {
       const data = await listWarehouses();
       setRows(data);
+      setSelectedWarehouseId((current) => (current && data.some((item) => item.id === current) ? current : data[0]?.id ?? null));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : t("Failed to load warehouses."));
     } finally {
@@ -76,10 +118,38 @@ export function WarehousesSettingsPage() {
     }
   };
 
+  const selectedWarehouse = useMemo(() => {
+    return rows.find((item) => item.id === selectedWarehouseId) ?? rows[0] ?? null;
+  }, [rows, selectedWarehouseId]);
+
+  const loadLocations = async (warehouseId?: string | null) => {
+    const targetWarehouseId = warehouseId ?? selectedWarehouse?.id ?? null;
+    if (!targetWarehouseId) {
+      setLocationRows([]);
+      return;
+    }
+
+    setLoadingLocations(true);
+    setLocationLoadError(null);
+    try {
+      const data = await listWarehouseLocations({ warehouse_id: targetWarehouseId });
+      setLocationRows(data);
+    } catch (error) {
+      setLocationLoadError(error instanceof Error ? error.message : "Failed to load locations.");
+    } finally {
+      setLoadingLocations(false);
+    }
+  };
+
   useEffect(() => {
     if (!ready || !canAccessSettings) return;
     void loadRows();
   }, [ready, canAccessSettings]);
+
+  useEffect(() => {
+    if (!ready || !canAccessSettings) return;
+    void loadLocations(selectedWarehouse?.id);
+  }, [ready, canAccessSettings, selectedWarehouse?.id]);
 
   const accessDenied = ready && !canAccessSettings;
 
@@ -112,6 +182,25 @@ export function WarehousesSettingsPage() {
       filtered: filteredRows.length,
     };
   }, [rows, filteredRows]);
+
+  const filteredLocationRows = useMemo(() => {
+    const q = locationSearch.trim().toLowerCase();
+    return locationRows.filter(
+      (item) =>
+        (locationStatusFilter === "all" || item.status === locationStatusFilter) &&
+        (item.location_code.toLowerCase().includes(q) || (item.zone ?? "").toLowerCase().includes(q))
+    );
+  }, [locationRows, locationSearch, locationStatusFilter]);
+
+  const locationCounts = useMemo(() => {
+    const active = locationRows.filter((item) => item.status === "active").length;
+    return {
+      total: locationRows.length,
+      active,
+      inactive: locationRows.length - active,
+      filtered: filteredLocationRows.length,
+    };
+  }, [locationRows, filteredLocationRows]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -229,6 +318,117 @@ export function WarehousesSettingsPage() {
     }
   };
 
+  const openCreateLocation = () => {
+    if (!selectedWarehouse) {
+      setLocationFieldError("Select a warehouse first.");
+      pushToast({ title: "Select a warehouse first.", variant: "error" });
+      return;
+    }
+    setEditingLocationId(null);
+    setLocationForm(initialLocationForm);
+    setLocationFieldError(null);
+    setLocationOpen(true);
+  };
+
+  const openEditLocation = (row: WarehouseLocation) => {
+    setEditingLocationId(row.id);
+    setLocationForm({
+      location_code: row.location_code,
+      zone: row.zone ?? "",
+      status: row.status,
+    });
+    setLocationFieldError(null);
+    setLocationOpen(true);
+  };
+
+  const submitLocation = async () => {
+    if (!selectedWarehouse) {
+      setLocationFieldError("Select a warehouse first.");
+      return;
+    }
+    if (!locationForm.location_code.trim()) {
+      setLocationFieldError("Location code is required.");
+      pushToast({ title: "Missing required fields", description: "Location code is required.", variant: "error" });
+      return;
+    }
+
+    setLocationFieldError(null);
+    setSavingLocation(true);
+    try {
+      const payload = {
+        warehouse_id: selectedWarehouse.id,
+        location_code: locationForm.location_code,
+        zone: locationForm.zone,
+        status: locationForm.status,
+      };
+      if (editingLocationId) {
+        await updateWarehouseLocation(editingLocationId, payload);
+        pushToast({ title: "Location updated", variant: "success" });
+      } else {
+        await createWarehouseLocation(payload);
+        pushToast({ title: "Location created", variant: "success" });
+      }
+      await loadLocations(selectedWarehouse.id);
+      setLocationOpen(false);
+    } catch (error) {
+      setLocationFieldError(error instanceof Error ? error.message : "Please try again.");
+      pushToast({
+        title: "Save failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error",
+      });
+    } finally {
+      setSavingLocation(false);
+    }
+  };
+
+  const toggleLocationStatus = async (row: WarehouseLocation) => {
+    if (!selectedWarehouse) return;
+    setTogglingLocationId(row.id);
+    try {
+      await updateWarehouseLocation(row.id, {
+        warehouse_id: row.warehouse_id,
+        location_code: row.location_code,
+        zone: row.zone,
+        status: row.status === "active" ? "inactive" : "active",
+      });
+      await loadLocations(selectedWarehouse.id);
+      pushToast({ title: row.status === "active" ? "Location deactivated" : "Location reactivated", variant: "info" });
+    } catch (error) {
+      pushToast({
+        title: "Action failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error",
+      });
+    } finally {
+      setTogglingLocationId(null);
+    }
+  };
+
+  const removeLocation = async (row: WarehouseLocation) => {
+    if (!selectedWarehouse) return;
+    if (!window.confirm(`${t("Delete")} ${row.location_code}?`)) return;
+    setRemovingLocationId(row.id);
+    try {
+      await deleteWarehouseLocation(row.id);
+      await loadLocations(selectedWarehouse.id);
+      if (editingLocationId === row.id) {
+        setLocationOpen(false);
+        setEditingLocationId(null);
+        setLocationForm(initialLocationForm);
+      }
+      pushToast({ title: "Location deleted", variant: "info" });
+    } catch (error) {
+      pushToast({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error",
+      });
+    } finally {
+      setRemovingLocationId(null);
+    }
+  };
+
   return (
     <section>
       <PageHeader
@@ -298,6 +498,9 @@ export function WarehousesSettingsPage() {
               label: "Actions",
               render: (row) => (
                 <div className="flex items-center gap-2">
+                  <Button size="sm" variant={selectedWarehouse?.id === row.id ? "default" : "secondary"} onClick={() => setSelectedWarehouseId(row.id)}>
+                    Locations
+                  </Button>
                   {canWrite ? (
                     <>
                       <Button size="sm" variant="secondary" onClick={() => openEdit(row)} disabled={togglingId === row.id || removingId === row.id}>{t("Edit")}</Button>
@@ -313,6 +516,110 @@ export function WarehousesSettingsPage() {
               ),
             },
           ]}
+          />
+        )}
+      </div>
+
+      <div className="mt-6 rounded-xl border bg-white p-6">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Location management</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {selectedWarehouse
+                ? `${selectedWarehouse.warehouse_code} - ${selectedWarehouse.name}`
+                : "Create or select a warehouse before adding locations."}
+            </p>
+          </div>
+          {canWrite ? (
+            <Button onClick={openCreateLocation} disabled={!selectedWarehouse}>
+              New Location
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Badge variant="default">{`${t("All")}: ${locationCounts.total}`}</Badge>
+          <Badge variant="success">{`${t("Active")}: ${locationCounts.active}`}</Badge>
+          <Badge variant="warning">{`${t("Inactive")}: ${locationCounts.inactive}`}</Badge>
+          <Badge variant="info">{`${t("Filter")}: ${locationCounts.filtered}`}</Badge>
+        </div>
+
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <select
+            className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            value={selectedWarehouse?.id ?? ""}
+            onChange={(event) => setSelectedWarehouseId(event.target.value || null)}
+          >
+            {rows.length === 0 ? <option value="">No warehouses</option> : null}
+            {rows.map((warehouse) => (
+              <option key={warehouse.id} value={warehouse.id}>
+                {warehouse.warehouse_code} - {warehouse.name}
+              </option>
+            ))}
+          </select>
+          <Input
+            placeholder="Search by location code or zone"
+            value={locationSearch}
+            onChange={(event) => setLocationSearch(event.target.value)}
+          />
+          <select
+            className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            value={locationStatusFilter}
+            onChange={(event) => setLocationStatusFilter(event.target.value as LocationStatusFilter)}
+          >
+            <option value="all">{t("All Status")}</option>
+            <option value="active">{t("Active")}</option>
+            <option value="inactive">{t("Inactive")}</option>
+          </select>
+        </div>
+
+        {locationLoadError ? (
+          <ErrorState title="Failed to load locations." message={locationLoadError} onRetry={() => void loadLocations(selectedWarehouse?.id)} />
+        ) : (
+          <DataTable
+            rows={filteredLocationRows}
+            emptyText={loadingLocations ? "Loading locations..." : "No locations found."}
+            columns={[
+              { key: "location_code", label: "Location Code", render: (row) => <span className="font-medium">{row.location_code}</span> },
+              { key: "zone", label: "Zone", render: (row) => row.zone || "-" },
+              { key: "status", label: "Status", render: (row) => <ActiveStatusBadge status={row.status} /> },
+              {
+                key: "actions",
+                label: "Actions",
+                render: (row) => (
+                  <div className="flex items-center gap-2">
+                    {canWrite ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => openEditLocation(row)}
+                          disabled={togglingLocationId === row.id || removingLocationId === row.id}
+                        >
+                          {t("Edit")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void toggleLocationStatus(row)}
+                          disabled={togglingLocationId === row.id || removingLocationId === row.id}
+                        >
+                          {row.status === "active" ? t("Deactivate") : t("Activate")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void removeLocation(row)}
+                          disabled={togglingLocationId === row.id || removingLocationId === row.id}
+                        >
+                          {t("Delete")}
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                ),
+              },
+            ]}
           />
         )}
       </div>
@@ -374,6 +681,58 @@ export function WarehousesSettingsPage() {
             <Button variant="secondary" onClick={() => setOpen(false)}>{t("Cancel")}</Button>
             <Button onClick={() => void submit()} disabled={!canWrite || saving || !form.warehouse_code.trim() || !form.name.trim()}>
               {saving ? t("Saving...") : t("Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={locationOpen} onOpenChange={setLocationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingLocationId ? "Edit location" : "New location"}</DialogTitle>
+            <DialogDescription>
+              {selectedWarehouse
+                ? `${selectedWarehouse.warehouse_code} - ${selectedWarehouse.name}`
+                : "Select a warehouse first."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Location Code</label>
+              <Input
+                value={locationForm.location_code}
+                onChange={(event) => setLocationForm((prev) => ({ ...prev, location_code: event.target.value.toUpperCase() }))}
+                placeholder="e.g. A-01-03"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Zone</label>
+              <Input
+                value={locationForm.zone}
+                onChange={(event) => setLocationForm((prev) => ({ ...prev, zone: event.target.value }))}
+                placeholder="e.g. A"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">{t("Status")}</label>
+              <select
+                className="h-9 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                value={locationForm.status}
+                onChange={(event) => setLocationForm((prev) => ({ ...prev, status: event.target.value as WarehouseLocationStatus }))}
+              >
+                <option value="active">{t("Active")}</option>
+                <option value="inactive">{t("Inactive")}</option>
+              </select>
+            </div>
+            {locationFieldError ? <p className="text-xs text-red-600">{locationFieldError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setLocationOpen(false)}>{t("Cancel")}</Button>
+            <Button
+              onClick={() => void submitLocation()}
+              disabled={!canWrite || !selectedWarehouse || savingLocation || !locationForm.location_code.trim()}
+            >
+              {savingLocation ? t("Saving...") : t("Save")}
             </Button>
           </DialogFooter>
         </DialogContent>

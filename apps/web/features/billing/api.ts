@@ -91,9 +91,13 @@ export type BillingEvent = {
   client_code: string;
   name_kr: string;
   service_code: string;
+  billing_unit?: ServiceRate["billing_unit"] | null;
   qty: number;
+  pricing_policy?: ServiceRate["pricing_policy"] | null;
+  unit_price_thb?: number | null;
   amount_thb: number | null;
   fx_rate_thbkrw: number | null;
+  unit_price_krw?: number | null;
   amount_krw: number | null;
   reference_type: string;
   reference_id: string | null;
@@ -202,6 +206,7 @@ const eventsDb: BillingEvent[] = Array.from({ length: 20 }, (_, index) => {
   const invoiceMonth = `2026-${pad2(((seq - 1) % 6) + 1)}`;
   const fx = pickFxRate(invoiceMonth);
   const amountThb = Number((20 + seq * 1.3).toFixed(2));
+  const qty = (seq % 5) + 1;
   return {
     id: seq,
     event_date: `${invoiceMonth}-${pad2(((seq - 1) % 27) + 1)}T09:30:00Z`,
@@ -209,9 +214,13 @@ const eventsDb: BillingEvent[] = Array.from({ length: 20 }, (_, index) => {
     client_code: `CL${pad2((seq % 20) + 1)}`,
     name_kr: `Sample Client ${pad2((seq % 20) + 1)}`,
     service_code: serviceCatalogDb[seq % serviceCatalogDb.length].service_code,
-    qty: (seq % 5) + 1,
+    billing_unit: serviceCatalogDb[seq % serviceCatalogDb.length].billing_unit,
+    qty,
+    pricing_policy: "THB_BASED",
+    unit_price_thb: Number((amountThb / qty).toFixed(4)),
     amount_thb: amountThb,
     fx_rate_thbkrw: fx?.rate ?? 39,
+    unit_price_krw: null,
     amount_krw: trunc100(amountThb * (fx?.rate ?? 39)),
     reference_type: seq % 2 === 0 ? "outbound" : "inbound",
     reference_id: String(3000 + seq),
