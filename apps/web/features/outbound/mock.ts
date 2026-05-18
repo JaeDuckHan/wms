@@ -107,6 +107,7 @@ function buildBoxes(seq: number, status: OutboundStatus, items: OutboundItem[]):
       courier: seq % 2 === 0 ? "CJ Logistics" : "Hanjin",
       tracking_no: `TRK-${String(70000000 + seq).padStart(8, "0")}`,
       item_count: packedItems.reduce((sum, item) => sum + item.packed_qty, 0),
+      status: status === "shipped" || status === "delivered" ? "shipped" : "packed",
       items: packedItems,
     },
   ];

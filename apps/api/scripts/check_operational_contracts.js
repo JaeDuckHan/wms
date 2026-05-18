@@ -45,6 +45,18 @@ assertIncludes(
   "Outbound box API persists item links"
 );
 
+assertIncludes(
+  "apps/api/src/routes/outboundItems.js",
+  "assertPackedQtyWithinItemQty",
+  "Outbound item update rejects quantities below packed totals"
+);
+
+assertIncludes(
+  "apps/api/src/routes/outboundItems.js",
+  "softDeletePackedItemsForOutboundItem",
+  "Outbound item delete cleans packed box item links"
+);
+
 assertMatches(
   "apps/web/features/operations/OrderCreateForm.tsx",
   /"KRW" \| "THB" \| "USD"/,
@@ -61,6 +73,30 @@ assertIncludes(
   "apps/web/features/outbound/types.ts",
   "items: OutboundBoxItem[]",
   "Outbound boxes expose packed item details"
+);
+
+assertIncludes(
+  "apps/web/features/outbound/api.ts",
+  "updateOutboundBox",
+  "Outbound box edit API client is available"
+);
+
+assertIncludes(
+  "apps/web/features/outbound/api.ts",
+  "deleteOutboundBox",
+  "Outbound box delete API client is available"
+);
+
+assertIncludes(
+  "apps/web/features/outbound/OutboundDetailView.tsx",
+  "Edit Box",
+  "Outbound box list exposes edit actions"
+);
+
+assertIncludes(
+  "apps/web/features/outbound/OutboundDetailView.tsx",
+  "Delete Box",
+  "Outbound box list exposes delete actions"
 );
 
 assertIncludes(

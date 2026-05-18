@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
-import type { OutboundAction, OutboundItem, OutboundOrder } from "@/features/outbound/types";
+import type { OutboundAction, OutboundBox, OutboundItem, OutboundOrder } from "@/features/outbound/types";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/DataTable";
 import {
@@ -18,15 +18,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   addOutboundBox,
   ApiError,
   cancelOutboundOrder,
+  deleteOutboundBox,
   deleteOutboundItem,
   transitionOutboundStatus,
+  updateOutboundBox,
   updateOutboundItem,
   updateOutboundOrderDetails,
 } from "@/features/outbound/api";
@@ -81,6 +82,7 @@ function normalizeOutboundOrder(order: OutboundOrder): OutboundOrder {
         courier: asText(box.courier),
         tracking_no: asText(box.tracking_no),
         item_count: asNumber(box.item_count),
+        status: box.status ?? "open",
         items: Array.isArray(box.items)
           ? box.items.map((boxItem) => ({
               ...boxItem,
@@ -163,7 +165,7 @@ export function OutboundDetailView({
   const [boxNo, setBoxNo] = useState("");
   const [courier, setCourier] = useState("");
   const [trackingNo, setTrackingNo] = useState("");
-  const [itemCount, setItemCount] = useState("1");
+  const [editingBox, setEditingBox] = useState<OutboundBox | null>(null);
   const [boxItemQtyById, setBoxItemQtyById] = useState<Record<string, string>>({});
   const [editDate, setEditDate] = useState(normalizedOrder.eta_date);
   const [editSalesChannel, setEditSalesChannel] = useState(normalizedOrder.memo === "N/A" ? "" : normalizedOrder.memo);
@@ -185,13 +187,13 @@ export function OutboundDetailView({
     setCurrentOrder(normalizedOrder);
   }, [normalizedOrder]);
   useEffect(() => {
-    if (!dialogOpen) return;
+    if (!dialogOpen || editingBox) return;
     const initial: Record<string, string> = {};
     for (const item of currentOrder.items) {
       initial[item.id] = "0";
     }
     setBoxItemQtyById(initial);
-  }, [dialogOpen, currentOrder.items]);
+  }, [dialogOpen, editingBox, currentOrder.items]);
   useEffect(() => {
     let cancelled = false;
     listSalesChannels()
@@ -464,13 +466,61 @@ export function OutboundDetailView({
     [canMutate, loading, t]
   );
 
+  const buildEmptyBoxItems = () =>
+    currentOrder.items.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = "0";
+      return acc;
+    }, {});
+
+  const resetBoxForm = () => {
+    setEditingBox(null);
+    setBoxNo("");
+    setCourier("");
+    setTrackingNo("");
+    setBoxItemQtyById({});
+    setFormError(null);
+  };
+
+  const openAddBox = () => {
+    setEditingBox(null);
+    setBoxNo("");
+    setCourier("");
+    setTrackingNo("");
+    setBoxItemQtyById(buildEmptyBoxItems());
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const openEditBox = (box: OutboundBox) => {
+    const qtyById = buildEmptyBoxItems();
+    for (const item of box.items) {
+      qtyById[item.outbound_item_id] = String(item.packed_qty);
+    }
+    setEditingBox(box);
+    setBoxNo(box.box_no);
+    setCourier(box.courier === "N/A" ? "" : box.courier);
+    setTrackingNo(box.tracking_no === "-" ? "" : box.tracking_no);
+    setBoxItemQtyById(qtyById);
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const closeBoxDialog = () => {
+    setDialogOpen(false);
+    resetBoxForm();
+  };
+
   const submitBox = async () => {
     const selectedItems = Object.entries(boxItemQtyById)
       .map(([outbound_item_id, value]) => ({ outbound_item_id, packed_qty: Number(value) }))
       .filter((item) => Number.isFinite(item.packed_qty) && item.packed_qty > 0);
-    const parsedItemCount = selectedItems.reduce((sum, item) => sum + item.packed_qty, 0) || Number(itemCount);
+    const parsedItemCount = selectedItems.reduce((sum, item) => sum + item.packed_qty, 0);
     if (!boxNo.trim() || !courier.trim() || !trackingNo.trim()) {
       setFormError(t("All fields are required."));
+      return;
+    }
+    if (selectedItems.length === 0) {
+      setFormError(t("Select at least one packed item."));
       return;
     }
     if (!Number.isFinite(parsedItemCount) || parsedItemCount < 1) {
@@ -481,24 +531,41 @@ export function OutboundDetailView({
     setFormError(null);
     setLoading(true);
     try {
-      const boxes = await addOutboundBox(currentOrder.outbound_no, {
+      const payload = {
         box_no: boxNo.trim(),
         courier: courier.trim(),
         tracking_no: trackingNo.trim(),
         item_count: parsedItemCount,
         items: selectedItems,
-      });
+      };
+      const boxes = editingBox
+        ? await updateOutboundBox(currentOrder.outbound_no, editingBox.id, { ...payload, status: editingBox.status })
+        : await addOutboundBox(currentOrder.outbound_no, payload);
       setCurrentOrder((prev) => normalizeOutboundOrder({ ...prev, boxes }));
-      setDialogOpen(false);
-      setBoxNo("");
-      setCourier("");
-      setTrackingNo("");
-      setItemCount("1");
-      setBoxItemQtyById({});
-      pushToast({ title: t("Box added"), variant: "success" });
+      closeBoxDialog();
+      pushToast({ title: editingBox ? t("Box updated") : t("Box added"), variant: "success" });
     } catch (error) {
       const message = error instanceof ApiError ? error.message : t("Please check input values or API status.");
-      pushToast({ title: t("Failed to add box"), description: message, variant: "error" });
+      pushToast({
+        title: editingBox ? t("Failed to update box") : t("Failed to add box"),
+        description: message,
+        variant: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeBox = async (box: OutboundBox) => {
+    if (!window.confirm(`${t("Delete Box")} ${box.box_no}?`)) return;
+    setLoading(true);
+    try {
+      const boxes = await deleteOutboundBox(currentOrder.outbound_no, box.id);
+      setCurrentOrder((prev) => normalizeOutboundOrder({ ...prev, boxes }));
+      pushToast({ title: t("Box deleted"), variant: "success" });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t("Please check input values or API status.");
+      pushToast({ title: t("Failed to delete box"), description: message, variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -645,33 +712,25 @@ export function OutboundDetailView({
 
         <TabsContent value="boxes">
           <div className="mb-4 flex justify-end">
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  variant="secondary"
-                  disabled={!canMutate || !currentOrder.boxes_supported}
-                  title={!currentOrder.boxes_supported ? t("Box API is unavailable in current backend.") : undefined}
-                >
-                  <PackagePlus className="h-4 w-4" />
-                  {t("Add Box")}
-                </Button>
-              </DialogTrigger>
+            <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeBoxDialog())}>
+              <Button
+                variant="secondary"
+                disabled={!canMutate || !currentOrder.boxes_supported}
+                title={!currentOrder.boxes_supported ? t("Box API is unavailable in current backend.") : undefined}
+                onClick={openAddBox}
+              >
+                <PackagePlus className="h-4 w-4" />
+                {t("Add Box")}
+              </Button>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>{t("Add Box")}</DialogTitle>
+                  <DialogTitle>{editingBox ? t("Edit Box") : t("Add Box")}</DialogTitle>
                   <DialogDescription>Enter the box details to save them on this outbound order.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
                   <Input placeholder={t("Box No")} value={boxNo} onChange={(e) => setBoxNo(e.target.value)} />
                   <Input placeholder={t("Courier")} value={courier} onChange={(e) => setCourier(e.target.value)} />
                   <Input placeholder={t("Tracking No")} value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} />
-                  <Input
-                    placeholder={t("Item Count")}
-                    type="number"
-                    min={1}
-                    value={itemCount}
-                    onChange={(e) => setItemCount(e.target.value)}
-                  />
                   <div className="rounded-md border">
                     <div className="border-b bg-slate-50 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-500">
                       {t("Packed Items")}
@@ -704,7 +763,7 @@ export function OutboundDetailView({
                   {formError && <p className="text-sm text-red-600">{formError}</p>}
                 </div>
                 <DialogFooter>
-                  <Button variant="secondary" onClick={() => setDialogOpen(false)} disabled={loading}>
+                  <Button variant="secondary" onClick={closeBoxDialog} disabled={loading}>
                     {t("Cancel")}
                   </Button>
                   <Button onClick={submitBox} disabled={loading}>
@@ -743,6 +802,38 @@ export function OutboundDetailView({
                 label: "Item Count",
                 className: "tabular-nums",
                 render: (row) => row.item_count,
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                render: (row) =>
+                  canMutate ? (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        aria-label={`Edit box ${row.box_no}`}
+                        title={`Edit box ${row.box_no}`}
+                        onClick={() => openEditBox(row)}
+                        disabled={loading || !currentOrder.boxes_supported}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit Box
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-rose-700"
+                        aria-label={`Delete box ${row.box_no}`}
+                        title={`Delete box ${row.box_no}`}
+                        onClick={() => void removeBox(row)}
+                        disabled={loading || !currentOrder.boxes_supported}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete Box
+                      </Button>
+                    </div>
+                  ) : null,
               },
             ]}
             emptyText="No boxes packed yet."

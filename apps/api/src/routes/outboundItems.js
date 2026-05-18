@@ -113,6 +113,75 @@ async function adjustItemReservation(conn, order, item, delta) {
   );
 }
 
+async function getPackedQtyForOutboundItem(conn, outboundItemId) {
+  try {
+    const [rows] = await conn.query(
+      `SELECT COALESCE(SUM(obi.packed_qty), 0) AS packed_qty
+       FROM outbound_box_items obi
+       JOIN outbound_boxes ob ON ob.id = obi.outbound_box_id AND ob.deleted_at IS NULL
+       WHERE obi.outbound_item_id = ?
+         AND obi.deleted_at IS NULL`,
+      [outboundItemId]
+    );
+    return Number(rows[0]?.packed_qty || 0);
+  } catch (error) {
+    if (isMysqlMissingTable(error)) return 0;
+    throw error;
+  }
+}
+
+async function assertPackedQtyWithinItemQty(conn, outboundItemId, qty) {
+  const packedQty = await getPackedQtyForOutboundItem(conn, outboundItemId);
+  if (packedQty > Number(qty)) {
+    throw new StockError(
+      "PACKED_QTY_EXCEEDS_QTY",
+      `Packed qty (${packedQty}) cannot exceed outbound item qty (${qty})`
+    );
+  }
+}
+
+async function refreshOutboundBoxItemCount(conn, outboundBoxId) {
+  await conn.query(
+    `UPDATE outbound_boxes
+     SET item_count = (
+       SELECT COALESCE(SUM(packed_qty), 0)
+       FROM outbound_box_items
+       WHERE outbound_box_id = ? AND deleted_at IS NULL
+     )
+     WHERE id = ?`,
+    [outboundBoxId, outboundBoxId]
+  );
+}
+
+async function softDeletePackedItemsForOutboundItem(conn, outboundItemId) {
+  try {
+    const [boxRows] = await conn.query(
+      `SELECT DISTINCT outbound_box_id
+       FROM outbound_box_items
+       WHERE outbound_item_id = ?
+         AND deleted_at IS NULL`,
+      [outboundItemId]
+    );
+    if (boxRows.length === 0) return;
+
+    await conn.query(
+      `UPDATE outbound_box_items
+       SET deleted_at = NOW()
+       WHERE outbound_item_id = ?
+         AND deleted_at IS NULL`,
+      [outboundItemId]
+    );
+
+    for (const row of boxRows) {
+      await refreshOutboundBoxItemCount(conn, row.outbound_box_id);
+    }
+  } catch (error) {
+    if (!isMysqlMissingTable(error)) {
+      throw error;
+    }
+  }
+}
+
 router.get("/", async (req, res) => {
   const outboundOrderId = req.query.outbound_order_id;
 
@@ -273,6 +342,13 @@ router.put("/:id", validate(outboundItemSchema), async (req, res) => {
       if (isShippedLockedStatus(nextOrderRows[0].status)) {
         throw new StockError("ORDER_LOCKED", "Cannot modify items after shipment");
       }
+      if (Number(prev.outbound_order_id) !== Number(outbound_order_id)) {
+        const packedQty = await getPackedQtyForOutboundItem(conn, req.params.id);
+        if (packedQty > 0) {
+          throw new StockError("PACKED_ITEM_LOCKED", "Cannot move an item that has packed box records");
+        }
+      }
+      await assertPackedQtyWithinItemQty(conn, req.params.id, qty);
 
       if (isReservationAppliedStatus(prev.status)) {
         await adjustItemReservation(conn, prev, prev, -Number(prev.qty));
@@ -359,6 +435,7 @@ router.delete("/:id", async (req, res) => {
       if (isReservationAppliedStatus(prev.status)) {
         await adjustItemReservation(conn, prev, prev, -Number(prev.qty));
       }
+      await softDeletePackedItemsForOutboundItem(conn, req.params.id);
 
       await conn.query(
         "UPDATE outbound_items SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",

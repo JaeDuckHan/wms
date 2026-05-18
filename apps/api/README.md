@@ -188,11 +188,11 @@ On API startup, `ADMIN_EMAIL` and `ADMIN_PASSWORD` are synced into the `users` t
 
 `outbound-boxes`
 - `GET /outbound-orders/:id/boxes`
-- `POST /outbound-orders/:id/boxes` (optional `items[]` links packed quantities to outbound items)
+- `POST /outbound-orders/:id/boxes` (`items[]` is required; packed quantities are linked to outbound items and cannot exceed requested qty across boxes)
 - `GET /outbound-orders/:id/boxes/:boxId/items`
 - `PUT /outbound-orders/:id/boxes/:boxId/items`
-- `PUT /outbound-orders/:id/boxes/:boxId`
-- `DELETE /outbound-orders/:id/boxes/:boxId` (soft delete)
+- `PUT /outbound-orders/:id/boxes/:boxId` (updates box metadata and optional `items[]` in one request)
+- `DELETE /outbound-orders/:id/boxes/:boxId` (soft delete, also soft deletes packed item links)
 
 `stocks`
 - `GET /stock-balances`

@@ -46,6 +46,7 @@ export type OutboundBox = {
   courier: string;
   tracking_no: string;
   item_count: number;
+  status: "open" | "packed" | "shipped";
   items: OutboundBoxItem[];
 };
 

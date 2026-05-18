@@ -2,6 +2,7 @@ const express = require("express");
 const { z } = require("zod");
 const { getPool } = require("../db");
 const { validate } = require("../middleware/validate");
+const { BoxPackingError, validateBoxItemTotals } = require("../services/outboundBoxPacking");
 
 const router = express.Router();
 
@@ -15,19 +16,19 @@ const createBoxSchema = z.object({
   courier: z.string().max(100).nullable().optional(),
   tracking_no: z.string().max(120).nullable().optional(),
   item_count: z.coerce.number().int().min(0).optional(),
-  items: z.array(boxItemSchema).optional().default([])
+  items: z.array(boxItemSchema).min(1)
 });
 
 const updateBoxSchema = z.object({
   box_no: z.string().min(1).max(80),
   courier: z.string().max(100).nullable().optional(),
   tracking_no: z.string().max(120).nullable().optional(),
-  item_count: z.coerce.number().int().min(0),
-  status: z.enum(["open", "packed", "shipped"]).default("open")
+  status: z.enum(["open", "packed", "shipped"]).optional(),
+  items: z.array(boxItemSchema).min(1).optional()
 });
 
 const replaceBoxItemsSchema = z.object({
-  items: z.array(boxItemSchema)
+  items: z.array(boxItemSchema).min(1)
 });
 
 async function hasOutboundOrder(outboundOrderId) {
@@ -55,6 +56,22 @@ function isMysqlDuplicate(error) {
 
 function isMysqlMissingTable(error) {
   return error && error.code === "ER_NO_SUCH_TABLE";
+}
+
+function isBoxPackingError(error) {
+  return (
+    error instanceof BoxPackingError ||
+    [
+      "EMPTY_BOX_ITEMS",
+      "INVALID_BOX_ITEM",
+      "INVALID_PACKED_QTY",
+      "INVALID_PACKED_QTY_TOTAL"
+    ].includes(error.code)
+  );
+}
+
+function sumPackedQty(items) {
+  return items.reduce((sum, item) => sum + Number(item.packed_qty), 0);
 }
 
 async function getBoxItems(conn, boxIds) {
@@ -100,14 +117,7 @@ function attachItemsToBoxes(boxRows, itemMap) {
   }));
 }
 
-async function replaceBoxItems(conn, outboundOrderId, boxId, items) {
-  await conn.query(
-    "UPDATE outbound_box_items SET deleted_at = NOW() WHERE outbound_box_id = ? AND deleted_at IS NULL",
-    [boxId]
-  );
-
-  if (items.length === 0) return;
-
+async function validateBoxItemsForOrder(conn, outboundOrderId, boxId, items) {
   const outboundItemIds = items.map((item) => item.outbound_item_id);
   const placeholders = outboundItemIds.map(() => "?").join(", ");
   const [validRows] = await conn.query(
@@ -118,21 +128,31 @@ async function replaceBoxItems(conn, outboundOrderId, boxId, items) {
        AND deleted_at IS NULL`,
     [outboundOrderId, ...outboundItemIds]
   );
-  const validById = new Map(validRows.map((row) => [Number(row.id), Number(row.qty)]));
+  const requestedQtyByItemId = new Map(validRows.map((row) => [Number(row.id), Number(row.qty)]));
+  const [packedRows] = await conn.query(
+    `SELECT obi.outbound_item_id, COALESCE(SUM(obi.packed_qty), 0) AS packed_qty
+     FROM outbound_box_items obi
+     JOIN outbound_boxes ob ON ob.id = obi.outbound_box_id AND ob.deleted_at IS NULL
+     WHERE ob.outbound_order_id = ?
+       AND obi.outbound_box_id <> ?
+       AND obi.outbound_item_id IN (${placeholders})
+       AND obi.deleted_at IS NULL
+     GROUP BY obi.outbound_item_id`,
+    [outboundOrderId, boxId, ...outboundItemIds]
+  );
+  const existingPackedQtyByItemId = new Map(
+    packedRows.map((row) => [Number(row.outbound_item_id), Number(row.packed_qty)])
+  );
 
+  return validateBoxItemTotals({
+    nextItems: items,
+    requestedQtyByItemId,
+    existingPackedQtyByItemId
+  });
+}
+
+async function insertBoxItems(conn, boxId, items) {
   for (const item of items) {
-    const requestedQty = validById.get(Number(item.outbound_item_id));
-    if (!requestedQty) {
-      const error = new Error("Box item must belong to outbound order");
-      error.code = "INVALID_BOX_ITEM";
-      throw error;
-    }
-    if (Number(item.packed_qty) > requestedQty) {
-      const error = new Error("Packed qty cannot exceed outbound item qty");
-      error.code = "INVALID_PACKED_QTY";
-      throw error;
-    }
-
     await conn.query(
       `INSERT INTO outbound_box_items (outbound_box_id, outbound_item_id, packed_qty)
        VALUES (?, ?, ?)
@@ -140,6 +160,16 @@ async function replaceBoxItems(conn, outboundOrderId, boxId, items) {
       [boxId, item.outbound_item_id, item.packed_qty]
     );
   }
+}
+
+async function replaceBoxItems(conn, outboundOrderId, boxId, items) {
+  const validatedItems = await validateBoxItemsForOrder(conn, outboundOrderId, boxId, items);
+  await conn.query(
+    "UPDATE outbound_box_items SET deleted_at = NOW() WHERE outbound_box_id = ? AND deleted_at IS NULL",
+    [boxId]
+  );
+  await insertBoxItems(conn, boxId, validatedItems);
+  return validatedItems;
 }
 
 router.get("/:id/boxes", async (req, res) => {
@@ -182,9 +212,8 @@ router.post("/:id/boxes", validate(createBoxSchema), async (req, res) => {
     }
 
     const { box_no, courier = null, tracking_no = null, items } = req.body;
-    const itemCount =
-      req.body.item_count ??
-      items.reduce((sum, item) => sum + Number(item.packed_qty), 0);
+    const validatedItems = await validateBoxItemsForOrder(conn, outboundOrderId, 0, items);
+    const itemCount = sumPackedQty(validatedItems);
 
     const [result] = await conn.query(
       `INSERT INTO outbound_boxes (outbound_order_id, box_no, courier, tracking_no, item_count, status)
@@ -192,7 +221,7 @@ router.post("/:id/boxes", validate(createBoxSchema), async (req, res) => {
       [outboundOrderId, box_no, courier, tracking_no, itemCount]
     );
 
-    await replaceBoxItems(conn, outboundOrderId, result.insertId, items);
+    await insertBoxItems(conn, result.insertId, validatedItems);
 
     const [rows] = await conn.query(
       `SELECT id, outbound_order_id, box_no, courier, tracking_no, item_count, status, created_at, updated_at
@@ -209,7 +238,7 @@ router.post("/:id/boxes", validate(createBoxSchema), async (req, res) => {
     if (isMysqlDuplicate(error)) {
       return res.status(409).json({ ok: false, message: "Duplicate box_no in outbound order" });
     }
-    if (error.code === "INVALID_BOX_ITEM" || error.code === "INVALID_PACKED_QTY") {
+    if (isBoxPackingError(error)) {
       return res.status(400).json({ ok: false, code: error.code, message: error.message });
     }
     return res.status(500).json({ ok: false, message: error.message });
@@ -245,15 +274,15 @@ router.put("/:id/boxes/:boxId/items", validate(replaceBoxItemsSchema), async (re
       await conn.rollback();
       return res.status(404).json({ ok: false, message: "Outbound box not found" });
     }
-    await replaceBoxItems(conn, outboundOrderId, boxId, req.body.items);
+    const validatedItems = await replaceBoxItems(conn, outboundOrderId, boxId, req.body.items);
     const itemMap = await getBoxItems(conn, [boxId]);
-    const itemCount = (itemMap.get(boxId) ?? []).reduce((sum, item) => sum + Number(item.packed_qty), 0);
+    const itemCount = sumPackedQty(validatedItems);
     await conn.query("UPDATE outbound_boxes SET item_count = ? WHERE id = ?", [itemCount, boxId]);
     await conn.commit();
     return res.json({ ok: true, data: itemMap.get(boxId) ?? [] });
   } catch (error) {
     await conn.rollback();
-    if (error.code === "INVALID_BOX_ITEM" || error.code === "INVALID_PACKED_QTY") {
+    if (isBoxPackingError(error)) {
       return res.status(400).json({ ok: false, code: error.code, message: error.message });
     }
     return res.status(500).json({ ok: false, message: error.message });
@@ -263,39 +292,75 @@ router.put("/:id/boxes/:boxId/items", validate(replaceBoxItemsSchema), async (re
 });
 
 router.put("/:id/boxes/:boxId", validate(updateBoxSchema), async (req, res) => {
+  const conn = await getPool().getConnection();
   try {
     const outboundOrderId = Number(req.params.id);
-    const exists = await hasOutboundOrder(outboundOrderId);
-    if (!exists) {
+    const boxId = Number(req.params.boxId);
+    await conn.beginTransaction();
+    const [orderRows] = await conn.query(
+      "SELECT id FROM outbound_orders WHERE id = ? AND deleted_at IS NULL LIMIT 1",
+      [outboundOrderId]
+    );
+    if (orderRows.length === 0) {
+      await conn.rollback();
       return res.status(404).json({ ok: false, message: "Outbound order not found" });
     }
 
-    const { box_no, courier = null, tracking_no = null, item_count, status } = req.body;
-    const [result] = await getPool().query(
-      `UPDATE outbound_boxes
-       SET box_no = ?, courier = ?, tracking_no = ?, item_count = ?, status = ?
-       WHERE id = ? AND outbound_order_id = ? AND deleted_at IS NULL`,
-      [box_no, courier, tracking_no, item_count, status, req.params.boxId, outboundOrderId]
+    const [boxRows] = await conn.query(
+      `SELECT id
+       FROM outbound_boxes
+       WHERE id = ? AND outbound_order_id = ? AND deleted_at IS NULL
+       LIMIT 1`,
+      [boxId, outboundOrderId]
     );
-
-    if (result.affectedRows === 0) {
+    if (boxRows.length === 0) {
+      await conn.rollback();
       return res.status(404).json({ ok: false, message: "Outbound box not found" });
     }
 
-    const [rows] = await getPool().query(
+    const { box_no, courier = null, tracking_no = null, status, items } = req.body;
+    let itemCount = 0;
+    if (items) {
+      const validatedItems = await replaceBoxItems(conn, outboundOrderId, boxId, items);
+      itemCount = sumPackedQty(validatedItems);
+    } else {
+      const itemMap = await getBoxItems(conn, [boxId]);
+      itemCount = sumPackedQty(itemMap.get(boxId) ?? []);
+    }
+
+    const [result] = await conn.query(
+      `UPDATE outbound_boxes
+       SET box_no = ?, courier = ?, tracking_no = ?, item_count = ?, status = COALESCE(?, status)
+       WHERE id = ? AND outbound_order_id = ? AND deleted_at IS NULL`,
+      [box_no, courier, tracking_no, itemCount, status ?? null, boxId, outboundOrderId]
+    );
+
+    if (result.affectedRows === 0) {
+      await conn.rollback();
+      return res.status(404).json({ ok: false, message: "Outbound box not found" });
+    }
+
+    const [rows] = await conn.query(
       `SELECT id, outbound_order_id, box_no, courier, tracking_no, item_count, status, created_at, updated_at
        FROM outbound_boxes
        WHERE id = ?`,
-      [req.params.boxId]
+      [boxId]
     );
-    const itemMap = await getBoxItems(getPool(), [Number(req.params.boxId)]);
+    const updatedItemMap = await getBoxItems(conn, [boxId]);
+    await conn.commit();
 
-    return res.json({ ok: true, data: attachItemsToBoxes(rows, itemMap)[0] });
+    return res.json({ ok: true, data: attachItemsToBoxes(rows, updatedItemMap)[0] });
   } catch (error) {
+    await conn.rollback();
     if (isMysqlDuplicate(error)) {
       return res.status(409).json({ ok: false, message: "Duplicate box_no in outbound order" });
     }
+    if (isBoxPackingError(error)) {
+      return res.status(400).json({ ok: false, code: error.code, message: error.message });
+    }
     return res.status(500).json({ ok: false, message: error.message });
+  } finally {
+    conn.release();
   }
 });
 
