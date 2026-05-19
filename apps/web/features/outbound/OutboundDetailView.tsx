@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Ban, Loader2, PackagePlus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { listSalesChannels, type SalesChannel } from "@/features/settings/sales-channels/api";
+import { buildProductHistoryHref } from "@/features/inventory/productHistoryLinks";
 const tabs = ["overview", "items", "boxes", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
 
@@ -381,7 +383,18 @@ export function OutboundDetailView({
   const itemColumns = useMemo(
     () => [
       { key: "barcode_full", label: "Barcode", render: (row: OutboundOrder["items"][number]) => row.barcode_full },
-      { key: "product_name", label: "Product", render: (row: OutboundOrder["items"][number]) => row.product_name },
+      {
+        key: "product_name",
+        label: "Product",
+        render: (row: OutboundOrder["items"][number]) => {
+          const href = buildProductHistoryHref(row.product_id, "outbound_ship");
+          return href ? (
+            <Link href={href} className="font-medium text-slate-900 hover:underline">
+              {row.product_name}
+            </Link>
+          ) : row.product_name;
+        },
+      },
       { key: "lot", label: "Lot", render: (row: OutboundOrder["items"][number]) => row.lot },
       { key: "expiry_date", label: "Expiry Date", render: (row: OutboundOrder["items"][number]) => row.expiry_date ?? "-" },
       { key: "location", label: "Location", render: (row: OutboundOrder["items"][number]) => row.location },

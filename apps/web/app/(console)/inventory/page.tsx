@@ -59,7 +59,6 @@ export default async function InventoryPage({
 
   const productHistoryParams = (selectedProductId: string) => {
     const params = new URLSearchParams();
-    params.set("tab", "transactions");
     params.set("product_id", selectedProductId);
     return params;
   };
@@ -78,7 +77,7 @@ export default async function InventoryPage({
             </Link>
           ) },
           { key: "product", label: "Product", render: (row) => (
-            <Link href={`/inventory?${productHistoryParams(row.product_id).toString()}`} className="font-medium text-slate-900 hover:underline">
+            <Link href={`/inventory/product-history?${productHistoryParams(row.product_id).toString()}`} className="font-medium text-slate-900 hover:underline">
               {row.product}
             </Link>
           ) },

@@ -47,6 +47,7 @@ export const messagesEn = {
     inbounds: "Inbounds",
     outbounds: "Outbounds",
     inventory: "Inventory",
+    productHistory: "Product In/Out History",
     billing: "Billing",
     billingBasis: "Billing Basis",
     dashboard: "Dashboard",

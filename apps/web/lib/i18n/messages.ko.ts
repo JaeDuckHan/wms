@@ -47,6 +47,7 @@ export const messagesKo = {
     inbounds: "입고",
     outbounds: "출고",
     inventory: "재고",
+    productHistory: "Product In/Out History",
     billing: "정산",
     billingBasis: "청구 근거",
     dashboard: "대시보드",

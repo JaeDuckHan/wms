@@ -10,6 +10,7 @@ import { AUTH_COOKIE_KEY, decodeJwtPayload } from "@/lib/auth";
 import { canWrite } from "@/lib/authz";
 import { getInboundOrders } from "@/features/inbound/api";
 import type { InboundListStatus, InboundOrder, InboundStatus } from "@/features/inbound/types";
+import { buildProductHistoryHref } from "@/features/inventory/productHistoryLinks";
 
 const filterItems: Array<{ label: string; value: InboundListStatus }> = [
   { label: "All", value: "all" },
@@ -50,12 +51,19 @@ function InboundItemsPreview({ order }: { order: InboundOrder }) {
   const extraCount = Math.max(0, order.items.length - 1);
   const totalAmount =
     firstItem.invoice_price === null ? null : firstItem.invoice_price * firstItem.qty;
+  const productHistoryHref = buildProductHistoryHref(firstItem.product_id, "inbound_receive");
 
   return (
     <div className="min-w-[420px] space-y-1">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium text-slate-900">{firstItem.barcode_full}</span>
-        <span className="text-slate-700">{firstItem.product_name}</span>
+        {productHistoryHref ? (
+          <Link href={productHistoryHref} className="font-medium text-slate-900 hover:underline">
+            {firstItem.product_name}
+          </Link>
+        ) : (
+          <span className="text-slate-700">{firstItem.product_name}</span>
+        )}
         {extraCount > 0 ? (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
             +{extraCount} <TranslatedText text="More Items" />

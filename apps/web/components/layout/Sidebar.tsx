@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Boxes, Download, FileText, House, LogOut, Send, Settings } from "lucide-react";
+import { Boxes, Download, FileText, History, House, LogOut, Send, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/features/auth/api";
 import { useToast } from "@/components/ui/toast";
@@ -20,11 +20,17 @@ export function Sidebar() {
     canAccessInbounds ? { href: "/inbounds", label: "nav.inbounds", icon: Download } : null,
     { href: "/outbounds", label: "nav.outbounds", icon: Send },
     { href: "/inventory", label: "nav.inventory", icon: Boxes },
+    { href: "/inventory/product-history", label: "nav.productHistory", icon: History },
     { href: isClientViewer ? "/billing" : "/billing/events", label: "nav.billing", icon: FileText },
     { href: "/dashboard", label: "nav.dashboard", icon: House },
     canAccessSettings ? { href: "/settings", label: "nav.settings", icon: Settings } : null,
   ].filter(Boolean) as Array<{ href: string; label: string; icon: typeof House }>;
   const toStackedLabel = (text: string) => text.replace(" / ", "\n");
+  const isActivePath = (href: string) => {
+    if (href === "/billing/events") return pathname === "/billing" || pathname.startsWith("/billing/events");
+    if (href === "/inventory") return pathname === "/inventory";
+    return pathname.startsWith(href);
+  };
 
   const handleLogout = () => {
     logout();
@@ -40,10 +46,7 @@ export function Sidebar() {
       </Link>
       <nav className="space-y-1">
         {items.map((item) => {
-          const active =
-            item.href === "/billing/events"
-              ? pathname === "/billing" || pathname.startsWith("/billing/events")
-              : pathname.startsWith(item.href);
+          const active = isActivePath(item.href);
           const Icon = item.icon;
           return (
             <Link

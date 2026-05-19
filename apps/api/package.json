@@ -29,6 +29,7 @@
     "test:contracts:outbound-billing-basis": "node scripts/test_outbound_billing_basis_contract.js",
     "test:contracts:outbound-box-billing-resync": "node scripts/test_outbound_box_billing_resync_contract.js",
     "test:contracts:atomic-order-create": "node scripts/test_atomic_order_create_contract.js",
+    "test:contracts:stock-transactions-source": "node scripts/test_stock_transactions_source_contract.js",
     "test:invoice-export": "node scripts/test_invoice_export_contract.js",
     "test:invoice-pdf-font": "node scripts/test_invoice_pdf_font_contract.js",
     "test:invoice-thb": "node scripts/test_invoice_thb_contract.js",

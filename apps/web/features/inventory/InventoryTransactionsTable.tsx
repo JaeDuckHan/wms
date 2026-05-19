@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/DataTable";
@@ -141,8 +142,13 @@ export function InventoryTransactionsTable({ rows }: Props) {
           { key: "lot", label: "Lot", render: (row) => row.lot },
           { key: "qty_in", label: "Qty In", className: "tabular-nums", render: (row) => row.qty_in },
           { key: "qty_out", label: "Qty Out", className: "tabular-nums", render: (row) => row.qty_out },
-          { key: "current_stock_qty", label: "Current Stock", className: "tabular-nums", render: (row) => row.current_stock_qty },
-          { key: "ref", label: "Ref", render: (row) => row.ref },
+          { key: "current_stock_qty", label: "Current Balance Now", className: "tabular-nums", render: (row) => row.current_stock_qty },
+          {
+            key: "ref",
+            label: "Ref",
+            render: (row) =>
+              row.source_path ? <Link href={row.source_path} className="font-medium text-slate-900 hover:underline">{row.source_no || row.ref}</Link> : row.source_no || row.ref,
+          },
         ]}
       />
 
@@ -211,8 +217,13 @@ export function InventoryTransactionsTable({ rows }: Props) {
               { key: "location", label: "Location", render: (row) => row.location },
               { key: "qty_in", label: "Qty In", className: "tabular-nums", render: (row) => row.qty_in },
               { key: "qty_out", label: "Qty Out", className: "tabular-nums", render: (row) => row.qty_out },
-              { key: "current_stock_qty", label: "Current Stock", className: "tabular-nums", render: (row) => row.current_stock_qty },
-              { key: "ref", label: "Ref", render: (row) => row.ref },
+              { key: "current_stock_qty", label: "Current Balance Now", className: "tabular-nums", render: (row) => row.current_stock_qty },
+              {
+                key: "ref",
+                label: "Ref",
+                render: (row) =>
+                  row.source_path ? <Link href={row.source_path} className="font-medium text-slate-900 hover:underline">{row.source_no || row.ref}</Link> : row.source_no || row.ref,
+              },
             ]}
           />
           <DialogFooter>

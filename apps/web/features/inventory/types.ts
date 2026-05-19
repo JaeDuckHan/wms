@@ -35,6 +35,8 @@ export type StockTransactionRow = {
   qty_out: number;
   current_stock_qty: number;
   ref: string;
+  source_no: string;
+  source_path: string;
   note: string;
 };
 
@@ -42,4 +44,10 @@ export type InventoryQuery = {
   q?: string;
   txn_type?: string;
   product_id?: string;
+  client_id?: string;
+  warehouse_id?: string;
+  date_from?: string;
+  date_to?: string;
+  page?: string;
+  limit?: string;
 };

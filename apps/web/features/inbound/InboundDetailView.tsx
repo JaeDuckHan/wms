@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Ban, Loader2, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
+import { buildProductHistoryHref } from "@/features/inventory/productHistoryLinks";
 const tabs = ["overview", "items", "timeline"] as const;
 type TabValue = (typeof tabs)[number];
 
@@ -213,7 +215,18 @@ export function InboundDetailView({ order: initialOrder, initialTab }: { order: 
   const itemColumns = useMemo(
     () => [
       { key: "barcode_full", label: "Barcode", render: (row: InboundOrder["items"][number]) => row.barcode_full },
-      { key: "product_name", label: "Product", render: (row: InboundOrder["items"][number]) => row.product_name },
+      {
+        key: "product_name",
+        label: "Product",
+        render: (row: InboundOrder["items"][number]) => {
+          const href = buildProductHistoryHref(row.product_id, "inbound_receive");
+          return href ? (
+            <Link href={href} className="font-medium text-slate-900 hover:underline">
+              {row.product_name}
+            </Link>
+          ) : row.product_name;
+        },
+      },
       { key: "lot", label: "Lot", render: (row: InboundOrder["items"][number]) => row.lot },
       { key: "expiry_date", label: "Expiry Date", render: (row: InboundOrder["items"][number]) => row.expiry_date ?? "-" },
       { key: "location", label: "Location", render: (row: InboundOrder["items"][number]) => row.location },

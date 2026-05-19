@@ -18,6 +18,7 @@
     "test:order-item-layout": "node scripts/test_order_item_layout_contract.mjs",
     "test:outbound-detail-items": "node scripts/test_outbound_detail_item_columns_contract.mjs",
     "test:inventory-transactions": "node scripts/test_inventory_transactions_contract.mjs",
+    "test:product-history": "node scripts/test_product_history_contract.mjs",
     "test:detailed-errors": "node scripts/test_detailed_error_messages_contract.mjs",
     "web:check": "tsc --noEmit --pretty false --incremental false && node scripts/check_i18n_keys.mjs && node scripts/test_detail_i18n_snapshot.mjs && next build",
     "build": "next build",

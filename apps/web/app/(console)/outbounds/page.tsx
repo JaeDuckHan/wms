@@ -11,6 +11,7 @@ import { TranslatedText } from "@/components/i18n/TranslatedText";
 import type { OutboundListStatus, OutboundOrder } from "@/features/outbound/types";
 import { AUTH_COOKIE_KEY, decodeJwtPayload } from "@/lib/auth";
 import { canWrite } from "@/lib/authz";
+import { buildProductHistoryHref } from "@/features/inventory/productHistoryLinks";
 
 const filterItems: Array<{ label: string; value: OutboundListStatus }> = [
   { label: "All", value: "all" },
@@ -33,12 +34,19 @@ function OutboundItemsPreview({ order }: { order: OutboundOrder }) {
   }
 
   const extraCount = Math.max(0, order.items.length - 1);
+  const productHistoryHref = buildProductHistoryHref(firstItem.product_id, "outbound_ship");
 
   return (
     <div className="min-w-[420px] space-y-1">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium text-slate-900">{firstItem.barcode_full}</span>
-        <span className="text-slate-700">{firstItem.product_name}</span>
+        {productHistoryHref ? (
+          <Link href={productHistoryHref} className="font-medium text-slate-900 hover:underline">
+            {firstItem.product_name}
+          </Link>
+        ) : (
+          <span className="text-slate-700">{firstItem.product_name}</span>
+        )}
         {extraCount > 0 ? (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
             +{extraCount} <TranslatedText text="More Items" />

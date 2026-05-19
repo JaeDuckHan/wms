@@ -49,6 +49,8 @@ type RawTxn = {
   qty_out: number;
   ref_type: string | null;
   ref_id: number | null;
+  source_no?: string | null;
+  source_path?: string | null;
   note: string | null;
 };
 
@@ -109,6 +111,16 @@ const mockTransactions: StockTransactionRow[] = Array.from({ length: 20 }, (_, i
       : txnType.startsWith("return_")
         ? `return:${4000 + seq}`
         : `inbound:${3000 + seq}`,
+    source_no: txnType === "outbound_ship"
+      ? `OUT-202602-${pad2(seq)}`
+      : txnType.startsWith("return_")
+        ? `RET-202602-${pad2(seq)}`
+        : `INB-202602-${pad2(seq)}`,
+    source_path: txnType === "outbound_ship"
+      ? `/outbounds/OUT-202602-${pad2(seq)}`
+      : txnType === "inbound_receive"
+        ? `/inbounds/INB-202602-${pad2(seq)}`
+        : "",
     note: `Inventory sample txn #${pad2(seq)}`,
   };
 });
@@ -146,6 +158,40 @@ function includesQ(...values: Array<string | number | null | undefined>) {
     if (!query) return true;
     return values.some((value) => String(value ?? "").toLowerCase().includes(query));
   };
+}
+
+function matchesDateRange(row: StockTransactionRow, dateFrom?: string, dateTo?: string) {
+  const txnDate = row.txn_date.slice(0, 10);
+  if (dateFrom && txnDate < dateFrom) return false;
+  if (dateTo && txnDate > dateTo) return false;
+  return true;
+}
+
+function paginateRows<T>(rows: T[], query?: InventoryQuery) {
+  const requestedLimit = Number(query?.limit ?? 100);
+  const requestedPage = Number(query?.page ?? 1);
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 200) : 100;
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  return rows.slice((page - 1) * limit, page * limit);
+}
+
+function matchesTransactionQuery(row: StockTransactionRow, query?: InventoryQuery) {
+  if (query?.txn_type && row.txn_type !== query.txn_type) return false;
+  if (query?.product_id && row.product_id !== String(query.product_id)) return false;
+  if (query?.client_id && row.client_id !== String(query.client_id)) return false;
+  if (query?.warehouse_id && row.warehouse !== `WH-${pad2(Number(query.warehouse_id))}`) return false;
+  if (!matchesDateRange(row, query?.date_from, query?.date_to)) return false;
+  return includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.source_no, row.note)(query?.q);
+}
+
+function buildTransactionSourcePath(refType: string | null, sourceNoInput?: string | null) {
+  const sourceNo = sourceNoInput?.trim() ?? "";
+  if (!sourceNo) return "";
+
+  const encodedSourceNo = encodeURIComponent(sourceNo);
+  if (refType === "inbound_item") return `/inbounds/${encodedSourceNo}`;
+  if (refType === "outbound_item") return `/outbounds/${encodedSourceNo}`;
+  return "";
 }
 
 function toReservationStatus(ratePct: number): StockBalanceRow["reservation_status"] {
@@ -270,18 +316,23 @@ export async function getStockTransactions(
   options?: RequestOptions
 ): Promise<StockTransactionRow[]> {
   if (shouldUseMockMode()) {
-    const fallbackRows =
-      query?.txn_type && query.txn_type.length > 0
-        ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
-        : mockTransactions;
-    return fallbackRows
-        .filter((row) => !query?.product_id || row.product_id === String(query.product_id))
-      .filter((row) => includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q));
+    return paginateRows(mockTransactions.filter((row) => matchesTransactionQuery(row, query)), query);
   }
   const token = await resolveToken(options?.token);
   const params = new URLSearchParams();
   if (query?.txn_type) params.set("txn_type", query.txn_type);
   if (query?.product_id) params.set("product_id", query.product_id);
+  if (query?.client_id) params.set("client_id", query.client_id);
+  if (query?.warehouse_id) params.set("warehouse_id", query.warehouse_id);
+  if (query?.date_from) params.set("date_from", query.date_from);
+  if (query?.date_to) params.set("date_to", query.date_to);
+  if (query?.q?.trim()) params.set("q", query.q.trim());
+  const requestedLimit = Number(query?.limit ?? 100);
+  const requestedPage = Number(query?.page ?? 1);
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 200) : 100;
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  params.set("limit", String(limit));
+  params.set("offset", String((page - 1) * limit));
   const path = `/stock-transactions${params.toString() ? `?${params.toString()}` : ""}`;
 
   try {
@@ -334,19 +385,19 @@ export async function getStockTransactions(
         balanceByProductLot.get(`${row.client_id}:${row.product_id}:${row.lot_id}`) ??
         0,
       ref: row.ref_type && row.ref_id ? `${row.ref_type}:${row.ref_id}` : "-",
+      source_no: row.source_no ?? "",
+      source_path: buildTransactionSourcePath(row.ref_type, row.source_no),
       note: row.note ?? "-",
     }));
     const filtered = mapped.filter((row) =>
-      includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q)
+      includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.source_no, row.note)(query?.q)
     );
     if (filtered.length === 0 && shouldUseFallback(token)) {
       const fallbackRows =
         query?.txn_type && query.txn_type.length > 0
           ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
         : mockTransactions;
-      return fallbackRows
-        .filter((row) => !query?.product_id || row.product_id === String(query.product_id))
-        .filter((row) => includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q));
+      return paginateRows(fallbackRows.filter((row) => matchesTransactionQuery(row, query)), query);
     }
     return filtered;
   } catch (error) {
@@ -355,9 +406,7 @@ export async function getStockTransactions(
         query?.txn_type && query.txn_type.length > 0
           ? mockTransactions.filter((row) => row.txn_type === query.txn_type)
           : mockTransactions;
-      return fallbackRows
-        .filter((row) => !query?.product_id || row.product_id === String(query.product_id))
-        .filter((row) => includesQ(row.txn_type, row.client, row.client_code, row.product, row.product_barcode, row.lot, row.ref, row.note)(query?.q));
+      return paginateRows(fallbackRows.filter((row) => matchesTransactionQuery(row, query)), query);
     }
     throw error;
   }

@@ -30,6 +30,18 @@ assertIncludes(
   "Inventory transaction rows keep product id for product history links"
 );
 
+assertIncludes(
+  "apps/web/features/inventory/types.ts",
+  "source_no: string;",
+  "Inventory transaction rows keep source document numbers"
+);
+
+assertIncludes(
+  "apps/web/features/inventory/types.ts",
+  "source_path: string;",
+  "Inventory transaction rows keep source document links"
+);
+
 assertMatches(
   "apps/web/features/inventory/api.ts",
   /includesQ\([^)]*row\.client[^)]*row\.product[^)]*row\.product_barcode/s,
@@ -58,6 +70,24 @@ assertIncludes(
   "apps/web/features/inventory/InventoryTransactionsTable.tsx",
   "getStockTransactions({ product_id: row.product_id })",
   "Product layer loads full product transaction history"
+);
+
+assertIncludes(
+  "apps/web/features/inventory/InventoryTransactionsTable.tsx",
+  'label: "Current Balance Now"',
+  "Inventory transaction balance column makes the current-time meaning explicit"
+);
+
+assertIncludes(
+  "apps/web/features/inventory/InventoryTransactionsTable.tsx",
+  "row.source_path ? <Link href={row.source_path}",
+  "Inventory transaction source documents are linked from the Ref column"
+);
+
+assertIncludes(
+  "apps/web/features/inventory/api.ts",
+  "encodeURIComponent(sourceNo)",
+  "Inventory transaction source links encode source document numbers on the frontend"
 );
 
 assertIncludes(
