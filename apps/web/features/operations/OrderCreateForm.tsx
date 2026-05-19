@@ -798,7 +798,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                         style={{ gridTemplateColumns: mode === "inbound" ? inboundItemGridTemplate : outboundItemGridTemplate }}
                       >
                         <label>
-                          {showItemLabels ? <span className={inputLabelClass}>{t("Product")}</span> : null}
+                          {showItemLabels ? <span className={inputLabelClass}>Product</span> : null}
                           <select
                             className={withFieldErrorClass(selectClass, Boolean(errors.product_id))}
                             value={item.product_id}
@@ -823,7 +823,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                         </label>
                         {mode === "inbound" ? (
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>LOT No / Lot No</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Lot No</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.lot_no))}
                               list={`lot-options-${item.id}`}
@@ -847,7 +847,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           </label>
                         ) : (
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Lot")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Lot No</span> : null}
                             <select
                               className={withFieldErrorClass(selectClass, Boolean(errors.lot_id))}
                               value={item.lot_id}
@@ -880,7 +880,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           </label>
                         )}
                         <label>
-                          {showItemLabels ? <span className={inputLabelClass}>{mode === "inbound" ? "Stock Location" : t("Location")}</span> : null}
+                          {showItemLabels ? <span className={inputLabelClass}>Stock Location</span> : null}
                           {activeLocations.length > 0 ? (
                             <select
                               className={withFieldErrorClass(selectClass, Boolean(errors.location_id))}
@@ -909,7 +909,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           {errors.location_id ? <p className={fieldErrorClass}>{errors.location_id}</p> : null}
                         </label>
                         <label>
-                          {showItemLabels ? <span className={inputLabelClass}>{t("Qty")}</span> : null}
+                          {showItemLabels ? <span className={inputLabelClass}>Qty</span> : null}
                           <Input
                             className={withFieldErrorClass("", Boolean(errors.qty))}
                             type="number"

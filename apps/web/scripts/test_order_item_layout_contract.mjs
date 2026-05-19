@@ -37,8 +37,26 @@ assertIncludes(
 
 assertIncludes(
   formPath,
-  "showItemLabels ? <span className={inputLabelClass}>{t(\"Product\")}</span> : null",
-  "Product label is hidden after the first item"
+  "showItemLabels ? <span className={inputLabelClass}>Product</span> : null",
+  "Product label is English-only and hidden after the first item"
+);
+
+assertIncludes(
+  formPath,
+  "showItemLabels ? <span className={inputLabelClass}>Lot No</span> : null",
+  "Lot label is English-only"
+);
+
+assertIncludes(
+  formPath,
+  "showItemLabels ? <span className={inputLabelClass}>Stock Location</span> : null",
+  "Stock location label is English-only"
+);
+
+assertIncludes(
+  formPath,
+  "showItemLabels ? <span className={inputLabelClass}>Qty</span> : null",
+  "Qty label is English-only"
 );
 
 assertIncludes(
