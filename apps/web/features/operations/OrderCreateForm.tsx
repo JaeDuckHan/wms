@@ -818,7 +818,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                           </select>
                           {errors.product_id ? <p className={fieldErrorClass}>{errors.product_id}</p> : null}
                           {showItemLabels ? <p className="mt-1 text-xs text-slate-500">
-                            {t("Barcode")}: {product?.barcode_full ?? "-"}
+                            Barcode: {product?.barcode_full ?? "-"}
                           </p> : null}
                         </label>
                         {mode === "inbound" ? (
@@ -842,7 +842,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                               </datalist>
                             ) : null}
                             {showItemLabels ? <p className="mt-1 text-xs text-slate-500">
-                              {t("Expiry Date")}: {formatOptionalDate(selectedLot?.expiry_date)}
+                              Expiry Date: {formatOptionalDate(selectedLot?.expiry_date)}
                             </p> : null}
                           </label>
                         ) : (
@@ -875,7 +875,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                               </p>
                             ) : null}
                             {showItemLabels ? <p className="mt-1 text-xs text-slate-500">
-                              {t("Expiry Date")}: {formatOptionalDate(selectedLot?.expiry_date)}
+                              Expiry Date: {formatOptionalDate(selectedLot?.expiry_date)}
                             </p> : null}
                           </label>
                         )}
@@ -924,7 +924,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                         {mode === "inbound" ? (
                           <>
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Currency")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Currency</span> : null}
                             <select
                               className={selectClass}
                               value={item.currency}
@@ -939,7 +939,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             </select>
                           </label>
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Invoice Price")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Invoice Price</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.invoice_price))}
                               type="number"
@@ -952,13 +952,13 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             {errors.invoice_price ? <p className={fieldErrorClass}>{errors.invoice_price}</p> : null}
                           </label>
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Total Amount")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Total Amount</span> : null}
                             <div className="h-9 rounded-md bg-slate-50 px-3 py-2 text-sm tabular-nums text-slate-700">
                               {formatOptionalAmount(lineTotal, item.currency)}
                             </div>
                           </label>
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Remark")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Remark</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.remark))}
                               value={item.remark}
@@ -971,7 +971,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                         ) : (
                           <>
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Packed Box")} / {t("Box Type")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Packed Box / Box Type</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.box_type))}
                               value={item.box_type}
@@ -981,7 +981,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             {errors.box_type ? <p className={fieldErrorClass}>{errors.box_type}</p> : null}
                           </label>
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Box Count")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Box Count</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.box_count))}
                               type="number"
@@ -993,7 +993,7 @@ export function OrderCreateForm({ mode }: { mode: OrderMode }) {
                             {errors.box_count ? <p className={fieldErrorClass}>{errors.box_count}</p> : null}
                           </label>
                           <label>
-                            {showItemLabels ? <span className={inputLabelClass}>{t("Remark")}</span> : null}
+                            {showItemLabels ? <span className={inputLabelClass}>Remark</span> : null}
                             <Input
                               className={withFieldErrorClass("", Boolean(errors.remark))}
                               value={item.remark}

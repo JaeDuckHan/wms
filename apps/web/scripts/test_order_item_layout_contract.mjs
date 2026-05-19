@@ -59,6 +59,37 @@ assertIncludes(
   "Qty label is English-only"
 );
 
+for (const label of [
+  "Currency",
+  "Invoice Price",
+  "Total Amount",
+  "Remark",
+  "Packed Box / Box Type",
+  "Box Count",
+]) {
+  assertIncludes(
+    formPath,
+    `showItemLabels ? <span className={inputLabelClass}>${label}</span> : null`,
+    `${label} label is English-only`
+  );
+}
+
+for (const translatedItemLabel of [
+  '{t("Product")}',
+  '{t("Currency")}',
+  '{t("Invoice Price")}',
+  '{t("Total Amount")}',
+  '{t("Remark")}',
+  '{t("Packed Box")} / {t("Box Type")}',
+  '{t("Box Count")}',
+]) {
+  assertNotIncludes(
+    formPath,
+    `<span className={inputLabelClass}>${translatedItemLabel}</span>`,
+    `${translatedItemLabel} is not used for item field labels`
+  );
+}
+
 assertIncludes(
   formPath,
   "showItemLabels ? <div className=\"mb-3 flex items-center justify-between gap-3\">",
