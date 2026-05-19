@@ -58,6 +58,8 @@ function normalizeOutboundOrder(order: OutboundOrder): OutboundOrder {
         lot: asText(item.lot),
         expiry_date: item.expiry_date ? asText(item.expiry_date) : null,
         location: asText(item.location),
+        box_type: item.box_type ? asText(item.box_type) : null,
+        box_count: asNumber(item.box_count),
         requested_qty: asNumber(item.requested_qty),
         picked_qty: asNumber(item.picked_qty),
         available_qty: asNumber(item.available_qty),
@@ -383,6 +385,13 @@ export function OutboundDetailView({
       { key: "lot", label: "Lot", render: (row: OutboundOrder["items"][number]) => row.lot },
       { key: "expiry_date", label: "Expiry Date", render: (row: OutboundOrder["items"][number]) => row.expiry_date ?? "-" },
       { key: "location", label: "Location", render: (row: OutboundOrder["items"][number]) => row.location },
+      { key: "box_type", label: "Box Type", render: (row: OutboundOrder["items"][number]) => row.box_type ?? "-" },
+      {
+        key: "box_count",
+        label: "Box Count",
+        className: "tabular-nums",
+        render: (row: OutboundOrder["items"][number]) => row.box_count ?? 0,
+      },
       {
         key: "requested_qty",
         label: "Requested Qty",
